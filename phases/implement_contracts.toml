@@ -1,0 +1,39 @@
+title = "Context Contracts Implementation"
+owner = "tawawhite"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement pkg/contract Loading"
+role = "backend-dev"
+estimated_effort = "2h"
+[tasks.dod]
+tests = ["go test ./pkg/contract/..."]
+manual = "Verify Load() parses TOML correctly"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement pkg/contract Validation"
+role = "backend-dev"
+deps = ["Implement pkg/contract Loading"]
+estimated_effort = "4h"
+[tasks.dod]
+tests = ["go test ./pkg/contract/..."]
+manual = "Verify Validate() catches schema errors"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement pt context CLI"
+role = "backend-dev"
+deps = ["Implement pkg/contract Validation"]
+estimated_effort = "3h"
+[tasks.dod]
+manual = "Run pt context init/validate and verify output"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Document Context Contracts"
+role = "tech-writer"
+deps = ["Implement pt context CLI"]
+estimated_effort = "1h"
+[tasks.dod]
+manual = "Check README and AGENTS.md updates"

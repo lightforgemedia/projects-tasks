@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Project artifacts
+.gocache/
+example-project/
+context_*.json

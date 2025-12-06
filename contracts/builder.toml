@@ -1,0 +1,20 @@
+[meta]
+role = "builder"
+version = "1.0.0"
+issued_at = "2025-12-05T12:00:00Z"
+
+[requirements]
+must_have = ["goal.prompt", "scope.files", "success.criteria", "provenance.inputs"]
+
+[fields.goal]
+prompt = { type = "string", min_len = 20, description = "Detailed instruction of what code to write." }
+
+[fields.scope]
+files = { type = "array:string", must_exist = true, description = "List of file paths to modify or read." }
+
+[fields.success]
+criteria = { type = "array:string", min_len = 1, description = "Acceptance criteria or test commands." }
+
+[fields.provenance]
+inputs = { type = "array:object", description = "Traceability for where these requirements came from." }
+freshness_sec_max = 3600

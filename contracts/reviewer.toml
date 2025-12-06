@@ -1,0 +1,18 @@
+[meta]
+role = "reviewer"
+version = "1.0.0"
+issued_at = "2025-12-05T12:00:00Z"
+
+[requirements]
+must_have = ["goal.original_prompt", "artifacts.diff", "artifacts.test_output", "provenance.builder"]
+
+[fields.goal]
+original_prompt = { type = "string", description = "The prompt the builder was trying to satisfy." }
+
+[fields.artifacts]
+diff = { type = "string", description = "The git diff or patch content." }
+test_output = { type = "string", description = "Output logs from the test run." }
+
+[fields.provenance]
+builder = { type = "object", description = "Identity and timestamp of the builder agent." }
+freshness_sec_max = 1800
