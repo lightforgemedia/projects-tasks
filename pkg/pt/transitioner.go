@@ -157,7 +157,7 @@ func (t Transitioner) loadIssueState(ctx context.Context, id string) (Issue, *St
 
 	// Seed dependency statuses
 	for _, d := range deps {
-		depStatus, err := mapBDStatus(d.Status)
+		depStatus, err := mapIssueStatus(d.Status)
 		if err != nil {
 			return Issue{}, nil, fmt.Errorf("dependency %s: %w", d.ID, err)
 		}
@@ -166,7 +166,7 @@ func (t Transitioner) loadIssueState(ctx context.Context, id string) (Issue, *St
 		}
 	}
 
-	issueStatus, err := mapBDStatus(issue.Status)
+	issueStatus, err := mapIssueStatus(issue.Status)
 	if err != nil {
 		return Issue{}, nil, err
 	}
@@ -176,7 +176,7 @@ func (t Transitioner) loadIssueState(ctx context.Context, id string) (Issue, *St
 	return issue, sm, nil
 }
 
-func mapBDStatus(status string) (Status, error) {
+func mapIssueStatus(status string) (Status, error) {
 	switch status {
 	case "", "open":
 		return StatusReady, nil

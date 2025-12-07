@@ -1,6 +1,6 @@
 # Realworld App Example
 
-This example simulates a realistic project (“SaaS Workspace Onboarding”) using `pt` and Beads (`bd`).
+This example simulates a realistic project (“SaaS Workspace Onboarding”) using `pt` and its internal store.
 
 ## How to run
 ```bash

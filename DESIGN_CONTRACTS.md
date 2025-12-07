@@ -56,7 +56,7 @@ New commands for `pt` to manage context.
 ## 5. Workflow Integration
 
 ### Phase 1: Handoff to Builder (Coder)
-1.  User/Architect creates a Task in `bd`.
+1.  User/Architect creates a Task in the issue tracker.
 2.  System runs `pt context init <id> --role=builder`.
 3.  System fills `goal` from Task Description and `success` from DoD.
 4.  System validates against `contracts/builder.toml`.

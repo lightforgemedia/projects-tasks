@@ -88,9 +88,8 @@ func (c *StoreClient) Ready(ctx context.Context, role string, limit int) ([]Issu
 		if role != "" && !c.hasLabelLocked(iss.ID, fmt.Sprintf("role:%s", role)) {
 			continue
 		}
-		if !c.depsDoneLocked(iss.ID) {
-			continue
-		}
+		// CLI handles blocker visualization, so we return all open tasks.
+		// Transitioner.Claim enforces the actual dependency gating.
 		out = append(out, iss)
 		if limit > 0 && len(out) >= limit {
 			break

@@ -28,14 +28,16 @@ func TestStoreSyncAndReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ready err: %v", err)
 	}
-	if len(ready) != 1 {
-		t.Fatalf("expected only root ready, got %d", len(ready))
+	// Ready now returns all open tasks (blocked or not).
+	if len(ready) != 2 {
+		t.Fatalf("expected 2 open tasks, got %d", len(ready))
 	}
-	// Mark A done to unblock B
+	// Mark A done to unblock B (logic check for transitioner, but here just updating state)
 	if err := client.UpdateIssue(ctx, ids["A"], "closed", ""); err != nil {
 		t.Fatalf("update err: %v", err)
 	}
 	ready, _ = client.Ready(ctx, "dev", 10)
+	// Still 2 tasks? No, A is closed. So only B (open) should be returned.
 	if len(ready) != 1 || ready[0].Title != "B" {
 		t.Fatalf("expected B ready after A closed, got %+v", ready)
 	}

@@ -19,8 +19,8 @@ func TestCmdSyncStore(t *testing.T) {
 	}
 	store = pt.NewStoreClient(path, "pt")
 	issues, err := store.Ready(t.Context(), "dev", 10)
-	if err != nil || len(issues) != 1 {
-		t.Fatalf("expected one ready issue, got %d err=%v", len(issues), err)
+	if err != nil || len(issues) != 2 {
+		t.Fatalf("expected two open issues, got %d err=%v", len(issues), err)
 	}
 }
 
