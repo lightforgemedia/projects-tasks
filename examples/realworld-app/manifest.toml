@@ -1,0 +1,70 @@
+title = "SaaS Workspace Onboarding"
+owner = "team-platform"
+
+[[tasks]]
+template = "migration"
+title = "Create workspaces schema"
+role = "backend-dev"
+[tasks.params]
+table = "workspaces"
+[tasks.dod]
+tests = ["go test ./internal/db/..."]
+manual = "Verify workspace row inserts with default limits"
+on_failure = "block"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "POST /workspaces"
+role = "backend-dev"
+deps = ["Create workspaces schema"]
+[tasks.params]
+path = "/workspaces"
+method = "POST"
+[tasks.dod]
+tests = ["go test ./internal/api/workspaces -run TestCreateWorkspace"]
+manual = "cURL returns 201 with id + name"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "POST /workspaces/{id}/members"
+role = "backend-dev"
+deps = ["Create workspaces schema", "POST /workspaces"]
+[tasks.params]
+path = "/workspaces/{id}/members"
+method = "POST"
+[tasks.dod]
+tests = ["go test ./internal/api/workspaces -run TestAddMember"]
+manual = "Invite flow adds user and returns pending status"
+
+[[tasks]]
+template = "frontend_component"
+title = "Workspace creation flow"
+role = "frontend-dev"
+deps = ["POST /workspaces"]
+[tasks.params]
+component = "WorkspaceCreatePage"
+[tasks.dod]
+validation_cmd = "bun test src/workspaces/create.test.ts"
+manual = "Form submits, success toast shows workspace name"
+
+[[tasks]]
+template = "frontend_component"
+title = "Member invite dialog"
+role = "frontend-dev"
+deps = ["POST /workspaces/{id}/members"]
+[tasks.params]
+component = "InviteMemberDialog"
+[tasks.dod]
+validation_cmd = "bun test src/workspaces/invite.test.ts"
+manual = "Entering email shows pending invite state"
+
+[[tasks]]
+template = "observability_hook"
+title = "Workspace onboarding metrics"
+role = "backend-dev"
+deps = ["POST /workspaces", "Workspace creation flow"]
+[tasks.params]
+metric = "workspace_onboarding_funnel"
+[tasks.dod]
+manual = "Check metrics emit for started, success, invite_sent"
+on_failure = "flag"

@@ -75,6 +75,9 @@ func (m *StateManager) Claim(id, assignee string) error {
 	if t.Status != StatusReady {
 		return fmt.Errorf("task %s not ready (status=%s)", id, t.Status)
 	}
+	if !m.depsDone(t) {
+		return fmt.Errorf("task %s blocked by deps", id)
+	}
 	if t.Assignee != "" {
 		return fmt.Errorf("task %s already claimed by %s", id, t.Assignee)
 	}
@@ -175,5 +178,18 @@ func (m *StateManager) SetStatus(id string, status Status) error {
 		return errors.New("unknown task")
 	}
 	t.Status = status
+	return nil
+}
+
+// Seed sets status and assignee atomically; used when hydrating from external state.
+func (m *StateManager) Seed(id string, status Status, assignee string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.tasks[id]
+	if !ok {
+		return errors.New("unknown task")
+	}
+	t.Status = status
+	t.Assignee = assignee
 	return nil
 }

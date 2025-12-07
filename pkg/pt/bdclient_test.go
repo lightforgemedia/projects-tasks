@@ -123,12 +123,26 @@ func TestDependencyAlreadyExistsIgnored(t *testing.T) {
 		t: t,
 		script: []scriptStep{
 			{expect: []string{"bd", "dep", "add", "a", "b", "--type", "blocks"}, out: "already depends", err: errors.New("already depends")},
+			{expect: []string{"bd", "dep", "add", "a", "b", "--type", "blocks"}, out: "sqlite3: constraint failed: UNIQUE constraint failed: dependencies.issue_id, dependencies.depends_on_id", err: errors.New("constraint failed")},
 		},
 	}
 	client := NewBDClient(runner)
 	ctx := context.Background()
 	if err := client.addDependency(ctx, "a", "b"); err != nil {
 		t.Fatalf("expected already depends to be ignored, got %v", err)
+	}
+	if err := client.addDependency(ctx, "a", "b"); err != nil {
+		t.Fatalf("expected constraint failure to be ignored, got %v", err)
+	}
+}
+
+func TestAddDependencySkipsSelf(t *testing.T) {
+	client := NewBDClient(&scriptedRunner{t: t})
+	if err := client.addDependency(context.Background(), "a", "a"); err != nil {
+		t.Fatalf("self dep should be skipped, got %v", err)
+	}
+	if err := client.addDependency(context.Background(), "a", ""); err != nil {
+		t.Fatalf("empty dep should be skipped, got %v", err)
 	}
 }
 
@@ -198,5 +212,13 @@ func TestGetTaskParsesMeta(t *testing.T) {
 	}
 	if gotMeta.Template != meta.Template || gotMeta.Role != meta.Role || gotMeta.DoD.Manual != meta.DoD.Manual {
 		t.Fatalf("metadata mismatch: %+v vs %+v", gotMeta, meta)
+	}
+}
+
+func TestCleanJSONStripsWarnings(t *testing.T) {
+	raw := []byte("WARNING\nstuff\n[{\"id\":\"proj-1\"}]")
+	var issues []Issue
+	if err := json.Unmarshal(cleanJSON(raw), &issues); err != nil || len(issues) != 1 {
+		t.Fatalf("expected to parse JSON after warnings, got err=%v len=%d", err, len(issues))
 	}
 }

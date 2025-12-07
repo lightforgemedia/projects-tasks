@@ -1,0 +1,41 @@
+title = "Project Hardening Sprint"
+owner = "tawawhite"
+
+[[tasks]]
+template = "refactor"
+title = "Fix CLI Flag Parsing for Context Init"
+role = "backend-dev"
+[tasks.dod]
+manual = "Verify 'pt context init --role=builder <id>' works"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Align Review Status with README"
+role = "architect"
+[tasks.dod]
+manual = "Decide on label vs status strategy and update README/Code"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Add CLI Integration Tests"
+role = "backend-dev"
+deps = ["Fix CLI Flag Parsing for Context Init"]
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "Verify end-to-end flow with script"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Update Documentation"
+role = "tech-writer"
+deps = ["Align Review Status with README"]
+[tasks.dod]
+manual = "Check README.md and AGENTS.md consistency"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement Circular Dependency Detection"
+role = "backend-dev"
+[tasks.dod]
+tests = ["go test ./pkg/pt/..."]
+manual = "Verify sync fails on cycle"

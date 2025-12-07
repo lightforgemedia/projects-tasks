@@ -55,6 +55,9 @@ func TestValidateDoDCommandFailure(t *testing.T) {
 	if res.Passed {
 		t.Fatalf("expected fail result")
 	}
+	if !strings.Contains(res.Output, "go test ./pkg") {
+		t.Errorf("output should contain failing command, got: %q", res.Output)
+	}
 }
 
 func TestValidateDoDManualRequired(t *testing.T) {

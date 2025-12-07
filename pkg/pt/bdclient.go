@@ -97,10 +97,26 @@ func (c *BDClient) Ready(ctx context.Context, role string, limit int) ([]Issue, 
 		return nil, fmt.Errorf("bd ready: %w (%s)", err, bytes.TrimSpace(out))
 	}
 	var issues []Issue
-	if err := json.Unmarshal(out, &issues); err != nil {
+	if err := json.Unmarshal(cleanJSON(out), &issues); err != nil {
 		return nil, fmt.Errorf("parse bd ready json: %w", err)
 	}
 	return issues, nil
+}
+
+// Dependencies lists blocking dependencies for an issue.
+func (c *BDClient) Dependencies(ctx context.Context, id string) ([]Dependency, error) {
+	if c == nil || c.Runner == nil {
+		return nil, errors.New("BDClient runner is nil")
+	}
+	out, err := c.Runner.Run(ctx, "bd", "dep", "list", id, "--json")
+	if err != nil {
+		return nil, fmt.Errorf("bd dep list: %w (%s)", err, bytes.TrimSpace(out))
+	}
+	var deps []Dependency
+	if err := json.Unmarshal(cleanJSON(out), &deps); err != nil {
+		return nil, fmt.Errorf("parse bd dep list json: %w", err)
+	}
+	return deps, nil
 }
 
 // UpdateIssue updates status/assignee; zero values are ignored.
@@ -144,7 +160,7 @@ func (c *BDClient) GetTask(ctx context.Context, id string) (Issue, TaskMeta, err
 		return Issue{}, TaskMeta{}, fmt.Errorf("bd show: %w (%s)", err, bytes.TrimSpace(out))
 	}
 	var issues []Issue
-	if err := json.Unmarshal(out, &issues); err != nil {
+	if err := json.Unmarshal(cleanJSON(out), &issues); err != nil {
 		return Issue{}, TaskMeta{}, fmt.Errorf("parse bd show json: %w", err)
 	}
 	if len(issues) == 0 {
@@ -162,10 +178,17 @@ type Issue struct {
 	ID          string   `json:"id"`
 	Title       string   `json:"title"`
 	Status      string   `json:"status"`
+	Assignee    string   `json:"assignee"`
 	Priority    int      `json:"priority"`
 	IssueType   string   `json:"issue_type"`
 	Description string   `json:"description"`
 	Labels      []string `json:"labels"`
+}
+
+// Dependency represents a blocking relationship.
+type Dependency struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 func (c *BDClient) ensureIssue(ctx context.Context, task Task) (string, error) {
@@ -208,7 +231,7 @@ func (c *BDClient) findIssueByTitle(ctx context.Context, title string) (string, 
 		return "", false, fmt.Errorf("bd list: %w (%s)", err, bytes.TrimSpace(out))
 	}
 	var issues []Issue
-	if err := json.Unmarshal(out, &issues); err != nil {
+	if err := json.Unmarshal(cleanJSON(out), &issues); err != nil {
 		return "", false, fmt.Errorf("parse bd list json: %w", err)
 	}
 	if len(issues) == 0 {
@@ -218,11 +241,14 @@ func (c *BDClient) findIssueByTitle(ctx context.Context, title string) (string, 
 }
 
 func (c *BDClient) addDependency(ctx context.Context, issueID, depID string) error {
+	if issueID == depID || depID == "" {
+		return nil
+	}
 	args := []string{"bd", "dep", "add", issueID, depID, "--type", "blocks"}
 	out, err := c.Runner.Run(ctx, args...)
 	if err != nil {
 		// If already exists, treat as success.
-		if bytes.Contains(out, []byte("already depends")) {
+		if bytes.Contains(out, []byte("already depends")) || bytes.Contains(out, []byte("UNIQUE constraint failed")) {
 			return nil
 		}
 		return fmt.Errorf("bd dep add: %w (%s)", err, bytes.TrimSpace(out))
@@ -271,6 +297,16 @@ func extractIssueID(output string) (string, error) {
 		return "", errors.New("no issue id found")
 	}
 	return strings.TrimSpace(matches[1]), nil
+}
+
+// cleanJSON trims any leading warning/banner text before JSON starts.
+func cleanJSON(out []byte) []byte {
+	for i, b := range out {
+		if b == '[' || b == '{' {
+			return out[i:]
+		}
+	}
+	return out
 }
 
 // ContextWithTimeout is a helper to create a context with a sensible default timeout.

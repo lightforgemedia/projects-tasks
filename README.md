@@ -113,24 +113,23 @@ List tasks that are unblocked (dependencies done) and available (status=open).
 pt ready --role=backend-dev
 # Output:
 # proj-12 [task] Implement POST /login
+# Flags: --role, --limit, --sort=priority|title, --verbose (shows assignee + blockers with dep IDs)
 ```
 
 ### 3. Claim & Execute
 Mark a task as `in_progress` and assign it to yourself.
 ```bash
-pt claim proj-12
-# Output: Claimed proj-12 as tawawhite
+pt claim proj-12           # uses $USER
+pt claim proj-12 --as bob  # override assignee
+# Output: Claimed proj-12 as <user>
 ```
 
 ### 4. Validate
-Run the tests and checks defined in the manifest. If successful, the task moves to `needs_review`.
+Run the tests and checks defined in the manifest. If successful, the task moves to `needs_review`. Use `--yes` to auto-confirm manual steps (the confirmed steps are echoed in the review comment).
 ```bash
-pt validate proj-12
-# Interactive:
-# Manual check required: Verify JWT is returned in header
-# Confirm? [y/N]: y
+pt validate proj-12 --yes
 # ... running validation_cmd ...
-# Task proj-12 marked needs_review
+# Task proj-12 marked needs_review (comment includes manual steps)
 ```
 
 ### 5. Review
