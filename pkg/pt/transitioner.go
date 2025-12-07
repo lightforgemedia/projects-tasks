@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Transitioner enforces StateManager transitions while persisting via BDClient.
+// Transitioner enforces StateManager transitions while persisting via the client backend.
 type Transitioner struct {
 	Client Client
 }
@@ -18,7 +18,7 @@ func (t Transitioner) ensureClient() (Client, error) {
 	return t.Client, nil
 }
 
-// Claim validates the transition and writes to bd.
+// Claim validates the transition and writes to the backend.
 func (t Transitioner) Claim(ctx context.Context, id, assignee string) error {
 	client, err := t.ensureClient()
 	if err != nil {

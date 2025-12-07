@@ -2,185 +2,90 @@ package pt
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"testing"
 )
 
-func issueWithStatus(id, status string, meta TaskMeta) string {
-	metaBytes, _ := json.Marshal(meta)
-	issue := Issue{
-		ID:          id,
-		Title:       "T",
-		Status:      status,
-		Description: fmt.Sprintf("desc\n<!-- pt-meta: %s -->", string(metaBytes)),
-	}
-	payload, _ := json.Marshal([]Issue{issue})
-	return string(payload)
+func newTestStore(t *testing.T) *StoreClient {
+	t.Helper()
+	return NewStoreClient(t.TempDir()+"/pt.db.json", "pt")
 }
 
-func TestTransitionerClaimBlocksInvalidState(t *testing.T) {
-	runner := &scriptedRunner{
-		t: t,
-		script: []scriptStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: issueWithStatus("proj-1", "needs_review", TaskMeta{})},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: "[]"},
+func seedSimpleManifest(t *testing.T, store *StoreClient) map[string]string {
+	t.Helper()
+	manifest := Manifest{
+		Tasks: []Task{
+			{Title: "A", Template: "backend_endpoint", Role: "dev", DoD: DefinitionOfDone{}},
+			{Title: "B", Template: "backend_endpoint", Role: "dev", Deps: []string{"A"}, DoD: DefinitionOfDone{}},
 		},
 	}
-	trans := Transitioner{Client: NewBDClient(runner)}
-	ctx := context.Background()
-	if err := trans.Claim(ctx, "proj-1", "alice"); err == nil {
-		t.Fatalf("expected error when claiming needs_review")
+	ids, err := store.Sync(context.Background(), manifest)
+	if err != nil {
+		t.Fatalf("sync err: %v", err)
 	}
-	if runner.current != len(runner.script) {
-		t.Fatalf("unexpected commands executed: %d", runner.current)
+	return ids
+}
+
+func TestTransitionerClaimBlockedByDepsStore(t *testing.T) {
+	store := newTestStore(t)
+	ids := seedSimpleManifest(t, store)
+	trans := Transitioner{Client: store}
+	if err := trans.Claim(context.Background(), ids["B"], "alice"); err == nil {
+		t.Fatalf("expected claim blocked by deps")
 	}
 }
 
-func TestTransitionerClaimHappyPath(t *testing.T) {
-	runner := &scriptedRunner{
-		t: t,
-		script: []scriptStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: issueWithStatus("proj-1", "open", TaskMeta{})},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: `[{"id":"dep-1","status":"closed"}]`},
-			{expect: []string{"bd", "update", "proj-1", "--status", "in_progress", "--assignee", "alice"}, out: ""},
-			{expect: []string{"bd", "update", "proj-1", "--add-label", "state:claimed"}, out: ""},
-		},
+func TestTransitionerClaimHappyPathStore(t *testing.T) {
+	store := newTestStore(t)
+	ids := seedSimpleManifest(t, store)
+	_ = store.UpdateIssue(context.Background(), ids["A"], "closed", "")
+	trans := Transitioner{Client: store}
+	if err := trans.Claim(context.Background(), ids["B"], "alice"); err != nil {
+		t.Fatalf("claim err: %v", err)
 	}
-	trans := Transitioner{Client: NewBDClient(runner)}
-	ctx := context.Background()
-	if err := trans.Claim(ctx, "proj-1", "alice"); err != nil {
-		t.Fatalf("claim failed: %v", err)
-	}
-	if runner.current != len(runner.script) {
-		t.Fatalf("not all commands executed")
+	iss, _, _ := store.GetTask(context.Background(), ids["B"])
+	if iss.Status != "in_progress" || iss.Assignee != "alice" {
+		t.Fatalf("unexpected claim state: %+v", iss)
 	}
 }
 
-func TestTransitionerClaimBlockedByDeps(t *testing.T) {
-	runner := &scriptedRunner{
-		t: t,
-		script: []scriptStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: issueWithStatus("proj-1", "open", TaskMeta{})},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: `[{"id":"dep-1","status":"open"}]`},
-		},
+func TestTransitionerSubmitForReviewStore(t *testing.T) {
+	store := newTestStore(t)
+	ids := seedSimpleManifest(t, store)
+	_ = store.UpdateIssue(context.Background(), ids["A"], "in_progress", "")
+	trans := Transitioner{Client: store}
+	if err := trans.SubmitForReview(context.Background(), ids["A"], "ok"); err != nil {
+		t.Fatalf("submit err: %v", err)
 	}
-	trans := Transitioner{Client: NewBDClient(runner)}
-	ctx := context.Background()
-	if err := trans.Claim(ctx, "proj-1", "alice"); err == nil {
-		t.Fatalf("expected blocked claim due to open dependency")
-	}
-	if runner.current != len(runner.script) {
-		t.Fatalf("unexpected commands executed: %d", runner.current)
+	iss, _, _ := store.GetTask(context.Background(), ids["A"])
+	if iss.Status != "needs_review" {
+		t.Fatalf("expected needs_review, got %s", iss.Status)
 	}
 }
 
-func TestTransitionerClaimIgnoresBadDepJSON(t *testing.T) {
-	runner := &scriptedRunner{
-		t: t,
-		script: []scriptStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: issueWithStatus("proj-1", "open", TaskMeta{})},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: "Malformed dep response"},
-			{expect: []string{"bd", "update", "proj-1", "--status", "in_progress", "--assignee", "alice"}, out: ""},
-			{expect: []string{"bd", "update", "proj-1", "--add-label", "state:claimed"}, out: ""},
-		},
+func TestTransitionerApproveStore(t *testing.T) {
+	store := newTestStore(t)
+	ids := seedSimpleManifest(t, store)
+	_ = store.UpdateIssue(context.Background(), ids["A"], "needs_review", "")
+	trans := Transitioner{Client: store}
+	if err := trans.Approve(context.Background(), ids["A"]); err != nil {
+		t.Fatalf("approve err: %v", err)
 	}
-	trans := Transitioner{Client: NewBDClient(runner)}
-	ctx := context.Background()
-	if err := trans.Claim(ctx, "proj-1", "alice"); err != nil {
-		t.Fatalf("claim should ignore bad dep json: %v", err)
-	}
-	if runner.current != len(runner.script) {
-		t.Fatalf("unexpected commands executed: %d", runner.current)
+	iss, _, _ := store.GetTask(context.Background(), ids["A"])
+	if iss.Status != "closed" {
+		t.Fatalf("expected closed, got %s", iss.Status)
 	}
 }
 
-func issueWithStatusAndAssignee(id, status, assignee string, meta TaskMeta) string {
-	metaBytes, _ := json.Marshal(meta)
-	issue := Issue{
-		ID:          id,
-		Title:       "T",
-		Status:      status,
-		Assignee:    assignee,
-		Description: fmt.Sprintf("desc\n<!-- pt-meta: %s -->", string(metaBytes)),
+func TestTransitionerRejectStore(t *testing.T) {
+	store := newTestStore(t)
+	ids := seedSimpleManifest(t, store)
+	_ = store.UpdateIssue(context.Background(), ids["A"], "needs_review", "")
+	trans := Transitioner{Client: store}
+	if err := trans.Reject(context.Background(), ids["A"], "fix"); err != nil {
+		t.Fatalf("reject err: %v", err)
 	}
-	payload, _ := json.Marshal([]Issue{issue})
-	return string(payload)
-}
-
-func TestTransitionerApproveHappyPath(t *testing.T) {
-	runner := &scriptedRunner{
-		t: t,
-		script: []scriptStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: issueWithStatus("proj-1", "needs_review", TaskMeta{})},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: "[]"},
-			{expect: []string{"bd", "update", "proj-1", "--status", "closed"}, out: ""},
-			{expect: []string{"bd", "update", "proj-1", "--remove-label", "state:needs_review", "--remove-label", "state:claimed"}, out: ""},
-			{expect: []string{"bd", "comment", "proj-1", "Approved and closed"}, out: ""},
-		},
-	}
-	trans := Transitioner{Client: NewBDClient(runner)}
-	ctx := context.Background()
-	if err := trans.Approve(ctx, "proj-1"); err != nil {
-		t.Fatalf("approve failed: %v", err)
-	}
-	if runner.current != len(runner.script) {
-		t.Fatalf("not all commands executed")
-	}
-}
-
-func TestTransitionerRejectHappyPath(t *testing.T) {
-	runner := &scriptedRunner{
-		t: t,
-		script: []scriptStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: issueWithStatus("proj-1", "needs_review", TaskMeta{})},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: "[]"},
-			{expect: []string{"bd", "update", "proj-1", "--status", "in_progress"}, out: ""},
-			{expect: []string{"bd", "update", "proj-1", "--remove-label", "state:needs_review"}, out: ""},
-			{expect: []string{"bd", "comment", "proj-1", "Rejected: fix it"}, out: ""},
-		},
-	}
-	trans := Transitioner{Client: NewBDClient(runner)}
-	ctx := context.Background()
-	if err := trans.Reject(ctx, "proj-1", "fix it"); err != nil {
-		t.Fatalf("reject failed: %v", err)
-	}
-	if runner.current != len(runner.script) {
-		t.Fatalf("not all commands executed")
-	}
-}
-
-func TestTransitionerReleaseHappyPath(t *testing.T) {
-	runner := &scriptedRunner{
-		t: t,
-		script: []scriptStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: issueWithStatusAndAssignee("proj-1", "in_progress", "alice", TaskMeta{})},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: "[]"},
-			{expect: []string{"bd", "update", "proj-1", "--status", "open"}, out: ""},
-			{expect: []string{"bd", "update", "proj-1", "--remove-label", "state:claimed", "--remove-label", "state:needs_review"}, out: ""},
-		},
-	}
-	trans := Transitioner{Client: NewBDClient(runner)}
-	ctx := context.Background()
-	if err := trans.Release(ctx, "proj-1", "alice"); err != nil {
-		t.Fatalf("release failed: %v", err)
-	}
-	if runner.current != len(runner.script) {
-		t.Fatalf("not all commands executed")
-	}
-}
-
-func TestTransitionerUnknownStatus(t *testing.T) {
-	runner := &scriptedRunner{
-		t: t,
-		script: []scriptStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: issueWithStatus("proj-1", "weird_status", TaskMeta{})},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: "[]"},
-		},
-	}
-	trans := Transitioner{Client: NewBDClient(runner)}
-	ctx := context.Background()
-	if err := trans.Claim(ctx, "proj-1", "alice"); err == nil {
-		t.Fatalf("expected error for unknown status")
+	iss, _, _ := store.GetTask(context.Background(), ids["A"])
+	if iss.Status != "in_progress" {
+		t.Fatalf("expected in_progress, got %s", iss.Status)
 	}
 }

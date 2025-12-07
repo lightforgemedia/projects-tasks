@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -46,76 +45,50 @@ func TestParseContextInitArgs_AllowsFlagsAfterID(t *testing.T) {
 }
 
 func TestCmdValidateMarksNeedsReview(t *testing.T) {
-	meta := pt.TaskMeta{
-		Role: "builder",
-		DoD:  pt.DefinitionOfDone{},
-	}
-	metaBytes, _ := json.Marshal(meta)
-	issue := pt.Issue{
-		ID:          "proj-1",
-		Title:       "Test Task",
-		Status:      "in_progress",
-		Description: fmt.Sprintf("desc\n<!-- pt-meta: %s -->", string(metaBytes)),
-	}
-	payload, _ := json.Marshal([]pt.Issue{issue})
-
-	runner := &testRunner{
-		t: t,
-		steps: []testRunnerStep{
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: string(payload)},
-			{expect: []string{"bd", "show", "proj-1", "--json"}, out: string(payload)},
-			{expect: []string{"bd", "dep", "list", "proj-1", "--json"}, out: "[]"},
-			{expect: []string{"bd", "update", "proj-1", "--status", "needs_review"}, out: ""},
-			{expect: []string{"bd", "update", "proj-1", "--add-label", "state:needs_review"}, out: ""},
-			{expect: []string{"bd", "comment", "proj-1", "Validation passed; ready for review"}, out: ""},
+	path, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Test Task", Template: "backend_endpoint", Role: "builder", DoD: pt.DefinitionOfDone{}},
 		},
 	}
-	bdRunner = runner
-	defer func() { bdRunner = nil }()
-
-	if err := cmdValidate([]string{"proj-1"}); err != nil {
-		t.Fatalf("cmdValidate failed: %v", err)
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+	// Move to in_progress before validate
+	if err := store.UpdateIssue(t.Context(), "pt-1", "in_progress", ""); err != nil {
+		t.Fatalf("update err: %v", err)
 	}
 
-	if runner.cursor != len(runner.steps) {
-		t.Fatalf("not all commands consumed, got %d want %d", runner.cursor, len(runner.steps))
+	if err := cmdValidate([]string{"pt-1"}); err != nil {
+		t.Fatalf("cmdValidate failed: %v", err)
+	}
+	store2 := pt.NewStoreClient(path, "pt")
+	issue, _, _ := store2.GetTask(t.Context(), "pt-1")
+	if issue.Status != "needs_review" {
+		t.Fatalf("expected needs_review, got %s", issue.Status)
 	}
 }
 
 func TestCmdValidateManualYesSkipsPrompt(t *testing.T) {
-	// Manual steps present; --yes should auto-confirm and include steps in comment.
-	meta := pt.TaskMeta{
-		Role: "builder",
-		DoD:  pt.DefinitionOfDone{Manual: "Step one\nStep two"},
-	}
-	metaBytes, _ := json.Marshal(meta)
-	issue := pt.Issue{
-		ID:          "proj-2",
-		Title:       "Test Task",
-		Status:      "in_progress",
-		Description: fmt.Sprintf("desc\n<!-- pt-meta: %s -->", string(metaBytes)),
-	}
-	payload, _ := json.Marshal([]pt.Issue{issue})
-
-	runner := &testRunner{
-		t: t,
-		steps: []testRunnerStep{
-			{expect: []string{"bd", "show", "proj-2", "--json"}, out: string(payload)},
-			{expect: []string{"bd", "show", "proj-2", "--json"}, out: string(payload)},
-			{expect: []string{"bd", "dep", "list", "proj-2", "--json"}, out: "[]"},
-			{expect: []string{"bd", "update", "proj-2", "--status", "needs_review"}, out: ""},
-			{expect: []string{"bd", "update", "proj-2", "--add-label", "state:needs_review"}, out: ""},
-			{expect: []string{"bd", "comment", "proj-2", "Validation passed; manual steps confirmed: Step one; Step two"}, out: ""},
+	path, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Test Task 2", Template: "backend_endpoint", Role: "builder", DoD: pt.DefinitionOfDone{Manual: "Step one\nStep two"}},
 		},
 	}
-	bdRunner = runner
-	defer func() { bdRunner = nil }()
-
-	if err := cmdValidate([]string{"--yes", "proj-2"}); err != nil {
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+	if err := store.UpdateIssue(t.Context(), "pt-1", "in_progress", ""); err != nil {
+		t.Fatalf("update err: %v", err)
+	}
+	if err := cmdValidate([]string{"--yes", "pt-1"}); err != nil {
 		t.Fatalf("cmdValidate failed: %v", err)
 	}
-	if runner.cursor != len(runner.steps) {
-		t.Fatalf("not all commands consumed, got %d want %d", runner.cursor, len(runner.steps))
+	store2 := pt.NewStoreClient(path, "pt")
+	issue, _, _ := store2.GetTask(t.Context(), "pt-1")
+	if issue.Status != "needs_review" {
+		t.Fatalf("expected needs_review, got %s", issue.Status)
 	}
 }
 
@@ -158,7 +131,7 @@ func TestCmdContextValidateDefaultsContractFromRole(t *testing.T) {
   "goal":{"prompt":"write a detailed useful implementation that exceeds twenty chars"},
   "scope":{"files":["main.go"]},
   "success":{"criteria":["go test ./..."]},
-  "provenance":{"inputs":[{"field":"goal.prompt","source":"bd:123"}],"issued_at":"` + now + `"}
+  "provenance":{"inputs":[{"field":"goal.prompt","source":"pt:123"}],"issued_at":"` + now + `"}
 }`
 	if err := os.WriteFile(payloadPath, []byte(payload), 0644); err != nil {
 		t.Fatal(err)

@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-// Client abstracts the backend (bd CLI or local store).
+// Client abstracts the backend (store).
 type Client interface {
 	Sync(ctx context.Context, manifest Manifest) (map[string]string, error)
 	Ready(ctx context.Context, role string, limit int) ([]Issue, error)
@@ -18,16 +18,9 @@ type Client interface {
 }
 
 // NewClientFromEnv chooses backend based on PT_BACKEND env var.
-// Supported: "" or "bd" (default BDClient), "store" (local store).
-func NewClientFromEnv(runner CommandRunner) Client {
-	switch backend := getEnv("PT_BACKEND"); backend {
-	case "", "store":
-		return NewStoreClient(getEnv("PT_DB"), getEnv("PT_PREFIX"))
-	case "bd":
-		return NewBDClient(runner)
-	default:
-		return NewStoreClient(getEnv("PT_DB"), getEnv("PT_PREFIX"))
-	}
+// Supported: "", "store" (default, local store).
+func NewClientFromEnv() Client {
+	return NewStoreClient(getEnv("PT_DB"), getEnv("PT_PREFIX"))
 }
 
 func getEnv(key string) string {

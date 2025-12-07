@@ -15,11 +15,8 @@ import (
 	"projects-tasks/pkg/pt"
 )
 
-// bdRunner is injected in tests for the bd backend.
-var bdRunner pt.CommandRunner
-
 func newClient() pt.Client {
-	return pt.NewClientFromEnv(bdRunner)
+	return pt.NewClientFromEnv()
 }
 
 func userOrUnknown() string {
@@ -132,7 +129,7 @@ func run(args []string) error {
 func usage() {
 	fmt.Print(`pt CLI
 Commands:
-  sync <manifest>                   Apply manifest to bd (creates/updates issues and deps)
+  sync <manifest>                   Apply manifest (creates/updates issues and deps)
   ready [--role=ROLE] [--limit=N]   List ready work (status=open only)
   claim <id>                        Mark issue in_progress and assign current user
   release <id>                      Return issue to open (unassign)
@@ -463,7 +460,7 @@ func cmdContextInit(args []string) error {
 		},
 		"provenance": map[string]any{
 			"inputs": []map[string]string{
-				{"field": "goal.prompt", "source": fmt.Sprintf("bd:%s", id)},
+				{"field": "goal.prompt", "source": fmt.Sprintf("pt:%s", id)},
 			},
 			"issued_at": time.Now().UTC().Format(time.RFC3339),
 		},

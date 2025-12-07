@@ -1,12 +1,12 @@
-# projects-tasks — Project & Task Management on Beads (`bd`)
+# projects-tasks — Project & Task Management (store-backed)
 
-This repository ships a **Go SDK** and **CLI** that layer on top of the Beads CLI (`bd`) to provide structured project/phase planning, templated tasks, and ready-to-work queues for human or agent contributors.
+This repository ships a **Go SDK** and **CLI** with a built-in store to provide structured project/phase planning, templated tasks, and ready-to-work queues for human or agent contributors.
 
 **Goal:** Keep the Beads graph as the source of truth while adding higher-level ergonomics: phase manifests, task templates, validation rules, and state machine enforcement.
 
 ## System Shape
 
-- **Data Backbone:** Beads issue graph stored/queried via `bd`. We read/write issues, dependencies, and statuses through the Beads API/CLI interface.
+- **Data Backbone:** Built-in JSON store (or pluggable backend) for issues/deps/status/labels.
 - **Go SDK (`pkg/pt`):** Reusable library exposing plan/sync/ready/validate primitives. Any service or agent can embed this logic.
 - **CLI (`cmd/pt`):** A thin wrapper around the SDK. Guides users through schema fields, enforces state machines (`planned` → `ready` → `in_progress` → `needs_review` → `done`), and handles user interaction.
 - **Manifests:** TOML/JSON files for "Phase Bundles". These act as "Infrastructure as Code" for project management.
@@ -18,7 +18,7 @@ This repository ships a **Go SDK** and **CLI** that layer on top of the Beads CL
 ### SDK (`pkg/pt`)
 Stateless logic package.
 - `PlanPhase(manifest)`: Validates and parses a manifest into a graph structure.
-- `Sync(manifest)`: Idempotently applies the plan to the `bd` graph (creates/updates issues, sets deps).
+- `Sync(manifest)`: Idempotently applies the plan to the store (creates/updates issues, sets deps).
 - `Ready(filter)`: Returns tasks where `status != done` AND `blocking_deps == done`.
 - `Validate(taskID)`: Runs defined hooks (tests, lint) and returns pass/fail.
 - `Claim(taskID, owner)`, `Release(taskID)`, `Reject(taskID, reason)`.
@@ -32,24 +32,11 @@ Stateless logic package.
 
 ## Architecture
 
-```
-   Manifest (TOML)                Beads Graph (bd)
-         |                              ^
-         | pt sync                      |
-         v                              |
-   +------------------+    bd create/update|issues/deps
-   | pt CLI / SDK     |--------------------+
-   | (Stateless logic)|    bd query ready  |
-   +------------------+------------------->|
-         |                              v
-         | pt ready / validate / claim  Ready Queue
-         v                              |
-   [Context Builder] <--(contract)-- [Validator]
-         |
-         v
-   Human/Agent Worker
-   (claim -> work -> validate -> review <-> reject/done)
-```
+Store-backed flow:
+- Manifest (TOML) → `pt sync` → issues/labels/deps persisted.
+- `pt ready` filters unblocked tasks (deps closed, status open).
+- `pt claim/validate/approve/reject` drive the state machine.
+- Context builder/validator commands keep agent payloads in spec.
 
 ## Workflow & State Machine
 
@@ -194,7 +181,7 @@ The SDK supports various templates to standardize work:
 | **Sync Malformed Manifest** | `pt sync bad.toml` | Fails gracefully; no partial issues created. |
 | **Sync Idempotency** | Run `pt sync` twice | No duplicate issues; updates fields if changed. |
 | **Dependency Gating** | A->B. Mark A `done` | B appears in `pt ready`. B absent while A is `in_progress`. |
-| **Validation Rejection** | `pt reject <id> "Fix imports"` | Task status `needs_review` → `in_progress`; comment added to `bd`. |
+| **Validation Rejection** | `pt reject <id> "Fix imports"` | Task status `needs_review` → `in_progress`; comment recorded. |
 | **Validation Failure** | Force test fail; `pt validate` | Task stays `in_progress`; error output surfaced. |
 | **Concurrent Claim** | Two agents `pt claim <id>` | First succeeds; second gets "Already claimed" error. |
 | **Manual Gate** | `pt validate` on task w/ manual check | CLI prompts "Did you check X?"; blocks until confirmed. |

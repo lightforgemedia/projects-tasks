@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -56,16 +55,6 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 		return ValidationResult{Passed: false, Output: strings.Join(outputs, "\n")}, errors.New("manual check not confirmed")
 	}
 	return ValidationResult{Passed: true, Output: strings.Join(outputs, "\n")}, nil
-}
-
-// RunCommand is a convenience wrapper for ExecRunner; used by CommandRunner interface.
-// It mirrors ExecRunner.Run but kept for clarity.
-func RunCommand(ctx context.Context, args ...string) ([]byte, error) {
-	if len(args) == 0 {
-		return nil, errors.New("no command provided")
-	}
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec
-	return cmd.CombinedOutput()
 }
 
 // WithTimeout returns a context with default timeout if none provided.
