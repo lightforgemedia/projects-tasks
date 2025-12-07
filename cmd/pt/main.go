@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,6 +148,16 @@ func run(args []string) error {
 		return cmdContext(cmdArgs)
 	case "graph":
 		return cmdGraph(cmdArgs)
+	case "list":
+		return cmdList(cmdArgs)
+	case "show":
+		return cmdShow(cmdArgs)
+	case "add":
+		return cmdAdd(cmdArgs)
+	case "comment":
+		return cmdComment(cmdArgs)
+	case "snapshot":
+		return cmdSnapshot(cmdArgs)
 	case "hooks":
 		return cmdHooksPrint()
 	case "-h", "--help", "help":
@@ -164,11 +175,16 @@ func usage() {
 Commands (SDLC flow):
   sync <manifest>                    Apply manifest (create/update tasks, deps)
   ready [--role=ROLE] [--limit=N]    List unblocked work (status=open)
+  list  [--status=...]               List tasks by status (open|in_progress|needs_review|closed)
+  show  <id> [--json]                Show task details (DoD, deps, comments)
   claim <id> [--as=USER]             Mark in_progress and assign
   release <id>                       Return to open and clear assignee
   validate <id> [--yes]              Run DoD hooks; on success -> needs_review
   approve <id>                       Mark done
   reject <id> --reason="text"        Send back to in_progress with a comment
+  add "Title" [flags]                Create ad-hoc task (role/template required)
+  comment <id> "text"                Append a comment to a task
+  snapshot [--out=...]               Copy the store to a timestamped file
   context init <id>|validate <file>  Manage agent context contracts
   graph <manifest>                   Visualize manifest dependencies (cycles shown)
   hooks                              Print merged hook configuration (global + local)
@@ -302,6 +318,127 @@ func cmdReady(args []string) error {
 			line = fmt.Sprintf("%s [blocked %s]", line, indicator)
 		}
 		fmt.Println(line)
+	}
+	return nil
+}
+
+func cmdList(args []string) error {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	status := fs.String("status", "open", "comma-separated statuses (open,in_progress,needs_review,closed). Empty for all.")
+	role := fs.String("role", "", "filter by role label")
+	limit := fs.Int("limit", 50, "max issues")
+	sortKey := fs.String("sort", "priority", "sort by priority|title")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt list [--status=open,in_progress] [--role=ROLE] [--limit=N] [--json]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	var statuses []string
+	if strings.TrimSpace(*status) != "" {
+		for _, s := range strings.Split(*status, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				statuses = append(statuses, s)
+			}
+		}
+	}
+	client := newClient()
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	issues, err := client.List(ctx, statuses, *role, *limit)
+	if err != nil {
+		return fmt.Errorf("list failed: %w", err)
+	}
+	pt.SortIssues(issues, *sortKey)
+	if *jsonOut {
+		return printJSON(issues)
+	}
+	for _, iss := range issues {
+		line := fmt.Sprintf("%s [%s] %s status=%s", iss.ID, iss.IssueType, iss.Title, iss.Status)
+		if strings.TrimSpace(iss.Assignee) == "" {
+			line = fmt.Sprintf("%s [unassigned]", line)
+		} else {
+			line = fmt.Sprintf("%s @%s", line, iss.Assignee)
+		}
+		if strings.TrimSpace(iss.NextHint) != "" {
+			line = fmt.Sprintf("%s next:%s", line, iss.NextHint)
+		}
+		fmt.Println(line)
+	}
+	return nil
+}
+
+func cmdShow(args []string) error {
+	fs := flag.NewFlagSet("show", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt show <id> [--json]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("missing id argument")
+	}
+	id := fs.Arg(0)
+	client := newClient()
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	iss, meta, err := client.GetTask(ctx, id)
+	if err != nil {
+		return err
+	}
+	deps, _ := client.Dependencies(ctx, id)
+	comments, _ := client.Comments(ctx, id)
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"id":        iss.ID,
+			"title":     iss.Title,
+			"status":    iss.Status,
+			"assignee":  iss.Assignee,
+			"labels":    iss.Labels,
+			"next_hint": iss.NextHint,
+			"meta":      meta,
+			"deps":      deps,
+			"comments":  comments,
+			"description": iss.Description,
+		})
+	}
+	fmt.Printf("%s [%s]\n", iss.ID, iss.Title)
+	fmt.Printf("Status: %s\n", iss.Status)
+	if iss.Assignee != "" {
+		fmt.Printf("Assignee: %s\n", iss.Assignee)
+	} else {
+		fmt.Println("Assignee: (unassigned)")
+	}
+	if iss.NextHint != "" {
+		fmt.Printf("Next: %s\n", iss.NextHint)
+	}
+	fmt.Printf("Role: %s  Template: %s\n", meta.Role, meta.Template)
+	if len(iss.Labels) > 0 {
+		fmt.Printf("Labels: %s\n", strings.Join(iss.Labels, ","))
+	}
+	if len(deps) > 0 {
+		var parts []string
+		for _, d := range deps {
+			parts = append(parts, fmt.Sprintf("%s(%s)", d.ID, d.Status))
+		}
+		fmt.Printf("Deps: %s\n", strings.Join(parts, ", "))
+	}
+	fmt.Println("DoD:")
+	if len(meta.DoD.Tests) > 0 {
+		fmt.Printf("  tests: %s\n", strings.Join(meta.DoD.Tests, ", "))
+	}
+	if meta.DoD.ValidationCmd != "" {
+		fmt.Printf("  validation_cmd: %s\n", meta.DoD.ValidationCmd)
+	}
+	if meta.DoD.Manual != "" {
+		fmt.Printf("  manual: %s\n", meta.DoD.Manual)
+	}
+	if len(comments) > 0 {
+		fmt.Println("Comments:")
+		for _, c := range comments {
+			fmt.Printf("  - %s\n", c)
+		}
 	}
 	return nil
 }
@@ -633,6 +770,162 @@ func cmdReject(args []string) error {
 	}
 	fmt.Printf("Rejected %s\n", id)
 	return nil
+}
+
+func cmdAdd(args []string) error {
+	fs := flag.NewFlagSet("add", flag.ContinueOnError)
+	role := fs.String("role", "", "role label (required)")
+	template := fs.String("template", "", "task template (required)")
+	manual := fs.String("manual", "", "manual DoD text")
+	tests := fs.String("tests", "", "comma-separated test commands")
+	validation := fs.String("validation-cmd", "", "validation command")
+	deps := fs.String("deps", "", "comma-separated dependency IDs")
+	nextHint := fs.String("next-hint", "", "suggested next task")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt add \"Title\" --role=... --template=... [--manual=...] [--tests=...] [--validation-cmd=...] [--deps=...] [--next-hint=...]") }
+	var title string
+	var flagArgs []string
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") && title == "" {
+			title = a
+			continue
+		}
+		flagArgs = append(flagArgs, a)
+	}
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
+	if title == "" {
+		if fs.NArg() > 0 {
+			title = fs.Arg(0)
+		} else {
+			fs.Usage()
+			return errors.New("missing title argument")
+		}
+	}
+	if strings.TrimSpace(*role) == "" || strings.TrimSpace(*template) == "" {
+		return errors.New("role and template are required")
+	}
+	var depList []string
+	if strings.TrimSpace(*deps) != "" {
+		for _, d := range strings.Split(*deps, ",") {
+			d = strings.TrimSpace(d)
+			if d != "" {
+				depList = append(depList, d)
+			}
+		}
+	}
+	var testList []string
+	if strings.TrimSpace(*tests) != "" {
+		for _, t := range strings.Split(*tests, ",") {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				testList = append(testList, t)
+			}
+		}
+	}
+	dod := pt.DefinitionOfDone{
+		Tests:         testList,
+		ValidationCmd: *validation,
+		Manual:        *manual,
+	}
+	if len(dod.Tests) == 0 && strings.TrimSpace(dod.ValidationCmd) == "" && strings.TrimSpace(dod.Manual) == "" {
+		return errors.New("definition of done requires at least one of: tests, validation_cmd, manual")
+	}
+	task := pt.Task{
+		Title:    title,
+		Template: *template,
+		Role:     *role,
+		Deps:     depList,
+		NextHint: *nextHint,
+		DoD:      dod,
+	}
+	client := newClient()
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	id, err := client.AddTask(ctx, task)
+	if err != nil {
+		return fmt.Errorf("add task failed: %w", err)
+	}
+	if *jsonOut {
+		return printJSON(map[string]string{"status": "ok", "id": id})
+	}
+	fmt.Printf("Created %s\n", id)
+	return nil
+}
+
+func cmdComment(args []string) error {
+	fs := flag.NewFlagSet("comment", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt comment <id> \"text\"") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() < 2 {
+		fs.Usage()
+		return errors.New("requires id and comment text")
+	}
+	id := fs.Arg(0)
+	body := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
+	if body == "" {
+		return errors.New("comment text required")
+	}
+	client := newClient()
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := client.AddComment(ctx, id, body); err != nil {
+		return fmt.Errorf("comment failed: %w", err)
+	}
+	if *jsonOut {
+		return printJSON(map[string]string{"status": "ok", "id": id})
+	}
+	fmt.Printf("Comment added to %s\n", id)
+	return nil
+}
+
+func cmdSnapshot(args []string) error {
+	fs := flag.NewFlagSet("snapshot", flag.ContinueOnError)
+	out := fs.String("out", "", "output file path (optional)")
+	fs.Usage = func() { fmt.Println("Usage: pt snapshot [--out=path]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	dbPath := os.Getenv("PT_DB")
+	if strings.TrimSpace(dbPath) == "" {
+		dbPath = ".pt.db.json"
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return fmt.Errorf("store not found at %s", dbPath)
+	}
+	target := *out
+	if strings.TrimSpace(target) == "" {
+		target = fmt.Sprintf("%s.snap.%s.json", dbPath, time.Now().Format("20060102-150405"))
+	}
+	if err := copyFile(dbPath, target); err != nil {
+		return fmt.Errorf("snapshot failed: %w", err)
+	}
+	fmt.Printf("Snapshot written to %s\n", target)
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil && !os.IsExist(err) {
+		return err
+	}
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
 
 func cmdContext(args []string) error {

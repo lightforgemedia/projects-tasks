@@ -9,10 +9,13 @@ import (
 type Client interface {
 	Sync(ctx context.Context, manifest Manifest) (map[string]string, error)
 	Ready(ctx context.Context, role string, limit int) ([]Issue, error)
+	List(ctx context.Context, statuses []string, role string, limit int) ([]Issue, error)
 	UpdateIssue(ctx context.Context, id, status, assignee string) error
 	AddLabels(ctx context.Context, id string, labels ...string) error
 	RemoveLabels(ctx context.Context, id string, labels ...string) error
 	AddComment(ctx context.Context, id, body string) error
+	Comments(ctx context.Context, id string) ([]string, error)
+	AddTask(ctx context.Context, task Task) (string, error)
 	GetTask(ctx context.Context, id string) (Issue, TaskMeta, error)
 	Dependencies(ctx context.Context, id string) ([]Dependency, error)
 }

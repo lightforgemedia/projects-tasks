@@ -100,6 +100,35 @@ func (c *StoreClient) Ready(ctx context.Context, role string, limit int) ([]Issu
 	return out, nil
 }
 
+// List returns issues matching statuses (empty means all). Role filters by role label.
+func (c *StoreClient) List(ctx context.Context, statuses []string, role string, limit int) ([]Issue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	want := make(map[string]struct{})
+	for _, s := range statuses {
+		want[strings.ToLower(strings.TrimSpace(s))] = struct{}{}
+	}
+	var out []Issue
+	for _, iss := range c.data.Issues {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if role != "" && !c.hasLabelLocked(iss.ID, fmt.Sprintf("role:%s", role)) {
+			continue
+		}
+		if len(want) > 0 {
+			if _, ok := want[strings.ToLower(iss.Status)]; !ok {
+				continue
+			}
+		}
+		out = append(out, iss)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 func (c *StoreClient) UpdateIssue(ctx context.Context, id, status, assignee string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -128,6 +157,40 @@ func (c *StoreClient) AddComment(ctx context.Context, id, body string) error {
 	}
 	c.data.Comments[id] = append(c.data.Comments[id], body)
 	return c.saveLocked()
+}
+
+// Comments returns comments for an issue.
+func (c *StoreClient) Comments(ctx context.Context, id string) ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	comments := c.data.Comments[id]
+	return append([]string{}, comments...), nil
+}
+
+// AddTask creates a single task ad-hoc.
+func (c *StoreClient) AddTask(ctx context.Context, task Task) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := validateTask(task); err != nil {
+		return "", err
+	}
+	// Validate deps refer to existing issue IDs
+	for _, dep := range task.Deps {
+		if _, ok := c.data.Issues[dep]; !ok {
+			return "", fmt.Errorf("unknown dependency %q", dep)
+		}
+	}
+	id, err := c.ensureIssueLocked(task)
+	if err != nil {
+		return "", err
+	}
+	for _, dep := range task.Deps {
+		c.addDepLocked(id, dep)
+	}
+	if err := c.saveLocked(); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (c *StoreClient) GetTask(ctx context.Context, id string) (Issue, TaskMeta, error) {

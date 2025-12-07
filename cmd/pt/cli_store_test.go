@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"projects-tasks/pkg/pt"
@@ -67,5 +68,34 @@ func TestCmdValidateStoresComment(t *testing.T) {
 	store = pt.NewStoreClient(path, "pt")
 	if len(store.CommentsFor("pt-1")) == 0 {
 		t.Fatalf("expected comment stored")
+	}
+}
+
+func TestCmdAddCommentListSnapshot(t *testing.T) {
+	path, store := setupStoreEnv(t)
+	if err := cmdAdd([]string{"New Task", "--role", "dev", "--template", "backend_endpoint", "--manual", "check"}); err != nil {
+		t.Fatalf("add err: %v", err)
+	}
+	store = pt.NewStoreClient(path, "pt")
+	iss, _, err := store.GetTask(t.Context(), "pt-1")
+	if err != nil || iss.Title != "New Task" {
+		t.Fatalf("task not created: %+v err=%v", iss, err)
+	}
+	if err := cmdComment([]string{"pt-1", "note"}); err != nil {
+		t.Fatalf("comment err: %v", err)
+	}
+	store = pt.NewStoreClient(path, "pt")
+	if len(store.CommentsFor("pt-1")) == 0 {
+		t.Fatalf("expected comment stored")
+	}
+	if err := cmdList([]string{"--status=open"}); err != nil {
+		t.Fatalf("list err: %v", err)
+	}
+	outPath := filepath.Join(t.TempDir(), "snap.json")
+	if err := cmdSnapshot([]string{"--out", outPath}); err != nil {
+		t.Fatalf("snapshot err: %v", err)
+	}
+	if _, err := os.Stat(outPath); err != nil {
+		t.Fatalf("snapshot not written: %v", err)
 	}
 }

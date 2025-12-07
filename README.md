@@ -94,6 +94,13 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 6) If stuck, `pt release <id>` — returns to open.
 7) Add `--json` to commands to get machine-readable outputs (includes hook results).
 
+### Inspect & Manage
+- `pt list --status=in_progress,needs_review` — see WIP/review queues.
+- `pt show <id> [--json]` — see title/status/DoD/comments.
+- `pt add "Title" --role=... --template=... [--manual|--tests|--validation-cmd]` — ad-hoc task.
+- `pt comment <id> "text"` — append notes.
+- `pt snapshot` — copy `.pt.db.json` to a timestamped backup.
+
 ## Multi-Agent & No-Context Onboarding
 - Attribution: always `pt claim <id> --as=<identity>` so ownership is explicit; `pt release <id>` when you stop to unblock others.
 - Collision avoidance: use `pt ready --verbose` to see blockers/assignees; do not bypass blocked tasks.

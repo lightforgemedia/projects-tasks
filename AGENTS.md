@@ -15,9 +15,11 @@
 Agents interacting with this repository or using the `pt` tool should follow this loop:
 
 1.  **Discovery**: `pt ready --role=<role> --verbose` to find unblocked work and see blockers/assignee. Use `--sort` for ordering.
+    * Reviewers: `pt list --status=needs_review --role=<role>` to find items awaiting review.
 2.  **Claim**: `pt claim <id> [--as=you]` to lock and assign (status → `in_progress`).
 3.  **Execution**:
     *   Read task/context via `pt context init <id>` or the issue text.
+    *   Use `pt show <id>` to view DoD/comments; `pt comment <id> "note"` to log progress or blockers.
     *   Implement changes.
     *   If DoD includes `manual` steps, only use `pt validate --yes <id>` after performing them; confirmations are recorded in the review comment.
 4.  **Verification**: `pt validate <id>` (or `--yes` to auto-confirm manual steps).
@@ -33,6 +35,7 @@ Agents interacting with this repository or using the `pt` tool should follow thi
 - No-context starts: run `pt context init <id>` to bootstrap requirements; read DoD before coding.
 - Staleness: if paused or stuck, `pt release <id>` and leave a brief comment so others can continue.
 - Next hints: manifests can include `next_hint`; `pt ready --verbose` will surface suggested follow-ups.
+- Safety: use `pt snapshot` before risky changes if you want a quick backup of the store.
 
 ## Task Creation (for maintainers)
 - Use manifests in `phases/`; each task should include `title`, `role`, `template`, `deps`, and DoD (`tests`, `manual`).

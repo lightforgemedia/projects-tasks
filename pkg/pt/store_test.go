@@ -69,3 +69,41 @@ func TestStoreNextHint(t *testing.T) {
 		t.Fatalf("next_hint not stored: issue=%q meta=%q", iss.NextHint, meta.NextHint)
 	}
 }
+
+func TestStoreAddTaskAndList(t *testing.T) {
+	tmp := t.TempDir() + "/pt.db.json"
+	client := NewStoreClient(tmp, "pt")
+	ctx := context.Background()
+	id, err := client.AddTask(ctx, Task{
+		Title:    "Quick",
+		Template: "backend_endpoint",
+		Role:     "dev",
+		DoD:      DefinitionOfDone{Manual: "check"},
+	})
+	if err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+	issues, err := client.List(ctx, []string{"open"}, "", 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(issues) != 1 || issues[0].ID != id {
+		t.Fatalf("list mismatch: %+v", issues)
+	}
+}
+
+func TestStoreCommentsMethod(t *testing.T) {
+	tmp := t.TempDir() + "/pt.db.json"
+	client := NewStoreClient(tmp, "pt")
+	ctx := context.Background()
+	_, _ = client.Sync(ctx, Manifest{
+		Tasks: []Task{{Title: "A", Template: "backend_endpoint", Role: "dev", DoD: DefinitionOfDone{Manual: "check"}}},
+	})
+	if err := client.AddComment(ctx, "pt-1", "note"); err != nil {
+		t.Fatalf("add comment: %v", err)
+	}
+	comments, err := client.Comments(ctx, "pt-1")
+	if err != nil || len(comments) != 1 {
+		t.Fatalf("comments: %v %v", comments, err)
+	}
+}
