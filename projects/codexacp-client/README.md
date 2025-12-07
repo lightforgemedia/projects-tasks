@@ -35,6 +35,9 @@ cd projects/codexacp-client
 go test ./...
 ```
 
+## Project Definition of Done
+See `projects/codexacp-client/PROJECT_DOD.md` for the project-level checklist (tests, CLI UX, tool-event logging, smoke run notes, known gaps).
+
 ## Notes
 - Terminal handling is stubbed for now; adjust `CodexClient` if you need true interactive shells.
 - Tool raw payloads are round-tripped to maps for logging; if adapters emit large payloads, route them to a file/log sink before production use.
