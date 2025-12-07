@@ -3,6 +3,7 @@ package pt
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -68,6 +69,9 @@ func (m *StateManager) Ready() []string {
 func (m *StateManager) Claim(id, assignee string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if strings.TrimSpace(assignee) == "" {
+		return fmt.Errorf("claim requires non-empty assignee")
+	}
 	t, ok := m.tasks[id]
 	if !ok {
 		return fmt.Errorf("unknown task %s", id)

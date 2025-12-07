@@ -35,3 +35,4 @@ go.work.sum
 .gocache/
 example-project/
 context_*.json
+.pt.db*

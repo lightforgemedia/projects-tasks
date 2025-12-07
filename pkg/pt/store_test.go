@@ -46,3 +46,26 @@ func TestStoreSyncAndReady(t *testing.T) {
 		t.Fatalf("expected db file: %v", err)
 	}
 }
+
+func TestStoreNextHint(t *testing.T) {
+	tmp := t.TempDir() + "/pt.db.json"
+	client := NewStoreClient(tmp, "pt")
+	manifest := Manifest{
+		Title: "Hints",
+		Tasks: []Task{
+			{Title: "A", Template: "backend_endpoint", Role: "dev", NextHint: "Do B next", DoD: DefinitionOfDone{Manual: "check"}},
+		},
+	}
+	ctx := context.Background()
+	ids, err := client.Sync(ctx, manifest)
+	if err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+	iss, meta, err := client.GetTask(ctx, ids["A"])
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if iss.NextHint != "Do B next" || meta.NextHint != "Do B next" {
+		t.Fatalf("next_hint not stored: issue=%q meta=%q", iss.NextHint, meta.NextHint)
+	}
+}

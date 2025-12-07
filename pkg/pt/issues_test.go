@@ -1,6 +1,9 @@
 package pt
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSortIssuesByPriority(t *testing.T) {
 	issues := []Issue{
@@ -25,9 +28,12 @@ func TestSortIssuesByTitle(t *testing.T) {
 }
 
 func TestIssueExtra(t *testing.T) {
-	iss := Issue{Assignee: "alice", Labels: []string{"state:blocked"}}
+	iss := Issue{Assignee: "", Labels: []string{"state:blocked"}}
 	extra := IssueExtra(iss)
-	if extra == "" || extra[0] != '[' {
+	if extra == "" || extra[0] != '[' || extra[len(extra)-1] != ']' {
 		t.Fatalf("expected bracketed extra, got %q", extra)
+	}
+	if !strings.Contains(extra, "unassigned") {
+		t.Fatalf("expected unassigned marker, got %q", extra)
 	}
 }

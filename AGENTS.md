@@ -14,16 +14,34 @@
 ## Agent Workflows
 Agents interacting with this repository or using the `pt` tool should follow this loop:
 
-1.  **Discovery**: Run `pt ready` to find unblocked work. Filter by role if applicable (e.g., `pt ready --role=backend-dev`). Use `--verbose` to see blockers/assignee, `--sort` for ordering.
-2.  **Claim**: Run `pt claim <id>` to lock the task (uses $USER or `--as` to specify). This assigns the issue to you and sets status to `in_progress`.
+1.  **Discovery**: `pt ready --role=<role> --verbose` to find unblocked work and see blockers/assignee. Use `--sort` for ordering.
+2.  **Claim**: `pt claim <id> [--as=you]` to lock and assign (status → `in_progress`).
 3.  **Execution**:
-    *   Read the task details using `pt context init <id>` or inspect the issue description.
+    *   Read task/context via `pt context init <id>` or the issue text.
     *   Implement changes.
-    *   **Important**: If the task has a `manual` check in its DoD, use `pt validate --yes <id>` to auto-confirm after you’ve performed the steps; the confirmed steps will be recorded in the review comment.
-4.  **Verification**: Run `pt validate <id>` (or `--yes` for manual-confirmation automation).
-    *   **Success**: Task moves to `needs_review` label, with a comment including manual steps if present. Notify the user.
-    *   **Failure**: Analyze output. Attempt fixes. If stuck, use `pt release <id>` to unlock it for others.
-5.  **Review**: If acting as a reviewer:
-    *   Check tasks in `pt ready --role=<role> --verbose` or filter by label/state in the store.
-    *   Verify the work.
-    *   Run `pt approve <id>` to close it, or `pt reject <id> --reason="..."` to request changes.
+    *   If DoD includes `manual` steps, only use `pt validate --yes <id>` after performing them; confirmations are recorded in the review comment.
+4.  **Verification**: `pt validate <id>` (or `--yes` to auto-confirm manual steps).
+    *   **Pass**: status → `needs_review`; manual notes stored.
+    *   **Fail**: fix and retry, or `pt release <id>` to unblock others.
+5.  **Review** (as reviewer):
+    *   Inspect via `pt ready --role=<role> --verbose` or store filters.
+    *   `pt approve <id>` to close, or `pt reject <id> --reason="..."` to send back.
+
+## Multi-Agent Guidance
+- Identity: always set `--as` (or ensure `$USER` is correct) when claiming so ownership is auditable; `pt claim` fails if identity is empty.
+- Respect blockers: do not claim blocked work; resolve deps first or choose another task.
+- No-context starts: run `pt context init <id>` to bootstrap requirements; read DoD before coding.
+- Staleness: if paused or stuck, `pt release <id>` and leave a brief comment so others can continue.
+- Next hints: manifests can include `next_hint`; `pt ready --verbose` will surface suggested follow-ups.
+
+## Task Creation (for maintainers)
+- Use manifests in `phases/`; each task should include `title`, `role`, `template`, `deps`, and DoD (`tests`, `manual`).
+- Pick templates: APIs (`backend_endpoint`), UI (`frontend_component`), regressions (`bug_fix`), cleanup (`refactor`), schema (`migration`), SLO/alerts (`observability_hook`).
+- Keep titles unique; reference deps by title or ID. Add concise manual steps so `pt validate --yes` can capture confirmations.
+
+## Automation Hooks (planned)
+- Configure hooks in repo `hooks.toml` or global `$HOME/.config/pt/hooks.toml` (env `PT_HOOKS` overrides). Events: pre/post sync/claim/validate, post release/approve/reject.
+- Hooks receive env: `PT_EVENT`, `PT_ID`, `PT_TITLE`, `PT_ASSIGNEE`, `PT_ACTOR`, `PT_STATUS_FROM/TO`, `PT_ROLE`, `PT_DOD` (JSON); full payload arrives via stdin. Enable hook logs with `--hook-verbose` or `PT_HOOK_VERBOSE=1`. Bypass with `PT_SKIP_HOOKS=1`.
+- Use cases: pre-claim policy/WIP checks; post-validate notify; post-approve deploy trigger. Hook outputs and command results are available via `--json`.
+- Safety: hooks are shell commands. Review them before running; set timeouts/on_fail to avoid hanging flows.
+- Multiple projects: keep separate working dirs or `PT_DB` per project; see `DESIGN_MULTI_PROJECT.md` for the proposed cross-project commands.

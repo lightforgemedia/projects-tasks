@@ -76,6 +76,13 @@ func TestClaimConflict(t *testing.T) {
 	}
 }
 
+func TestClaimRequiresAssignee(t *testing.T) {
+	m := NewStateManager([]TaskNode{{ID: "A"}})
+	if err := m.Claim("A", ""); err == nil {
+		t.Fatalf("expected error for empty assignee")
+	}
+}
+
 func TestCrossPhaseDeps(t *testing.T) {
 	m := NewStateManager([]TaskNode{
 		{ID: "phase1-A"},

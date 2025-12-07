@@ -24,6 +24,7 @@ type Task struct {
 	Title           string            `json:"title"`
 	Role            string            `json:"role"`
 	Deps            []string          `json:"deps,omitempty"`
+	NextHint        string            `json:"next_hint,omitempty"`
 	EstimatedEffort string            `json:"estimated_effort,omitempty"`
 	Params          map[string]string `json:"params,omitempty"`
 	DoD             DefinitionOfDone  `json:"dod"`
@@ -263,6 +264,8 @@ func assignTaskKV(task *Task, key string, val value) error {
 		task.Role = val.asString()
 	case "deps":
 		task.Deps = val.arr
+	case "next_hint":
+		task.NextHint = val.asString()
 	case "estimated_effort":
 		task.EstimatedEffort = val.asString()
 	default:

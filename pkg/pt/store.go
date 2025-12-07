@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // StoreClient implements Client using a JSON-backed local store (no external deps).
@@ -15,8 +16,9 @@ type StoreClient struct {
 	path   string
 	prefix string
 
-	mu   sync.Mutex
-	data storeData
+	mu       sync.Mutex
+	data     storeData
+	lockPath string
 }
 
 // CommentsFor returns stored comments for an issue (testing/introspection).
@@ -42,7 +44,7 @@ func NewStoreClient(path, prefix string) *StoreClient {
 	if strings.TrimSpace(prefix) == "" {
 		prefix = "pt"
 	}
-	c := &StoreClient{path: path, prefix: prefix}
+	c := &StoreClient{path: path, prefix: prefix, lockPath: path + ".lock"}
 	c.load()
 	return c
 }
@@ -193,8 +195,22 @@ func (c *StoreClient) RemoveLabels(ctx context.Context, id string, labels ...str
 
 func (c *StoreClient) ensureIssueLocked(task Task) (string, error) {
 	// Check by title
-	for _, iss := range c.data.Issues {
+	for id, iss := range c.data.Issues {
 		if iss.Title == task.Title {
+			desc, err := buildDescription(task)
+			if err != nil {
+				return "", err
+			}
+			iss.Description = desc
+			iss.NextHint = task.NextHint
+			// Ensure role/template labels stay current
+			if c.data.Labels[id] == nil {
+				c.data.Labels[id] = make(map[string]struct{})
+			}
+			c.data.Labels[id][fmt.Sprintf("role:%s", task.Role)] = struct{}{}
+			c.data.Labels[id][fmt.Sprintf("template:%s", task.Template)] = struct{}{}
+			c.refreshIssueLabels(id)
+			c.data.Issues[id] = iss
 			return iss.ID, nil
 		}
 	}
@@ -211,6 +227,7 @@ func (c *StoreClient) ensureIssueLocked(task Task) (string, error) {
 		Status:      "open",
 		Priority:    2,
 		IssueType:   "task",
+		NextHint:    task.NextHint,
 		Labels: []string{
 			fmt.Sprintf("role:%s", task.Role),
 			fmt.Sprintf("template:%s", task.Template),
@@ -264,6 +281,11 @@ func (c *StoreClient) load() {
 	if c.data.Issues != nil {
 		return
 	}
+	lockFile, err := c.lockFile()
+	if err != nil {
+		return
+	}
+	defer c.unlockFile(lockFile)
 	c.data = storeData{
 		NextID:   0,
 		Issues:   make(map[string]Issue),
@@ -289,6 +311,11 @@ func (c *StoreClient) load() {
 }
 
 func (c *StoreClient) saveLocked() error {
+	lockFile, err := c.lockFile()
+	if err != nil {
+		return err
+	}
+	defer c.unlockFile(lockFile)
 	dir := filepath.Dir(c.path)
 	if dir != "" && dir != "." {
 		_ = os.MkdirAll(dir, 0o755)
@@ -298,6 +325,29 @@ func (c *StoreClient) saveLocked() error {
 		return err
 	}
 	return os.WriteFile(c.path, raw, 0o644)
+}
+
+func (c *StoreClient) lockFile() (*os.File, error) {
+	if c.lockPath == "" {
+		return nil, fmt.Errorf("lock path not set")
+	}
+	f, err := os.OpenFile(c.lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+func (c *StoreClient) unlockFile(f *os.File) {
+	if f == nil {
+		return
+	}
+	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	_ = f.Close()
 }
 
 func appendUnique(list []string, val string) []string {

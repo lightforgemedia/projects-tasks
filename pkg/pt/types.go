@@ -14,6 +14,7 @@ import (
 type TaskMeta struct {
 	Template string           `json:"template"`
 	Role     string           `json:"role"`
+	NextHint string           `json:"next_hint,omitempty"`
 	DoD      DefinitionOfDone `json:"dod"`
 }
 
@@ -44,6 +45,7 @@ type Issue struct {
 	IssueType   string   `json:"issue_type"`
 	Description string   `json:"description"`
 	Labels      []string `json:"labels"`
+	NextHint    string   `json:"next_hint,omitempty"`
 }
 
 // Dependency represents a blocking relationship.
@@ -75,6 +77,7 @@ func buildDescription(task Task) (string, error) {
 	meta := TaskMeta{
 		Template: task.Template,
 		Role:     task.Role,
+		NextHint: task.NextHint,
 		DoD:      task.DoD,
 	}
 	metaJSON, err := json.Marshal(meta)

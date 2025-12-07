@@ -1,0 +1,22 @@
+# Example hook config for pt
+[defaults]
+  timeout = "15s"
+  on_fail = "warn"
+
+[[hook]]
+  event = "pre-claim"
+  cmd = "examples/hooks/wip_gate.sh"
+  on_fail = "fail"
+
+[[hook]]
+  event = "post-validate"
+  cmd = "examples/hooks/slack_notify.sh"
+
+[[hook]]
+  event = "post-approve"
+  cmd = "examples/hooks/slack_notify.sh"
+
+[[hook]]
+  event = "pre-approve"
+  cmd = "examples/hooks/ci_check.sh"
+  on_fail = "fail"

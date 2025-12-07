@@ -24,6 +24,8 @@ func IssueExtra(iss Issue) string {
 	var parts []string
 	if iss.Assignee != "" {
 		parts = append(parts, "@"+iss.Assignee)
+	} else {
+		parts = append(parts, "unassigned")
 	}
 	for _, l := range iss.Labels {
 		if l == "state:blocked" || l == "blocked" {

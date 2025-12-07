@@ -1,0 +1,42 @@
+title = "Dogfood Demo: Telemetry Service"
+owner = "demo-team"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Define ingestion API contract"
+role = "architect"
+[tasks.dod]
+manual = "Contract captured in docs/api/ingest.md with status codes and sample payload"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement ingestion endpoint"
+role = "backend-dev"
+deps = ["Define ingestion API contract"]
+[tasks.dod]
+tests = ["go test ./services/ingest/..."]
+manual = "POST /ingest returns 202 and persists payload"
+
+[[tasks]]
+template = "observability_hook"
+title = "Wire alerts for ingestion failures"
+role = "sre"
+deps = ["Implement ingestion endpoint"]
+[tasks.dod]
+manual = "Alert fires on 5xx spike; runbook linked"
+
+[[tasks]]
+template = "frontend_component"
+title = "Add dashboard widget for ingestion stats"
+role = "frontend-dev"
+deps = ["Define ingestion API contract"]
+[tasks.dod]
+manual = "Chart updates live; empty state handled"
+
+[[tasks]]
+template = "refactor"
+title = "Post-ship cleanup and runbook"
+role = "ops"
+deps = ["Implement ingestion endpoint", "Wire alerts for ingestion failures"]
+[tasks.dod]
+manual = "Document rollback, on-call steps, and smoke checklist"

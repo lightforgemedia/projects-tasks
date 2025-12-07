@@ -25,6 +25,7 @@ func TestParseJSONManifest(t *testing.T) {
 				"template": "backend_endpoint",
 				"title": "Implement POST /login",
 				"role": "backend-dev",
+				"next_hint": "Hook up backend integration next",
 				"params": {"path": "/login"},
 				"dod": {
 					"tests": ["go test ./src/auth/..."],
@@ -58,6 +59,9 @@ func TestParseJSONManifest(t *testing.T) {
 	}
 	if got.Tasks[0].Template != "backend_endpoint" || got.Tasks[0].DoD.Manual == "" {
 		t.Fatalf("unexpected first task: %+v", got.Tasks[0])
+	}
+	if got.Tasks[0].NextHint != "Hook up backend integration next" {
+		t.Fatalf("expected next_hint parsed, got %+v", got.Tasks[0].NextHint)
 	}
 	if got.Tasks[1].Deps[0] != "Implement POST /login" {
 		t.Fatalf("dependency not parsed: %+v", got.Tasks[1].Deps)

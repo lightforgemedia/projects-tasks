@@ -1,0 +1,39 @@
+title = "PT Dogfood Roadmap"
+owner = "tawawhite"
+
+[[tasks]]
+template = "refactor"
+title = "Define multi-agent concurrency and no-context onboarding"
+role = "architect"
+[tasks.dod]
+manual = "Draft spec: locking/staleness rules, identity requirements, context bootstrap defaults"
+
+[[tasks]]
+template = "refactor"
+title = "Implement claim identity enforcement and ready UX hints"
+role = "backend-dev"
+deps = ["Define multi-agent concurrency and no-context onboarding"]
+[tasks.dod]
+manual = "Claim/ready flows reflect identity and blocker guidance"
+
+[[tasks]]
+template = "refactor"
+title = "Document task taxonomy and creation guide"
+role = "tech-writer"
+[tasks.dod]
+manual = "README and AGENTS updated with task types, creation steps, post-task cleanup"
+
+[[tasks]]
+template = "refactor"
+title = "Design automation hooks for state transitions"
+role = "backend-dev"
+[tasks.dod]
+manual = "Hook interface and sample wiring documented (pre/post claim/validate/approve/reject)"
+
+[[tasks]]
+template = "refactor"
+title = "Create example project dogfood runbook"
+role = "tech-writer"
+deps = ["Document task taxonomy and creation guide"]
+[tasks.dod]
+manual = "Runbook lives in examples/ with end-to-end pt usage"

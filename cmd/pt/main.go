@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,12 +20,15 @@ func newClient() pt.Client {
 	return pt.NewClientFromEnv()
 }
 
-func userOrUnknown() string {
-	user := os.Getenv("USER")
-	if user == "" {
-		user = "unknown"
+func requireUser(explicit string) (string, error) {
+	if strings.TrimSpace(explicit) != "" {
+		return strings.TrimSpace(explicit), nil
 	}
-	return user
+	user := strings.TrimSpace(os.Getenv("USER"))
+	if user == "" {
+		return "", errors.New("no user identity set; use --as or set $USER")
+	}
+	return user, nil
 }
 
 func splitManualSteps(prompt string) []string {
@@ -40,6 +44,23 @@ func splitManualSteps(prompt string) []string {
 		steps = append(steps, strings.TrimSpace(prompt))
 	}
 	return steps
+}
+
+func combineHooks(parts ...[]HookResult) []HookResult {
+	var out []HookResult
+	for _, p := range parts {
+		out = append(out, p...)
+	}
+	return out
+}
+
+func printJSON(data interface{}) error {
+	enc, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(enc))
+	return nil
 }
 
 func readyBlockers(ctx context.Context, client pt.Client, iss pt.Issue) []string {
@@ -68,11 +89,13 @@ func confirmManual(steps []string, autoYes bool) bool {
 	if autoYes {
 		return true
 	}
+	scanner := bufio.NewScanner(os.Stdin)
 	for i, step := range steps {
 		fmt.Printf("Manual step %d/%d: %s\nConfirm? [y/N]: ", i+1, len(steps), step)
-		var resp string
-		fmt.Scanln(&resp)
-		resp = strings.TrimSpace(strings.ToLower(resp))
+		if !scanner.Scan() {
+			return false
+		}
+		resp := strings.TrimSpace(strings.ToLower(scanner.Text()))
 		if resp != "y" && resp != "yes" {
 			return false
 		}
@@ -93,6 +116,13 @@ func run(args []string) error {
 	if len(args) < 2 {
 		usage()
 		return errors.New("")
+	}
+	if loadedHooks == nil {
+		cfg, err := loadHooks()
+		if err != nil {
+			return err
+		}
+		loadedHooks = cfg
 	}
 
 	cmd := args[1]
@@ -117,6 +147,8 @@ func run(args []string) error {
 		return cmdContext(cmdArgs)
 	case "graph":
 		return cmdGraph(cmdArgs)
+	case "hooks":
+		return cmdHooksPrint()
 	case "-h", "--help", "help":
 		usage()
 		return nil
@@ -127,25 +159,40 @@ func run(args []string) error {
 }
 
 func usage() {
-	fmt.Print(`pt CLI
-Commands:
-  sync <manifest>                   Apply manifest (creates/updates issues and deps)
-  ready [--role=ROLE] [--limit=N]   List ready work (status=open only)
-  claim <id>                        Mark issue in_progress and assign current user
-  release <id>                      Return issue to open (unassign)
-  validate <id> [--yes]             Run DoD hooks and mark needs_review (label)
-  approve <id>                      Close issue
-  reject <id> --reason="text"       Send issue back to in_progress with comment
-  context init <id>|validate <file> Manage agent context contracts
-  graph <manifest>                  Visualize task dependencies
+	fmt.Print(`pt CLI (store-backed)
+
+Commands (SDLC flow):
+  sync <manifest>                    Apply manifest (create/update tasks, deps)
+  ready [--role=ROLE] [--limit=N]    List unblocked work (status=open)
+  claim <id> [--as=USER]             Mark in_progress and assign
+  release <id>                       Return to open and clear assignee
+  validate <id> [--yes]              Run DoD hooks; on success -> needs_review
+  approve <id>                       Mark done
+  reject <id> --reason="text"        Send back to in_progress with a comment
+  context init <id>|validate <file>  Manage agent context contracts
+  graph <manifest>                   Visualize manifest dependencies (cycles shown)
+  hooks                              Print merged hook configuration (global + local)
+
+Happy-path primer:
+  1) pt sync phases/<file>.toml
+  2) pt ready --role=<role> --verbose
+  3) pt claim <id> [--as=you]
+  4) do work; pt validate <id> [--yes]
+  5) pt approve <id>  |  pt reject <id> --reason="..."
+  6) pt release <id> (if you’re stuck)
 `)
 }
 
 func cmdSync(args []string) error {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
 	fs.Usage = func() { fmt.Println("Usage: pt sync <manifest>") }
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
@@ -156,12 +203,28 @@ func cmdSync(args []string) error {
 	if err != nil {
 		return fmt.Errorf("parse manifest: %w", err)
 	}
+	actor := strings.TrimSpace(os.Getenv("USER"))
+	preHooks, err := runHooks("pre-sync", hookPayload{Actor: actor})
+	if err != nil {
+		return err
+	}
 	client := newClient()
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	idMap, err := client.Sync(ctx, manifest)
 	if err != nil {
 		return fmt.Errorf("sync failed: %w", err)
+	}
+	postHooks, err := runHooks("post-sync", hookPayload{Actor: actor})
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status": "ok",
+			"synced": idMap,
+			"hooks":  combineHooks(preHooks, postHooks),
+		})
 	}
 	for title, id := range idMap {
 		fmt.Printf("%s -> %s\n", title, id)
@@ -175,9 +238,14 @@ func cmdReady(args []string) error {
 	limit := fs.Int("limit", 10, "max issues")
 	sortKey := fs.String("sort", "priority", "sort by priority|title")
 	verbose := fs.Bool("verbose", false, "show extra info (assignee, blockers)")
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
 	fs.Usage = func() { fmt.Println("Usage: pt ready [--role=ROLE] [--limit=N] [--sort=priority|title] [--verbose]") }
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
 	client := newClient()
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
@@ -187,16 +255,41 @@ func cmdReady(args []string) error {
 		return fmt.Errorf("ready failed: %w", err)
 	}
 	pt.SortIssues(issues, *sortKey)
+	if *jsonOut {
+		out := []map[string]interface{}{}
+		for _, iss := range issues {
+			if iss.Status != "open" {
+				continue
+			}
+			blockers := readyBlockers(ctx, client, iss)
+			out = append(out, map[string]interface{}{
+				"id":        iss.ID,
+				"title":     iss.Title,
+				"status":    iss.Status,
+				"assignee":  iss.Assignee,
+				"labels":    iss.Labels,
+				"blockers":  blockers,
+				"next_hint": iss.NextHint,
+			})
+		}
+		return printJSON(out)
+	}
 	for _, iss := range issues {
 		if iss.Status != "open" { // hide claimed/in_progress
 			continue
 		}
 		line := fmt.Sprintf("%s [%s] %s", iss.ID, iss.IssueType, iss.Title)
+		if !*verbose && strings.TrimSpace(iss.Assignee) == "" {
+			line = fmt.Sprintf("%s [unassigned]", line)
+		}
 		blockers := readyBlockers(ctx, client, iss)
 		if *verbose {
 			extra := pt.IssueExtra(iss)
 			if extra != "" {
 				line = fmt.Sprintf("%s %s", line, extra)
+			}
+			if strings.TrimSpace(iss.NextHint) != "" {
+				line = fmt.Sprintf("%s next:%s", line, iss.NextHint)
 			}
 			if len(blockers) > 0 {
 				line = fmt.Sprintf("%s blocked by %s", line, strings.Join(blockers, ","))
@@ -216,24 +309,61 @@ func cmdReady(args []string) error {
 func cmdClaim(args []string) error {
 	fs := flag.NewFlagSet("claim", flag.ContinueOnError)
 	as := fs.String("as", "", "override assignee (defaults to $USER)")
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
 	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER]") }
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
 		return errors.New("missing id argument")
 	}
 	id := fs.Arg(0)
-	user := *as
-	if strings.TrimSpace(user) == "" {
-		user = userOrUnknown()
+	user, err := requireUser(*as)
+	if err != nil {
+		return err
 	}
-	trans := pt.Transitioner{Client: newClient()}
+	client := newClient()
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	issue, meta, err := client.GetTask(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get task failed: %w", err)
+	}
+	dodJSON, _ := json.Marshal(meta.DoD)
+	payload := hookPayload{
+		ID:         issue.ID,
+		Title:      issue.Title,
+		Assignee:   user,
+		Actor:      user,
+		StatusFrom: issue.Status,
+		StatusTo:   string(pt.StatusInProgress),
+		Role:       meta.Role,
+		DoDJSON:    string(dodJSON),
+	}
+	preHooks, err := runHooks("pre-claim", payload)
+	if err != nil {
+		return err
+	}
+	trans := pt.Transitioner{Client: client}
 	if err := trans.Claim(ctx, id, user); err != nil {
 		return fmt.Errorf("claim failed: %w", err)
+	}
+	postHooks, err := runHooks("post-claim", payload)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status":   "ok",
+			"id":       id,
+			"assignee": user,
+			"hooks":    combineHooks(preHooks, postHooks),
+		})
 	}
 	fmt.Printf("Claimed %s as %s\n", id, user)
 	return nil
@@ -242,24 +372,57 @@ func cmdClaim(args []string) error {
 func cmdRelease(args []string) error {
 	fs := flag.NewFlagSet("release", flag.ContinueOnError)
 	as := fs.String("as", "", "override assignee check (defaults to $USER)")
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
 	fs.Usage = func() { fmt.Println("Usage: pt release <id> [--as=USER]") }
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
 		return errors.New("missing id argument")
 	}
 	id := fs.Arg(0)
-	user := *as
-	if strings.TrimSpace(user) == "" {
-		user = userOrUnknown()
+	user, err := requireUser(*as)
+	if err != nil {
+		return err
 	}
-	trans := pt.Transitioner{Client: newClient()}
+	client := newClient()
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	issue, meta, err := client.GetTask(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get task failed: %w", err)
+	}
+	dodJSON, _ := json.Marshal(meta.DoD)
+	payload := hookPayload{
+		ID:         issue.ID,
+		Title:      issue.Title,
+		Assignee:   "",
+		Actor:      user,
+		StatusFrom: issue.Status,
+		StatusTo:   "open",
+		Role:       meta.Role,
+		DoDJSON:    string(dodJSON),
+	}
+	trans := pt.Transitioner{Client: client}
 	if err := trans.Release(ctx, id, user); err != nil {
 		return fmt.Errorf("release failed: %w", err)
+	}
+	postHooks, err := runHooks("post-release", payload)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status":   "ok",
+			"id":       id,
+			"assignee": "",
+			"hooks":    postHooks,
+		})
 	}
 	fmt.Printf("Released %s\n", id)
 	return nil
@@ -268,9 +431,14 @@ func cmdRelease(args []string) error {
 func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	yes := fs.Bool("yes", false, "auto-confirm manual checks")
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
 	fs.Usage = func() { fmt.Println("Usage: pt validate <id>") }
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
@@ -283,6 +451,22 @@ func cmdValidate(args []string) error {
 	issue, meta, err := client.GetTask(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get task failed: %w", err)
+	}
+	dodJSON, _ := json.Marshal(meta.DoD)
+	actor := strings.TrimSpace(os.Getenv("USER"))
+	payload := hookPayload{
+		ID:         issue.ID,
+		Title:      issue.Title,
+		Assignee:   issue.Assignee,
+		Actor:      actor,
+		StatusFrom: issue.Status,
+		StatusTo:   string(pt.StatusNeedsReview),
+		Role:       meta.Role,
+		DoDJSON:    string(dodJSON),
+	}
+	preHooks, err := runHooks("pre-validate", payload)
+	if err != nil {
+		return err
 	}
 	manualSteps := splitManualSteps(meta.DoD.Manual)
 	confirm := confirmManual(manualSteps, *yes)
@@ -303,15 +487,33 @@ func cmdValidate(args []string) error {
 	if err := trans.SubmitForReview(ctx, issue.ID, comment); err != nil {
 		return fmt.Errorf("mark needs_review failed: %w", err)
 	}
+	postHooks, err := runHooks("post-validate", payload)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status":           "ok",
+			"id":               issue.ID,
+			"new_status":       string(pt.StatusNeedsReview),
+			"manual_confirmed": confirm,
+			"hooks":            combineHooks(preHooks, postHooks),
+		})
+	}
 	fmt.Printf("Task %s marked needs_review\n", issue.ID)
 	return nil
 }
 
 func cmdApprove(args []string) error {
 	fs := flag.NewFlagSet("approve", flag.ContinueOnError)
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
 	fs.Usage = func() { fmt.Println("Usage: pt approve <id>") }
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
@@ -319,11 +521,43 @@ func cmdApprove(args []string) error {
 	}
 	id := fs.Arg(0)
 	client := newClient()
-	trans := pt.Transitioner{Client: client}
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	issue, meta, err := client.GetTask(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get task failed: %w", err)
+	}
+	dodJSON, _ := json.Marshal(meta.DoD)
+	actor := strings.TrimSpace(os.Getenv("USER"))
+	payload := hookPayload{
+		ID:         issue.ID,
+		Title:      issue.Title,
+		Assignee:   issue.Assignee,
+		Actor:      actor,
+		StatusFrom: issue.Status,
+		StatusTo:   "closed",
+		Role:       meta.Role,
+		DoDJSON:    string(dodJSON),
+	}
+	preHooks, err := runHooks("pre-approve", payload)
+	if err != nil {
+		return err
+	}
+	trans := pt.Transitioner{Client: client}
 	if err := trans.Approve(ctx, id); err != nil {
 		return fmt.Errorf("approve failed: %w", err)
+	}
+	postHooks, err := runHooks("post-approve", payload)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status":     "ok",
+			"id":         id,
+			"new_status": "closed",
+			"hooks":      combineHooks(preHooks, postHooks),
+		})
 	}
 	fmt.Printf("Approved %s\n", id)
 
@@ -344,9 +578,14 @@ func cmdApprove(args []string) error {
 func cmdReject(args []string) error {
 	fs := flag.NewFlagSet("reject", flag.ContinueOnError)
 	reason := fs.String("reason", "", "reason for rejection")
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
 	fs.Usage = func() { fmt.Println("Usage: pt reject <id> --reason=\"text\"") }
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
@@ -356,11 +595,41 @@ func cmdReject(args []string) error {
 		return errors.New("reason is required")
 	}
 	id := fs.Arg(0)
-	trans := pt.Transitioner{Client: newClient()}
+	client := newClient()
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	issue, meta, err := client.GetTask(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get task failed: %w", err)
+	}
+	dodJSON, _ := json.Marshal(meta.DoD)
+	actor := strings.TrimSpace(os.Getenv("USER"))
+	payload := hookPayload{
+		ID:         issue.ID,
+		Title:      issue.Title,
+		Assignee:   issue.Assignee,
+		Actor:      actor,
+		StatusFrom: issue.Status,
+		StatusTo:   string(pt.StatusInProgress),
+		Role:       meta.Role,
+		DoDJSON:    string(dodJSON),
+	}
+	trans := pt.Transitioner{Client: client}
 	if err := trans.Reject(ctx, id, *reason); err != nil {
 		return fmt.Errorf("reject failed: %w", err)
+	}
+	postHooks, err := runHooks("post-reject", payload)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status":     "ok",
+			"id":         id,
+			"new_status": string(pt.StatusInProgress),
+			"reason":     *reason,
+			"hooks":      postHooks,
+		})
 	}
 	fmt.Printf("Rejected %s\n", id)
 	return nil

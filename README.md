@@ -85,6 +85,39 @@ deps = ["Implement POST /login"] # Dependency by title
 
 The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 
+### Quick Flow (bd-style helper)
+1) `pt sync phases/<file>.toml` — apply manifest to the store.
+2) `pt ready --role=<role> --verbose` — find unblocked work.
+3) `pt claim <id> [--as=you]` — assign and start.
+4) Do the work, then `pt validate <id> [--yes]` — moves to `needs_review` with manual notes.
+5) `pt approve <id>` or `pt reject <id> --reason="..."` — review outcomes.
+6) If stuck, `pt release <id>` — returns to open.
+7) Add `--json` to commands to get machine-readable outputs (includes hook results).
+
+## Multi-Agent & No-Context Onboarding
+- Attribution: always `pt claim <id> --as=<identity>` so ownership is explicit; `pt release <id>` when you stop to unblock others.
+- Collision avoidance: use `pt ready --verbose` to see blockers/assignees; do not bypass blocked tasks.
+- Fresh context: `pt context init <id>` to pull role-specific inputs; read issue text + DoD when you arrive mid-stream.
+- Staleness hygiene: add a comment when scope changes; re-validate before review after rebasing or major edits.
+- Identity enforcement: `pt claim` requires a non-empty identity (set `$USER` or pass `--as`).
+
+## Task Creation & Taxonomy
+- Templates: `backend_endpoint` (APIs), `frontend_component` (UI), `bug_fix` (regressions), `refactor` (cleanup), `observability_hook` (SLO/alerts), `migration` (schema).
+- Include: `title`, `role`, `template`, `deps`, optional `next_hint`, DoD (`tests`, `manual`). Keep titles unique; reference deps by title or ID.
+- Example:
+```toml
+[[tasks]]
+template = "bug_fix"
+title = "Fix login redirect loop"
+role = "backend-dev"
+deps = ["Implement POST /login"]
+next_hint = "Backend integration is next"
+[tasks.dod]
+tests = ["go test ./services/auth/..."]
+manual = "Verify browser redirect to /dashboard after login"
+```
+- Post-task cleanup: status/labels should match reality (`pt validate`, then `pt approve`/`pt reject`; `pt release` if abandoning). Keep comments concise and actionable.
+
 ### 1. Plan & Sync
 Apply a manifest to the store. This creates issues, sets dependencies, and stores validation rules.
 ```bash
@@ -141,7 +174,23 @@ pt context validate --contract=contracts/builder.toml context.json
 # Output: Context is valid.
 ```
 
-More examples live in `phases/login_flow.toml` and `phases/hotfix_bug.toml`.
+- More examples live in `phases/login_flow.toml`, `phases/hotfix_bug.toml`, and `examples/dogfood/manifest.toml` (multi-agent demo).
+
+## Automation Hooks (planned)
+- Events: `pre|post-sync`, `pre|post-claim`, `post-release`, `pre|post-validate`, `post-approve`, `post-reject`.
+- Config: `hooks.toml` (repo) or `$HOME/.config/pt/hooks.toml` (global). Override with `PT_HOOKS=path`. See `examples/hooks.toml` and `DESIGN_HOOKS.md` for schema. Fields: `event`, `cmd`, optional `on_fail`, `timeout`.
+- Env payload to hooks: `PT_EVENT`, `PT_ID`, `PT_TITLE`, `PT_ASSIGNEE`, `PT_ACTOR`, `PT_STATUS_FROM`, `PT_STATUS_TO`, `PT_ROLE`, `PT_DOD` (JSON).
+- Full JSON payload is provided via stdin (prefer stdin for large payloads); enable hook logging with `PT_HOOK_VERBOSE=1`.
+- Semantics: pre-hooks can block on failure; post-hooks warn by default. Run serially, log command + exit when `--hook-verbose` (flag), `defaults.verbose=true` in hooks, or `PT_HOOK_VERBOSE=1`. Hook outputs are surfaced as `[hook ok]...` and included in `--json` outputs.
+- Until implemented, wrap `pt` commands in your own scripts for notifications, policy, or deployment triggers.
+- Bypass: set `PT_SKIP_HOOKS=1` to disable hook execution temporarily.
+- Security note: hooks are arbitrary shell; review them before use. Prefer stdin payload for large data and set explicit timeouts/on_fail.
+
+## Persistence & Multi-Project Use
+- Store: `.pt.db.json` in the repo by default (override with `PT_DB`). File locking is used for same-host safety.
+- Snapshots: commit the store to git if you want history, or add a post-approve hook to copy `.pt.db.json` to `snapshots/pt-$(date).json`.
+- Multiple projects: use one repo per project, or separate directories with different `PT_DB` paths/prefixes. For many concurrent projects, keep each in its own working dir to avoid cross-contamination.
+- Cross-project design: see `DESIGN_MULTI_PROJECT.md` for proposed `--db`/`--prefix` overrides, `pt propose`, and `pt multi-ready`.
 
 ## Task Templates & Schema
 

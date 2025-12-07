@@ -18,6 +18,12 @@ func TestCmdClaimErrors(t *testing.T) {
 	if err := cmdClaim([]string{}); err == nil {
 		t.Error("expected error for missing id")
 	}
+
+	// Require identity when $USER empty and no --as provided.
+	t.Setenv("USER", "")
+	if err := cmdClaim([]string{"pt-1"}); err == nil {
+		t.Error("expected error when identity is missing")
+	}
 }
 
 func TestCmdReleaseErrors(t *testing.T) {

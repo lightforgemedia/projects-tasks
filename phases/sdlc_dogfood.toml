@@ -1,0 +1,44 @@
+title = "SDLC Guided Flow (pt dogfood)"
+owner = "demo-team"
+
+[[tasks]]
+template = "refactor"
+title = "Validate external dependencies and cache fixtures"
+role = "architect"
+[tasks.dod]
+manual = "Access confirmed; fixture saved (docs/fixtures/*.json); schema documented"
+
+[[tasks]]
+template = "frontend_component"
+title = "Build UI against fixtures (mock data)"
+role = "frontend-dev"
+deps = ["Validate external dependencies and cache fixtures"]
+[tasks.dod]
+tests = ["go test ./frontend/..."]
+manual = "Screenshots captured for states; matches approved wireframe"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Integrate external services using fixtures"
+role = "backend-dev"
+deps = ["Validate external dependencies and cache fixtures"]
+[tasks.dod]
+tests = ["go test ./backend/..."]
+manual = "Integration smoke with cached fixture passes"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Replace mocks with internal data sources"
+role = "backend-dev"
+deps = ["Integrate external services using fixtures"]
+[tasks.dod]
+tests = ["go test ./backend/..."]
+manual = "Schemas/docs updated; mocks retained for tests"
+
+[[tasks]]
+template = "refactor"
+title = "Full flow demo and review"
+role = "architect"
+deps = ["Build UI against fixtures (mock data)", "Replace mocks with internal data sources"]
+[tasks.dod]
+manual = "E2E demo recorded or screenshots; all tests green; reviewer sign-off"
