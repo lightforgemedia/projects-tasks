@@ -33,6 +33,5 @@ go.work.sum
 
 # Project artifacts
 .gocache/
-example-project/
 context_*.json
 .pt.db*

@@ -1,0 +1,68 @@
+[2025-12-06 01:41:26] Daemon started (interval: 5s, auto-commit: false, auto-push: false)
+[2025-12-06 01:41:26] Using database: /Users/tawawhite/PROJECTS/projects-tasks/example-project/.beads/beads.db
+[2025-12-06 01:41:26] Database opened: /Users/tawawhite/PROJECTS/projects-tasks/example-project/.beads/beads.db
+[2025-12-06 01:41:26] Upgrading .beads/.gitignore...
+[2025-12-06 01:41:26] Warning: failed to upgrade .gitignore: open .beads/.gitignore: no such file or directory
+[2025-12-06 01:41:26] Repository fingerprint validated: 318135d0
+[2025-12-06 01:41:26] Starting RPC server: /Users/tawawhite/PROJECTS/projects-tasks/example-project/.beads/bd.sock
+[2025-12-06 01:41:26] RPC server ready (socket listening)
+[2025-12-06 01:41:26] Registered in global registry
+[2025-12-06 01:41:26] Starting sync cycle...
+[2025-12-06 01:41:26] Exported to JSONL
+[2025-12-06 01:41:26] Sync branch pull failed: failed to create worktree: failed to create worktree: exit status 128
+Output: Preparing worktree (checking out 'main')
+fatal: 'main' is already used by worktree at '/Users/tawawhite/PROJECTS/projects-tasks'
+
+[2025-12-06 01:41:26] Monitoring parent process (PID 0)
+[2025-12-06 01:41:26] Using event-driven mode
+[2025-12-06 01:41:26] Mutation detected: create example-project-uh3
+[2025-12-06 01:41:26] Mutation detected: create example-project-jzt
+[2025-12-06 01:41:26] Mutation detected: update example-project-jzt
+[2025-12-06 01:41:27] Export triggered by mutation events
+[2025-12-06 01:41:27] Starting export...
+[2025-12-06 01:41:27] Exported to JSONL
+[2025-12-06 01:41:27] JSONL removed/renamed, re-establishing watch
+[2025-12-06 01:41:27] Export complete
+[2025-12-06 01:41:27] Successfully re-established JSONL watch after 50ms
+[2025-12-06 01:41:27] JSONL file created: /Users/tawawhite/PROJECTS/projects-tasks/example-project/.beads/issues.jsonl
+[2025-12-06 01:41:28] Import triggered by file change
+[2025-12-06 01:41:28] Starting auto-import...
+[2025-12-06 01:41:28] Skipping import: JSONL content unchanged
+[2025-12-06 01:41:34] Mutation detected: update example-project-uh3
+[2025-12-06 01:41:34] Mutation detected: update example-project-uh3
+[2025-12-06 01:41:34] Export triggered by mutation events
+[2025-12-06 01:41:34] Starting export...
+[2025-12-06 01:41:34] Exported to JSONL
+[2025-12-06 01:41:34] JSONL removed/renamed, re-establishing watch
+[2025-12-06 01:41:34] Export complete
+[2025-12-06 01:41:34] Successfully re-established JSONL watch after 50ms
+[2025-12-06 01:41:34] JSONL file created: /Users/tawawhite/PROJECTS/projects-tasks/example-project/.beads/issues.jsonl
+[2025-12-06 01:41:35] Import triggered by file change
+[2025-12-06 01:41:35] Starting auto-import...
+[2025-12-06 01:41:35] Skipping import: JSONL content unchanged
+[2025-12-06 01:51:17] Mutation detected: update example-project-uh3
+[2025-12-06 01:51:17] Mutation detected: update example-project-uh3
+[2025-12-06 01:51:17] Mutation detected: comment example-project-uh3
+[2025-12-06 01:51:17] Mutation detected: update example-project-uh3
+[2025-12-06 01:51:17] Mutation detected: update example-project-uh3
+[2025-12-06 01:51:17] Mutation detected: comment example-project-uh3
+[2025-12-06 01:51:17] Export triggered by mutation events
+[2025-12-06 01:51:17] Starting export...
+[2025-12-06 01:51:17] Exported to JSONL
+[2025-12-06 01:51:17] JSONL removed/renamed, re-establishing watch
+[2025-12-06 01:51:17] Export complete
+[2025-12-06 01:51:18] Successfully re-established JSONL watch after 50ms
+[2025-12-06 01:51:18] JSONL file created: /Users/tawawhite/PROJECTS/projects-tasks/example-project/.beads/issues.jsonl
+[2025-12-06 01:51:19] Import triggered by file change
+[2025-12-06 01:51:19] Starting auto-import...
+[2025-12-06 01:51:19] Skipping import: JSONL content unchanged
+[2025-12-06 02:07:47] File change detected: /Users/tawawhite/PROJECTS/projects-tasks/example-project/.beads/issues.jsonl (op: CHMOD)
+[2025-12-06 02:07:48] Import triggered by file change
+[2025-12-06 02:07:48] Starting auto-import...
+[2025-12-06 02:07:48] Skipping import: JSONL content unchanged
+[2025-12-06 02:08:02] JSONL removed/renamed, re-establishing watch
+[2025-12-06 02:08:03] JSONL still missing after 50ms, retrying...
+[2025-12-06 02:08:03] JSONL still missing after 100ms, retrying...
+[2025-12-06 02:08:03] JSONL still missing after 200ms, retrying...
+[2025-12-06 02:08:03] JSONL still missing after 400ms, retrying...
+[2025-12-06 02:08:03] Failed to re-establish JSONL watch after all retries
