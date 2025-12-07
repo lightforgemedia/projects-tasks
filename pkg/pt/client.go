@@ -21,10 +21,12 @@ type Client interface {
 // Supported: "" or "bd" (default BDClient), "store" (local store).
 func NewClientFromEnv(runner CommandRunner) Client {
 	switch backend := getEnv("PT_BACKEND"); backend {
-	case "store":
+	case "", "store":
 		return NewStoreClient(getEnv("PT_DB"), getEnv("PT_PREFIX"))
-	default:
+	case "bd":
 		return NewBDClient(runner)
+	default:
+		return NewStoreClient(getEnv("PT_DB"), getEnv("PT_PREFIX"))
 	}
 }
 
