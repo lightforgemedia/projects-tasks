@@ -49,3 +49,23 @@ func TestCmdClaimAndReleaseStore(t *testing.T) {
 		t.Fatalf("expected open after release, got %s", issue.Status)
 	}
 }
+
+func TestCmdValidateStoresComment(t *testing.T) {
+	path, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{{Title: "A", Template: "backend_endpoint", Role: "dev", DoD: pt.DefinitionOfDone{Manual: "check"}}},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+	if err := store.UpdateIssue(t.Context(), "pt-1", "in_progress", ""); err != nil {
+		t.Fatalf("update err: %v", err)
+	}
+	if err := cmdValidate([]string{"--yes", "pt-1"}); err != nil {
+		t.Fatalf("validate err: %v", err)
+	}
+	store = pt.NewStoreClient(path, "pt")
+	if len(store.CommentsFor("pt-1")) == 0 {
+		t.Fatalf("expected comment stored")
+	}
+}

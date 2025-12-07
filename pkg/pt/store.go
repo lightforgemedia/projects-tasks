@@ -19,11 +19,19 @@ type StoreClient struct {
 	data storeData
 }
 
+// CommentsFor returns stored comments for an issue (testing/introspection).
+func (c *StoreClient) CommentsFor(id string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string{}, c.data.Comments[id]...)
+}
+
 type storeData struct {
-	NextID int                            `json:"next_id"`
-	Issues map[string]Issue               `json:"issues"`
-	Labels map[string]map[string]struct{} `json:"labels"` // issue -> set
-	Deps   map[string][]string            `json:"deps"`   // issue -> deps
+	NextID   int                            `json:"next_id"`
+	Issues   map[string]Issue               `json:"issues"`
+	Labels   map[string]map[string]struct{} `json:"labels"` // issue -> set
+	Deps     map[string][]string            `json:"deps"`   // issue -> deps
+	Comments map[string][]string            `json:"comments"`
 }
 
 // NewStoreClient creates or opens a store at path. If path empty, defaults to ".pt.db.json".
@@ -112,8 +120,13 @@ func (c *StoreClient) AddComment(ctx context.Context, id, body string) error {
 	if strings.TrimSpace(body) == "" {
 		return fmt.Errorf("comment body required")
 	}
-	// In this simple store we don't persist comments separately.
-	return nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.data.Comments == nil {
+		c.data.Comments = make(map[string][]string)
+	}
+	c.data.Comments[id] = append(c.data.Comments[id], body)
+	return c.saveLocked()
 }
 
 func (c *StoreClient) GetTask(ctx context.Context, id string) (Issue, TaskMeta, error) {
@@ -253,10 +266,11 @@ func (c *StoreClient) load() {
 		return
 	}
 	c.data = storeData{
-		NextID: 0,
-		Issues: make(map[string]Issue),
-		Labels: make(map[string]map[string]struct{}),
-		Deps:   make(map[string][]string),
+		NextID:   0,
+		Issues:   make(map[string]Issue),
+		Labels:   make(map[string]map[string]struct{}),
+		Deps:     make(map[string][]string),
+		Comments: make(map[string][]string),
 	}
 	raw, err := os.ReadFile(c.path)
 	if err != nil {
