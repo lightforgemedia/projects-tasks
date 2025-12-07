@@ -41,6 +41,7 @@ Agents interacting with this repository or using the `pt` tool should follow thi
 - Use manifests in `phases/`; each task should include `title`, `role`, `template`, `deps`, and DoD (`tests`, `manual`).
 - Pick templates: APIs (`backend_endpoint`), UI (`frontend_component`), regressions (`bug_fix`), cleanup (`refactor`), schema (`migration`), SLO/alerts (`observability_hook`).
 - Keep titles unique; reference deps by title or ID. Add concise manual steps so `pt validate --yes` can capture confirmations.
+- Ad-hoc: use `pt add` for quick tasks; `pt comment` to log progress; `pt snapshot` to back up the store before risky changes. Multi-project helpers: `pt multi-ready` (read-only across DBs) and `pt propose` (diff only, no writes).
 
 ## Automation Hooks (planned)
 - Configure hooks in repo `hooks.toml` or global `$HOME/.config/pt/hooks.toml` (env `PT_HOOKS` overrides). Events: pre/post sync/claim/validate, post release/approve/reject.

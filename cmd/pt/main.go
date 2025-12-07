@@ -17,8 +17,15 @@ import (
 	"projects-tasks/pkg/pt"
 )
 
-func newClient() pt.Client {
+func newClientWith(db, prefix string) pt.Client {
+	if strings.TrimSpace(db) != "" || strings.TrimSpace(prefix) != "" {
+		return pt.NewStoreClient(db, prefix)
+	}
 	return pt.NewClientFromEnv()
+}
+
+func newClient() pt.Client {
+	return newClientWith("", "")
 }
 
 func requireUser(explicit string) (string, error) {
@@ -158,6 +165,10 @@ func run(args []string) error {
 		return cmdComment(cmdArgs)
 	case "snapshot":
 		return cmdSnapshot(cmdArgs)
+	case "propose":
+		return cmdPropose(cmdArgs)
+	case "multi-ready":
+		return cmdMultiReady(cmdArgs)
 	case "hooks":
 		return cmdHooksPrint()
 	case "-h", "--help", "help":
@@ -185,6 +196,8 @@ Commands (SDLC flow):
   add "Title" [flags]                Create ad-hoc task (role/template required)
   comment <id> "text"                Append a comment to a task
   snapshot [--out=...]               Copy the store to a timestamped file
+  propose <manifest> [--db=PATH]     Show proposed adds/updates without writing
+  multi-ready --dbs=a.json,b.json    Read-only ready aggregation across stores
   context init <id>|validate <file>  Manage agent context contracts
   graph <manifest>                   Visualize manifest dependencies (cycles shown)
   hooks                              Print merged hook configuration (global + local)
@@ -203,6 +216,8 @@ func cmdSync(args []string) error {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt sync <manifest>") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -224,7 +239,7 @@ func cmdSync(args []string) error {
 	if err != nil {
 		return err
 	}
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	idMap, err := client.Sync(ctx, manifest)
@@ -256,6 +271,8 @@ func cmdReady(args []string) error {
 	verbose := fs.Bool("verbose", false, "show extra info (assignee, blockers)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt ready [--role=ROLE] [--limit=N] [--sort=priority|title] [--verbose]") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -263,7 +280,7 @@ func cmdReady(args []string) error {
 	if *hookVerboseFlag {
 		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	issues, err := client.Ready(ctx, *role, *limit)
@@ -329,6 +346,8 @@ func cmdList(args []string) error {
 	limit := fs.Int("limit", 50, "max issues")
 	sortKey := fs.String("sort", "priority", "sort by priority|title")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt list [--status=open,in_progress] [--role=ROLE] [--limit=N] [--json]") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -342,7 +361,7 @@ func cmdList(args []string) error {
 			}
 		}
 	}
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	issues, err := client.List(ctx, statuses, *role, *limit)
@@ -371,6 +390,8 @@ func cmdList(args []string) error {
 func cmdShow(args []string) error {
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt show <id> [--json]") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -380,7 +401,7 @@ func cmdShow(args []string) error {
 		return errors.New("missing id argument")
 	}
 	id := fs.Arg(0)
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	iss, meta, err := client.GetTask(ctx, id)
@@ -391,15 +412,15 @@ func cmdShow(args []string) error {
 	comments, _ := client.Comments(ctx, id)
 	if *jsonOut {
 		return printJSON(map[string]interface{}{
-			"id":        iss.ID,
-			"title":     iss.Title,
-			"status":    iss.Status,
-			"assignee":  iss.Assignee,
-			"labels":    iss.Labels,
-			"next_hint": iss.NextHint,
-			"meta":      meta,
-			"deps":      deps,
-			"comments":  comments,
+			"id":          iss.ID,
+			"title":       iss.Title,
+			"status":      iss.Status,
+			"assignee":    iss.Assignee,
+			"labels":      iss.Labels,
+			"next_hint":   iss.NextHint,
+			"meta":        meta,
+			"deps":        deps,
+			"comments":    comments,
 			"description": iss.Description,
 		})
 	}
@@ -448,6 +469,8 @@ func cmdClaim(args []string) error {
 	as := fs.String("as", "", "override assignee (defaults to $USER)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER]") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -464,7 +487,7 @@ func cmdClaim(args []string) error {
 	if err != nil {
 		return err
 	}
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	issue, meta, err := client.GetTask(ctx, id)
@@ -511,6 +534,8 @@ func cmdRelease(args []string) error {
 	as := fs.String("as", "", "override assignee check (defaults to $USER)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt release <id> [--as=USER]") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -527,7 +552,7 @@ func cmdRelease(args []string) error {
 	if err != nil {
 		return err
 	}
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	issue, meta, err := client.GetTask(ctx, id)
@@ -570,6 +595,8 @@ func cmdValidate(args []string) error {
 	yes := fs.Bool("yes", false, "auto-confirm manual checks")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt validate <id>") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -582,7 +609,7 @@ func cmdValidate(args []string) error {
 		return errors.New("missing id argument")
 	}
 	id := fs.Arg(0)
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 0)
 	defer cancel()
 	issue, meta, err := client.GetTask(ctx, id)
@@ -645,6 +672,8 @@ func cmdApprove(args []string) error {
 	fs := flag.NewFlagSet("approve", flag.ContinueOnError)
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt approve <id>") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -657,7 +686,7 @@ func cmdApprove(args []string) error {
 		return errors.New("missing id argument")
 	}
 	id := fs.Arg(0)
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	issue, meta, err := client.GetTask(ctx, id)
@@ -717,6 +746,8 @@ func cmdReject(args []string) error {
 	reason := fs.String("reason", "", "reason for rejection")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt reject <id> --reason=\"text\"") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -732,7 +763,7 @@ func cmdReject(args []string) error {
 		return errors.New("reason is required")
 	}
 	id := fs.Arg(0)
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	issue, meta, err := client.GetTask(ctx, id)
@@ -782,7 +813,11 @@ func cmdAdd(args []string) error {
 	deps := fs.String("deps", "", "comma-separated dependency IDs")
 	nextHint := fs.String("next-hint", "", "suggested next task")
 	jsonOut := fs.Bool("json", false, "output JSON")
-	fs.Usage = func() { fmt.Println("Usage: pt add \"Title\" --role=... --template=... [--manual=...] [--tests=...] [--validation-cmd=...] [--deps=...] [--next-hint=...]") }
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt add \"Title\" --role=... --template=... [--manual=...] [--tests=...] [--validation-cmd=...] [--deps=...] [--next-hint=...]")
+	}
 	var title string
 	var flagArgs []string
 	for _, a := range args {
@@ -840,7 +875,7 @@ func cmdAdd(args []string) error {
 		NextHint: *nextHint,
 		DoD:      dod,
 	}
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	id, err := client.AddTask(ctx, task)
@@ -857,6 +892,8 @@ func cmdAdd(args []string) error {
 func cmdComment(args []string) error {
 	fs := flag.NewFlagSet("comment", flag.ContinueOnError)
 	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt comment <id> \"text\"") }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -870,7 +907,7 @@ func cmdComment(args []string) error {
 	if body == "" {
 		return errors.New("comment text required")
 	}
-	client := newClient()
+	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := client.AddComment(ctx, id, body); err != nil {
@@ -886,11 +923,15 @@ func cmdComment(args []string) error {
 func cmdSnapshot(args []string) error {
 	fs := flag.NewFlagSet("snapshot", flag.ContinueOnError)
 	out := fs.String("out", "", "output file path (optional)")
+	dbPathFlag := fs.String("db", "", "override store path")
 	fs.Usage = func() { fmt.Println("Usage: pt snapshot [--out=path]") }
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	dbPath := os.Getenv("PT_DB")
+	dbPath := *dbPathFlag
+	if strings.TrimSpace(dbPath) == "" {
+		dbPath = os.Getenv("PT_DB")
+	}
 	if strings.TrimSpace(dbPath) == "" {
 		dbPath = ".pt.db.json"
 	}
@@ -926,6 +967,172 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Sync()
+}
+
+func cmdPropose(args []string) error {
+	fs := flag.NewFlagSet("propose", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "target store path")
+	prefix := fs.String("prefix", "", "override issue prefix when interpreting manifest")
+	jsonOut := fs.Bool("json", true, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt propose <manifest> [--db=path] [--prefix=pfx]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("missing manifest argument")
+	}
+	manifestPath := fs.Arg(0)
+	manifest, err := pt.ParseManifest(manifestPath)
+	if err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	existing, err := client.List(ctx, nil, "", 0) // all
+	if err != nil {
+		return fmt.Errorf("list existing: %w", err)
+	}
+	titleToIssue := make(map[string]pt.Issue)
+	for _, iss := range existing {
+		titleToIssue[iss.Title] = iss
+	}
+	var adds []pt.Task
+	var updates []map[string]interface{}
+	for _, task := range manifest.Tasks {
+		if iss, ok := titleToIssue[task.Title]; ok {
+			_, meta, _ := client.GetTask(ctx, iss.ID)
+			changes := diffTask(task, iss, meta)
+			if len(changes) > 0 {
+				updates = append(updates, map[string]interface{}{
+					"id":      iss.ID,
+					"title":   iss.Title,
+					"changes": changes,
+				})
+			}
+		} else {
+			adds = append(adds, task)
+		}
+	}
+	out := map[string]interface{}{
+		"target_db": *dbPath,
+		"adds":      adds,
+		"updates":   updates,
+		"notes":     []string{"proposal only; no writes performed", "prefix will be " + defaultPrefix(*prefix)},
+	}
+	if *jsonOut {
+		return printJSON(out)
+	}
+	fmt.Printf("Adds: %d Updates: %d\n", len(adds), len(updates))
+	return nil
+}
+
+func defaultPrefix(pfx string) string {
+	if strings.TrimSpace(pfx) == "" {
+		return "pt"
+	}
+	return pfx
+}
+
+func diffTask(task pt.Task, iss pt.Issue, meta pt.TaskMeta) map[string]interface{} {
+	changes := make(map[string]interface{})
+	if task.Role != meta.Role {
+		changes["role"] = map[string]string{"from": meta.Role, "to": task.Role}
+	}
+	if task.Template != meta.Template {
+		changes["template"] = map[string]string{"from": meta.Template, "to": task.Template}
+	}
+	if task.NextHint != meta.NextHint {
+		changes["next_hint"] = map[string]string{"from": meta.NextHint, "to": task.NextHint}
+	}
+	if !equalStringSlices(task.Deps, nil) { // compare by titles? we only have IDs; best-effort on meta not storing deps
+		changes["deps"] = task.Deps
+	}
+	// DoD diffs (shallow)
+	if strings.Join(task.DoD.Tests, ",") != strings.Join(meta.DoD.Tests, ",") {
+		changes["dod.tests"] = map[string]string{"from": strings.Join(meta.DoD.Tests, ","), "to": strings.Join(task.DoD.Tests, ",")}
+	}
+	if task.DoD.ValidationCmd != meta.DoD.ValidationCmd {
+		changes["dod.validation_cmd"] = map[string]string{"from": meta.DoD.ValidationCmd, "to": task.DoD.ValidationCmd}
+	}
+	if task.DoD.Manual != meta.DoD.Manual {
+		changes["dod.manual"] = map[string]string{"from": meta.DoD.Manual, "to": task.DoD.Manual}
+	}
+	return changes
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func cmdMultiReady(args []string) error {
+	fs := flag.NewFlagSet("multi-ready", flag.ContinueOnError)
+	dbs := fs.String("dbs", "", "comma-separated store paths")
+	role := fs.String("role", "", "filter by role label")
+	limit := fs.Int("limit", 10, "max issues per store")
+	sortKey := fs.String("sort", "priority", "sort by priority|title")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt multi-ready --dbs=a.json,b.json [--role=ROLE] [--limit=N] [--json]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*dbs) == "" {
+		fs.Usage()
+		return errors.New("missing --dbs")
+	}
+	var results []map[string]interface{}
+	for _, db := range strings.Split(*dbs, ",") {
+		db = strings.TrimSpace(db)
+		if db == "" {
+			continue
+		}
+		client := newClientWith(db, "")
+		ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+		issues, err := client.Ready(ctx, *role, *limit)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("ready for %s: %w", db, err)
+		}
+		pt.SortIssues(issues, *sortKey)
+		for _, iss := range issues {
+			if iss.Status != "open" {
+				continue
+			}
+			results = append(results, map[string]interface{}{
+				"db":        db,
+				"id":        iss.ID,
+				"title":     iss.Title,
+				"assignee":  iss.Assignee,
+				"status":    iss.Status,
+				"next_hint": iss.NextHint,
+			})
+		}
+	}
+	if *jsonOut {
+		return printJSON(results)
+	}
+	for _, r := range results {
+		line := fmt.Sprintf("%s %s %s [%s]", r["db"], r["id"], r["title"], r["status"])
+		if r["assignee"] == "" {
+			line += " [unassigned]"
+		} else {
+			line += fmt.Sprintf(" @%s", r["assignee"])
+		}
+		if nh, ok := r["next_hint"].(string); ok && strings.TrimSpace(nh) != "" {
+			line += fmt.Sprintf(" next:%s", nh)
+		}
+		fmt.Println(line)
+	}
+	return nil
 }
 
 func cmdContext(args []string) error {

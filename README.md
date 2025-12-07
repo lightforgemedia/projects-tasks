@@ -100,6 +100,7 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 - `pt add "Title" --role=... --template=... [--manual|--tests|--validation-cmd]` — ad-hoc task.
 - `pt comment <id> "text"` — append notes.
 - `pt snapshot` — copy `.pt.db.json` to a timestamped backup.
+- Multi-project (read-only/plan): `pt multi-ready --dbs=a.json,b.json` to aggregate ready tasks; `pt propose <manifest> --db=...` to show adds/updates without writing.
 
 ## Multi-Agent & No-Context Onboarding
 - Attribution: always `pt claim <id> --as=<identity>` so ownership is explicit; `pt release <id>` when you stop to unblock others.
