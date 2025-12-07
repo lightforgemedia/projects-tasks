@@ -71,6 +71,27 @@ func printJSON(data interface{}) error {
 	return nil
 }
 
+func projectDoDPath() string {
+	if v := strings.TrimSpace(os.Getenv("PT_PROJECT_DOD")); v != "" {
+		return v
+	}
+	return "PROJECT_DOD.md"
+}
+
+func projectDoDStatus() (string, bool) {
+	path := projectDoDPath()
+	if !filepath.IsAbs(path) {
+		wd, err := os.Getwd()
+		if err == nil {
+			path = filepath.Join(wd, path)
+		}
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path, true
+	}
+	return path, false
+}
+
 func readyBlockers(ctx context.Context, client pt.Client, iss pt.Issue) []string {
 	deps, err := client.Dependencies(ctx, iss.ID)
 	if err != nil {
@@ -263,6 +284,12 @@ func cmdSync(args []string) error {
 	for title, id := range idMap {
 		fmt.Printf("%s -> %s\n", title, id)
 	}
+	path, exists := projectDoDStatus()
+	if exists {
+		fmt.Printf("Project DoD: %s (ensure a review/sign-off task tracks it; set PT_PROJECT_DOD to override)\n", path)
+	} else {
+		fmt.Printf("Project DoD missing. Create %s (or set PT_PROJECT_DOD) and add a review/sign-off task to guide completion.\n", path)
+	}
 	return nil
 }
 
@@ -310,10 +337,12 @@ func cmdReady(args []string) error {
 		}
 		return printJSON(out)
 	}
+	printed := false
 	for _, iss := range issues {
 		if iss.Status != "open" { // hide claimed/in_progress
 			continue
 		}
+		printed = true
 		line := fmt.Sprintf("%s [%s] %s", iss.ID, iss.IssueType, iss.Title)
 		if !*verbose && strings.TrimSpace(iss.Assignee) == "" {
 			line = fmt.Sprintf("%s [unassigned]", line)
@@ -338,6 +367,14 @@ func cmdReady(args []string) error {
 			line = fmt.Sprintf("%s [blocked %s]", line, indicator)
 		}
 		fmt.Println(line)
+	}
+	if !printed {
+		path, exists := projectDoDStatus()
+		if exists {
+			fmt.Printf("No ready tasks. Review project DoD at %s (set PT_PROJECT_DOD to override). If not signed off, add or run a review/sign-off task.\n", path)
+		} else {
+			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set PT_PROJECT_DOD) and create a review/sign-off task to guide completion.\n", path)
+		}
 	}
 	return nil
 }
