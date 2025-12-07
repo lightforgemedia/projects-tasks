@@ -1,0 +1,46 @@
+title = "Codex ACP Client (Go)"
+owner = "demo-team"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Scaffold codexacp-client module"
+role = "backend-dev"
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "Module scaffolded under projects/codexacp-client with go.mod and README"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement agent process launcher"
+role = "backend-dev"
+deps = ["Scaffold codexacp-client module"]
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "process helper starts codex-acp (or any binary) via stdio"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement ACP client with tool event logging"
+role = "backend-dev"
+deps = ["Implement agent process launcher"]
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "SessionUpdate handles agent messages and tool calls, emits JSON tool events"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement CLI entrypoint"
+role = "backend-dev"
+deps = ["Implement ACP client with tool event logging"]
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "CLI wires init/session/prompt; supports flags for codex-acp path, cwd, prompt"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Add tests and docs"
+role = "backend-dev"
+deps = ["Implement CLI entrypoint"]
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "README with usage; unit tests for tool event building"
