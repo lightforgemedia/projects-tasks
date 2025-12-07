@@ -2,7 +2,7 @@
 
 This repository ships a **Go SDK** and **CLI** with a built-in store to provide structured project/phase planning, templated tasks, and ready-to-work queues for human or agent contributors.
 
-**Goal:** Keep the Beads graph as the source of truth while adding higher-level ergonomics: phase manifests, task templates, validation rules, and state machine enforcement.
+**Goal:** Provide structured project/task planning (manifests, templates, validation, state machine) on a simple built-in store.
 
 ## System Shape
 
@@ -86,7 +86,7 @@ deps = ["Implement POST /login"] # Dependency by title
 The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 
 ### 1. Plan & Sync
-Apply a manifest to the Beads graph. This creates issues, sets dependencies, and stores validation rules.
+Apply a manifest to the store. This creates issues, sets dependencies, and stores validation rules.
 ```bash
 pt sync phases/login_flow.toml
 # Output:
