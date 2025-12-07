@@ -10,6 +10,7 @@ type Client interface {
 	Sync(ctx context.Context, manifest Manifest) (map[string]string, error)
 	Ready(ctx context.Context, role string, limit int) ([]Issue, error)
 	List(ctx context.Context, statuses []string, role string, limit int) ([]Issue, error)
+	Search(ctx context.Context, opts SearchOptions) ([]SearchResult, error)
 	UpdateIssue(ctx context.Context, id, status, assignee string) error
 	AddLabels(ctx context.Context, id string, labels ...string) error
 	RemoveLabels(ctx context.Context, id string, labels ...string) error

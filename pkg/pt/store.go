@@ -34,6 +34,7 @@ type storeData struct {
 	Labels   map[string]map[string]struct{} `json:"labels"` // issue -> set
 	Deps     map[string][]string            `json:"deps"`   // issue -> deps
 	Comments map[string][]string            `json:"comments"`
+	TitleMap map[string]string              `json:"title_map"` // title -> id
 }
 
 // NewStoreClient creates or opens a store at path. If path empty, defaults to ".pt.db.json".
@@ -174,11 +175,16 @@ func (c *StoreClient) AddTask(ctx context.Context, task Task) (string, error) {
 	if err := validateTask(task); err != nil {
 		return "", err
 	}
-	// Validate deps refer to existing issue IDs
+	// Validate deps refer to existing issue IDs or titles
 	for _, dep := range task.Deps {
-		if _, ok := c.data.Issues[dep]; !ok {
-			return "", fmt.Errorf("unknown dependency %q", dep)
+		if _, ok := c.data.Issues[dep]; ok {
+			continue
 		}
+		if id, ok := c.data.TitleMap[dep]; ok {
+			task.Deps = replaceValue(task.Deps, dep, id)
+			continue
+		}
+		return "", fmt.Errorf("unknown dependency %q", dep)
 	}
 	id, err := c.ensureIssueLocked(task)
 	if err != nil {
@@ -260,6 +266,7 @@ func (c *StoreClient) ensureIssueLocked(task Task) (string, error) {
 	// Check by title
 	for id, iss := range c.data.Issues {
 		if iss.Title == task.Title {
+			c.data.TitleMap[task.Title] = id
 			desc, err := buildDescription(task)
 			if err != nil {
 				return "", err
@@ -297,6 +304,10 @@ func (c *StoreClient) ensureIssueLocked(task Task) (string, error) {
 		},
 	}
 	c.data.Issues[id] = issue
+	if c.data.TitleMap == nil {
+		c.data.TitleMap = make(map[string]string)
+	}
+	c.data.TitleMap[task.Title] = id
 	c.data.Labels[id] = make(map[string]struct{})
 	for _, l := range issue.Labels {
 		c.data.Labels[id][l] = struct{}{}
@@ -371,6 +382,9 @@ func (c *StoreClient) load() {
 	if c.data.Deps == nil {
 		c.data.Deps = make(map[string][]string)
 	}
+	if c.data.TitleMap == nil {
+		c.data.TitleMap = make(map[string]string)
+	}
 }
 
 func (c *StoreClient) saveLocked() error {
@@ -420,4 +434,16 @@ func appendUnique(list []string, val string) []string {
 		}
 	}
 	return append(list, val)
+}
+
+func replaceValue(list []string, from, to string) []string {
+	out := make([]string, len(list))
+	for i, v := range list {
+		if v == from {
+			out[i] = to
+		} else {
+			out[i] = v
+		}
+	}
+	return out
 }

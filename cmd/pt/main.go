@@ -169,6 +169,8 @@ func run(args []string) error {
 		return cmdPropose(cmdArgs)
 	case "multi-ready":
 		return cmdMultiReady(cmdArgs)
+	case "search":
+		return cmdSearch(cmdArgs)
 	case "hooks":
 		return cmdHooksPrint()
 	case "-h", "--help", "help":
@@ -198,6 +200,7 @@ Commands (SDLC flow):
   snapshot [--out=...]               Copy the store to a timestamped file
   propose <manifest> [--db=PATH]     Show proposed adds/updates without writing
   multi-ready --dbs=a.json,b.json    Read-only ready aggregation across stores
+  search --query="text"              Search titles/labels/description (read-only)
   context init <id>|validate <file>  Manage agent context contracts
   graph <manifest>                   Visualize manifest dependencies (cycles shown)
   hooks                              Print merged hook configuration (global + local)
@@ -1130,6 +1133,45 @@ func cmdMultiReady(args []string) error {
 		if nh, ok := r["next_hint"].(string); ok && strings.TrimSpace(nh) != "" {
 			line += fmt.Sprintf(" next:%s", nh)
 		}
+		fmt.Println(line)
+	}
+	return nil
+}
+
+func cmdSearch(args []string) error {
+	fs := flag.NewFlagSet("search", flag.ContinueOnError)
+	query := fs.String("query", "", "query text")
+	role := fs.String("role", "", "filter by role label")
+	limit := fs.Int("limit", 20, "max results")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt search --query=\"text\" [--role=ROLE] [--limit=N] [--db=path] [--json]")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*query) == "" {
+		fs.Usage()
+		return errors.New("missing --query")
+	}
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	results, err := client.Search(ctx, pt.SearchOptions{
+		Query: *query,
+		Role:  *role,
+		Limit: *limit,
+	})
+	if err != nil {
+		return fmt.Errorf("search failed: %w", err)
+	}
+	if *jsonOut {
+		return printJSON(results)
+	}
+	for _, r := range results {
+		line := fmt.Sprintf("%s [%s] %s (match:%s)", r.Issue.ID, r.Issue.IssueType, r.Issue.Title, r.Match)
 		fmt.Println(line)
 	}
 	return nil
