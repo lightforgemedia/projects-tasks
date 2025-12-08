@@ -47,6 +47,15 @@ manual = "README with usage; unit tests for tool event building"
 
 [[tasks]]
 template = "backend_endpoint"
+title = "Codex-acp smoke test"
+role = "backend-dev"
+deps = ["Add tests and docs"]
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "Attempt end-to-end run with codex-acp adapter (initialize -> newSession -> prompt) and capture [tool-event] logs. If adapter unavailable, document the block and prerequisites in task comments."
+
+[[tasks]]
+template = "backend_endpoint"
 title = "Project review & sign-off"
 role = "backend-dev"
 deps = ["Add tests and docs"]
