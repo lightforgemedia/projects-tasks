@@ -6,19 +6,26 @@ import (
 	"testing"
 )
 
-func registerDemoTools() *Registry {
+type simpleReq struct {
+	Msg string `json:"msg"`
+}
+type simpleResp struct {
+	Msg string `json:"msg"`
+}
+
+func registerDemoToolsRoot() *Registry {
 	r := NewRegistry()
-	r.MustRegister(NewTool(ToolConfig[pingReq, pingResp]{Name: "echo", Description: "echo"}, func(ctx context.Context, req pingReq) (pingResp, error) {
-		return pingResp{Msg: req.Msg}, nil
+	r.MustRegister(NewTool(ToolConfig[simpleReq, simpleResp]{Name: "echo", Description: "echo"}, func(ctx context.Context, req simpleReq) (simpleResp, error) {
+		return simpleResp{Msg: req.Msg}, nil
 	}))
-	r.MustRegister(NewTool(ToolConfig[pingReq, pingResp]{Name: "upper", Description: "upper"}, func(ctx context.Context, req pingReq) (pingResp, error) {
-		return pingResp{Msg: strings.ToUpper(req.Msg)}, nil
+	r.MustRegister(NewTool(ToolConfig[simpleReq, simpleResp]{Name: "upper", Description: "upper"}, func(ctx context.Context, req simpleReq) (simpleResp, error) {
+		return simpleResp{Msg: strings.ToUpper(req.Msg)}, nil
 	}))
 	return r
 }
 
 func TestSelectToolScenarios(t *testing.T) {
-	r := registerDemoTools()
+	r := registerDemoToolsRoot()
 	tests := []struct {
 		name     string
 		prompt   string

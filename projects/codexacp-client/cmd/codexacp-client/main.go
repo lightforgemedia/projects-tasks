@@ -67,7 +67,8 @@ func main() {
 	}
 
 	session, err := conn.NewSession(ctx, acp.NewSessionRequest{
-		Cwd:        cwd,
+		Cwd: cwd,
+		// McpServers supported by acp-go-sdk; codex-acp currently ignores client-supplied MCP servers.
 		McpServers: []acp.McpServer{},
 	})
 	if err != nil {

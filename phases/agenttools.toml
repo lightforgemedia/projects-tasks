@@ -35,3 +35,30 @@ deps = ["Adapter shapes and tests"]
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "Confirm PROJECT_DOD.md checklist (CLI, adapters, tests); document gaps"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Prompt router and upper tool"
+role = "backend-dev"
+deps = ["Adapter shapes and tests"]
+[tasks.dod]
+tests = ["go test ./projects/agenttools/..."]
+manual = "Add prompt-based tool router and an upper tool; table-driven tests cover explicit tool ask, tools-available hint, and task-only prompt"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "MCP server (stdio/HTTP) for agenttools"
+role = "backend-dev"
+deps = ["Prompt router and upper tool"]
+[tasks.dod]
+tests = ["go test ./projects/agenttools/..."]
+manual = "Add MCP server (mcp-go) with stdio and HTTP transports; include example tool and tests covering both transports"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "MCP+ACP integration plan doc"
+role = "backend-dev"
+deps = ["MCP server (stdio/HTTP) for agenttools"]
+[tasks.dod]
+tests = ["go test ./projects/agenttools/..."]
+manual = "Write DESIGN_MCP.md summarizing MCP server, ACP mcpServers usage, and current codex-acp limitation; note next steps"

@@ -7,7 +7,7 @@ import (
 	"sort"
 )
 
-// Registry holds tools by name. It is exported so other modules can depend on agenttools.
+// Registry holds tools by name.
 type Registry struct {
 	tools map[string]DynamicTool
 }
