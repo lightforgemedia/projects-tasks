@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,8 @@ func main() {
 		cwdFlag = flag.String("cwd", ".", "working directory for the ACP session")
 		prompt  = flag.String("prompt", "Summarize this workspace.", "prompt to send to the agent")
 		debug   = flag.Bool("debug", false, "enable debug logging")
+		mcpCmd  = flag.String("mcp-cmd", "", "path to MCP server binary (stdio); optional")
+		mcpArgs = flag.String("mcp-args", "", "comma-separated args for MCP server (optional)")
 	)
 	flag.Parse()
 
@@ -66,10 +69,13 @@ func main() {
 		return
 	}
 
+	var mcpServerArgs []string
+	if strings.TrimSpace(*mcpArgs) != "" {
+		mcpServerArgs = strings.Split(*mcpArgs, ",")
+	}
 	session, err := conn.NewSession(ctx, acp.NewSessionRequest{
-		Cwd: cwd,
-		// McpServers supported by acp-go-sdk; codex-acp currently ignores client-supplied MCP servers.
-		McpServers: []acp.McpServer{},
+		Cwd:        cwd,
+		McpServers: acpclient.BuildMcpServers(*mcpCmd, mcpServerArgs, nil),
 	})
 	if err != nil {
 		printRequestError("newSession", err)
