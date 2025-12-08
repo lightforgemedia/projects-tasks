@@ -52,7 +52,7 @@ role = "backend-dev"
 deps = ["Prompt router and upper tool"]
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
-manual = "Add MCP server (mcp-go) with stdio and HTTP transports; include example tool and tests covering both transports"
+manual = "Add MCP server (mcp-go) with stdio and HTTP transports; include example tool and tests covering both transports; manually exercise the server standalone (stdio or HTTP) to confirm it answers a tool call"
 
 [[tasks]]
 template = "backend_endpoint"

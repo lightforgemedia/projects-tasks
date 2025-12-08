@@ -15,6 +15,7 @@
 - All work in this repo and subprojects must be managed via `pt` (sync/ready/claim/validate/approve). Do not bypass the SDLC flow.
 - Log any pt issues or improvement ideas as pt tasks (via manifests or `pt add`).
 - Keep task-level and project-level DoDs current (e.g., `PROJECT_DOD.md`); use pt review/sign-off tasks to enforce them.
+- For new features/servers/CLIs, DoD must include real validation (run the feature end-to-end, not just unit tests). If a manual/standalone check is needed (e.g., start the server and call a tool), perform it and record the result in task comments.
 
 ## Agent Workflows
 Agents interacting with this repository or using the `pt` tool should follow this loop:
