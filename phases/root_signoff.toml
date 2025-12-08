@@ -1,0 +1,10 @@
+title = "Root Project Sign-off"
+owner = "demo-team"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Root project review & sign-off"
+role = "backend-dev"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Review PROJECT_DOD.md (root). Confirm: go test ./... passes; all manifests in phases/ are synced; subproject DoDs exist (example-project/PROJECT_DOD.md, projects/codexacp-client/PROJECT_DOD.md); pt ready shows only DoD reminder when work is complete; document any gaps in task comments."
