@@ -1,0 +1,37 @@
+title = "Agent Tools Registry"
+owner = "demo-team"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Scaffold agenttools module"
+role = "backend-dev"
+[tasks.dod]
+tests = ["go test ./projects/agenttools/..."]
+manual = "Registry, tool interface, schema placeholder, sample tool (echo), added to go.work"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Add agent-tools CLI"
+role = "backend-dev"
+deps = ["Scaffold agenttools module"]
+[tasks.dod]
+tests = ["go test ./projects/agenttools/..."]
+manual = "CLI supports list and call with JSON input; tools self-register via blank imports"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Adapter shapes and tests"
+role = "backend-dev"
+deps = ["Add agent-tools CLI"]
+[tasks.dod]
+tests = ["go test ./projects/agenttools/..."]
+manual = "Adapters emit provider-friendly schemas (OpenAI-like, Anthropic-like, ACP) with golden tests"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Project review & sign-off (agenttools)"
+role = "backend-dev"
+deps = ["Adapter shapes and tests"]
+[tasks.dod]
+tests = ["go test ./projects/agenttools/..."]
+manual = "Confirm PROJECT_DOD.md checklist (CLI, adapters, tests); document gaps"

@@ -11,6 +11,11 @@
 - **Tests**: Unit tests next to code (`_test.go`). No skipping.
 - **Secrets**: Never commit secrets.
 
+## PT Dogfooding (mandatory)
+- All work in this repo and subprojects must be managed via `pt` (sync/ready/claim/validate/approve). Do not bypass the SDLC flow.
+- Log any pt issues or improvement ideas as pt tasks (via manifests or `pt add`).
+- Keep task-level and project-level DoDs current (e.g., `PROJECT_DOD.md`); use pt review/sign-off tasks to enforce them.
+
 ## Agent Workflows
 Agents interacting with this repository or using the `pt` tool should follow this loop:
 
