@@ -1,6 +1,10 @@
 package acpclient
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -54,4 +58,51 @@ func TestToMapStructRoundTrip(t *testing.T) {
 	if out["a"] != "x" || out["b"].(float64) != float64(2) {
 		t.Fatalf("unexpected map contents: %+v", out)
 	}
+}
+
+func TestFromToolCallUpdateWithFields(t *testing.T) {
+	kind := acp.ToolKindExecute
+	status := acp.ToolCallStatusCompleted
+	title := "run ls"
+	tc := &acp.SessionToolCallUpdate{
+		ToolCallId: "call-3",
+		Kind:       &kind,
+		Status:     &status,
+		Title:      &title,
+		RawInput:   map[string]any{"cmd": "ls"},
+	}
+	ev := fromToolCallUpdate("sess-3", tc)
+	if ev.Kind != "execute" || ev.Status != "completed" || ev.Title != "run ls" {
+		t.Fatalf("unexpected fields: %+v", ev)
+	}
+	if ev.RawInput["cmd"] != "ls" {
+		t.Fatalf("raw input missing: %+v", ev.RawInput)
+	}
+}
+
+func TestLogToolEventOutput(t *testing.T) {
+	var buf bytes.Buffer
+	swapStdout(&buf, func() {
+		_ = logToolEvent(ToolEvent{SessionID: "sess-log", ToolCallID: "call-log", Status: "completed"})
+	})
+	out := buf.String()
+	if !strings.Contains(out, "[tool-event]") || !strings.Contains(out, `"call-log"`) {
+		t.Fatalf("log output missing expected content: %q", out)
+	}
+}
+
+// swapStdout captures stdout during fn for testing.
+func swapStdout(w io.Writer, fn func()) {
+	old := os.Stdout
+	r, pw, _ := os.Pipe()
+	os.Stdout = pw
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(w, r)
+		close(done)
+	}()
+	fn()
+	_ = pw.Close()
+	os.Stdout = old
+	<-done
 }
