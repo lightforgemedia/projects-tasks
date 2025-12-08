@@ -371,9 +371,9 @@ func cmdReady(args []string) error {
 	if !printed {
 		path, exists := projectDoDStatus()
 		if exists {
-			fmt.Printf("No ready tasks. Review project DoD at %s (set PT_PROJECT_DOD to override). If not signed off, add or run a review/sign-off task.\n", path)
+			fmt.Printf("No ready tasks. Review project DoD at %s (set PT_PROJECT_DOD to override). If the DoD is not satisfied, identify the gaps and add tasks (via manifest or pt add) to close them with full tests/docs/review—avoid shortcuts. Only ask the user when requirements are unclear or external approval is needed.\n", path)
 		} else {
-			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set PT_PROJECT_DOD) and create a review/sign-off task to guide completion.\n", path)
+			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set PT_PROJECT_DOD), then create tasks to reach that DoD using best practices (tests, docs, review) and minimize user prompts unless requirements are unclear.\n", path)
 		}
 	}
 	return nil
