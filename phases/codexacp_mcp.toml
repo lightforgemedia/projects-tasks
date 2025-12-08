@@ -17,3 +17,12 @@ deps = ["ACP client mcpServers wiring"]
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "Attempt E2E tool call via MCP through codex-acp; if unsupported, capture limitation and log steps to enable in future"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Inject MCP server via ACP wrapper"
+role = "backend-dev"
+deps = ["Codex-acp MCP E2E (documented blocker)"]
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "Implement ACP wrapper changes needed to pass MCP servers through (even if adapter ignores); include a test that asserts mcpServers are set and logs injection attempt; if blocked, document the adapter limitation and next steps"

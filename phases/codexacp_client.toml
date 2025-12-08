@@ -56,6 +56,24 @@ manual = "Attempt end-to-end run with codex-acp adapter (initialize -> newSessio
 
 [[tasks]]
 template = "backend_endpoint"
+title = "Bridge agenttools registry into ACP"
+role = "backend-dev"
+deps = ["Codex-acp smoke test"]
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "Add adapter to expose agenttools registry as ACP tool capabilities (OpenAI/Anthropic -> ACP); document how tools are surfaced when connecting to codex-acp."
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Integration test: codex-acp + agenttools"
+role = "backend-dev"
+deps = ["Bridge agenttools registry into ACP"]
+[tasks.dod]
+tests = ["go test ./projects/codexacp-client/..."]
+manual = "E2E test that a prompt triggers an agenttools tool via ACP (or document current limitation if codex-acp cannot consume client-provided tools). Capture [tool-event] evidence or note blocker."
+
+[[tasks]]
+template = "backend_endpoint"
 title = "Project review & sign-off"
 role = "backend-dev"
 deps = ["Add tests and docs"]

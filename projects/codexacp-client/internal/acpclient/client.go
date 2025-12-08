@@ -13,7 +13,8 @@ import (
 )
 
 // CodexClient implements acp.Client and stubs terminal support.
-type CodexClient struct{}
+type CodexClient struct {
+}
 
 var _ acp.Client = (*CodexClient)(nil)
 
