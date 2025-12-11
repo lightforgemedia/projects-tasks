@@ -5,24 +5,30 @@ owner = "demo-team"
 template = "backend_endpoint"
 title = "Scaffold example project"
 role = "backend-dev"
+artifact = "doc:example-scaffold"
 [tasks.dod]
 tests = ["go test ./example-project/..."]
 manual = "README and PROJECT_DOD.md exist with initial checklist"
+criteria = ["README created", "PROJECT_DOD.md created", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Implement example CLI"
 role = "backend-dev"
 deps = ["Scaffold example project"]
+artifact = "code:example-cli"
 [tasks.dod]
 tests = ["go test ./example-project/..."]
 manual = "CLI prints greeting; README documents usage"
+criteria = ["CLI prints greeting", "README documents usage", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Project review & sign-off (example)"
 role = "backend-dev"
 deps = ["Implement example CLI"]
+artifact = "doc:example-signoff"
 [tasks.dod]
 tests = ["go test ./example-project/..."]
 manual = "Confirm example PROJECT_DOD.md checklist; note gaps in comments"
+criteria = ["PROJECT_DOD.md verified", "gaps noted", "tests pass"]

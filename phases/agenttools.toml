@@ -5,60 +5,74 @@ owner = "demo-team"
 template = "backend_endpoint"
 title = "Scaffold agenttools module"
 role = "backend-dev"
+artifact = "code:agenttools-scaffold"
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "Registry, tool interface, schema placeholder, sample tool (echo), added to go.work"
+criteria = ["registry & interface created", "echo tool present", "go.work updated"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Add agent-tools CLI"
 role = "backend-dev"
 deps = ["Scaffold agenttools module"]
+artifact = "code:agenttools-cli"
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "CLI supports list and call with JSON input; tools self-register via blank imports"
+criteria = ["CLI lists tools", "CLI can call sample tool", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Adapter shapes and tests"
 role = "backend-dev"
 deps = ["Add agent-tools CLI"]
+artifact = "code:agenttools-adapters"
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "Adapters emit provider-friendly schemas (OpenAI-like, Anthropic-like, ACP) with golden tests"
+criteria = ["schemas emitted", "golden tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Project review & sign-off (agenttools)"
 role = "backend-dev"
 deps = ["Adapter shapes and tests"]
+artifact = "doc:agenttools-signoff"
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "Confirm PROJECT_DOD.md checklist (CLI, adapters, tests); document gaps"
+criteria = ["PROJECT_DOD checklist verified", "gaps documented"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Prompt router and upper tool"
 role = "backend-dev"
 deps = ["Adapter shapes and tests"]
+artifact = "code:agenttools-router"
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "Add prompt-based tool router and an upper tool; table-driven tests cover explicit tool ask, tools-available hint, and task-only prompt"
+criteria = ["router added", "table-driven tests cover 3 variants"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "MCP server (stdio/HTTP) for agenttools"
 role = "backend-dev"
 deps = ["Prompt router and upper tool"]
+artifact = "code:agenttools-mcp"
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "Add MCP server (mcp-go) with stdio and HTTP transports; include example tool and tests covering both transports; manually exercise the server standalone (stdio or HTTP) to confirm it answers a tool call"
+criteria = ["stdio MCP tool call works", "HTTP MCP tool call works"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "MCP+ACP integration plan doc"
 role = "backend-dev"
 deps = ["MCP server (stdio/HTTP) for agenttools"]
+artifact = "doc:mcp-acp-plan"
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "Write DESIGN_MCP.md summarizing MCP server, ACP mcpServers usage, and current codex-acp limitation; note next steps"
+criteria = ["DESIGN_MCP.md updated", "codex-acp limitation noted"]

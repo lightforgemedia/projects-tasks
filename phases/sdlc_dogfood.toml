@@ -5,40 +5,52 @@ owner = "demo-team"
 template = "refactor"
 title = "Validate external dependencies and cache fixtures"
 role = "architect"
+artifact = "doc:fixtures"
 [tasks.dod]
+tests = ["echo fixture-check"]
 manual = "Access confirmed; fixture saved (docs/fixtures/*.json); schema documented"
+criteria = ["access confirmed", "fixture saved", "schema documented"]
 
 [[tasks]]
 template = "frontend_component"
 title = "Build UI against fixtures (mock data)"
 role = "frontend-dev"
 deps = ["Validate external dependencies and cache fixtures"]
+artifact = "ui:fixtures-ui"
 [tasks.dod]
 tests = ["go test ./frontend/..."]
 manual = "Screenshots captured for states; matches approved wireframe"
+criteria = ["UI matches wireframe", "screenshots captured", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Integrate external services using fixtures"
 role = "backend-dev"
 deps = ["Validate external dependencies and cache fixtures"]
+artifact = "code:fixtures-integration"
 [tasks.dod]
 tests = ["go test ./backend/..."]
 manual = "Integration smoke with cached fixture passes"
+criteria = ["integration smoke passes", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Replace mocks with internal data sources"
 role = "backend-dev"
 deps = ["Integrate external services using fixtures"]
+artifact = "code:fixtures-replacement"
 [tasks.dod]
 tests = ["go test ./backend/..."]
 manual = "Schemas/docs updated; mocks retained for tests"
+criteria = ["mocks replaced for runtime", "mocks retained for tests", "schemas updated"]
 
 [[tasks]]
 template = "refactor"
 title = "Full flow demo and review"
 role = "architect"
 deps = ["Build UI against fixtures (mock data)", "Replace mocks with internal data sources"]
+artifact = "doc:fixtures-demo"
 [tasks.dod]
+tests = ["go test ./frontend/... ./backend/..."]
 manual = "E2E demo recorded or screenshots; all tests green; reviewer sign-off"
+criteria = ["E2E demo recorded", "all tests green", "reviewer sign-off"]

@@ -5,78 +5,96 @@ owner = "demo-team"
 template = "backend_endpoint"
 title = "Scaffold codexacp-client module"
 role = "backend-dev"
+artifact = "code:codexacp-scaffold"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "Module scaffolded under projects/codexacp-client with go.mod and README"
+criteria = ["go.mod present", "README present", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Implement agent process launcher"
 role = "backend-dev"
 deps = ["Scaffold codexacp-client module"]
+artifact = "code:codexacp-process"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "process helper starts codex-acp (or any binary) via stdio"
+criteria = ["process helper tested", "starts adapter via stdio"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Implement ACP client with tool event logging"
 role = "backend-dev"
 deps = ["Implement agent process launcher"]
+artifact = "code:codexacp-client"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "SessionUpdate handles agent messages and tool calls, emits JSON tool events"
+criteria = ["tool events emitted", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Implement CLI entrypoint"
 role = "backend-dev"
 deps = ["Implement ACP client with tool event logging"]
+artifact = "code:codexacp-cli"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "CLI wires init/session/prompt; supports flags for codex-acp path, cwd, prompt"
+criteria = ["CLI flags documented", "init/session/prompt wiring works"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Add tests and docs"
 role = "backend-dev"
 deps = ["Implement CLI entrypoint"]
+artifact = "doc:codexacp-tests-docs"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "README with usage; unit tests for tool event building"
+criteria = ["README updated", "tool event tests in place", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Codex-acp smoke test"
 role = "backend-dev"
 deps = ["Add tests and docs"]
+artifact = "doc:codexacp-smoke"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "Attempt end-to-end run with codex-acp adapter (initialize -> newSession -> prompt) and capture [tool-event] logs. If adapter unavailable, document the block and prerequisites in task comments."
+criteria = ["smoke attempted; results documented"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Bridge agenttools registry into ACP"
 role = "backend-dev"
 deps = ["Codex-acp smoke test"]
+artifact = "code:codexacp-agenttools"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "Add adapter to expose agenttools registry as ACP tool capabilities (OpenAI/Anthropic -> ACP); document how tools are surfaced when connecting to codex-acp."
+criteria = ["adapter added", "tool surfacing documented"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Integration test: codex-acp + agenttools"
 role = "backend-dev"
 deps = ["Bridge agenttools registry into ACP"]
+artifact = "test:codexacp-agenttools-e2e"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "E2E test that a prompt triggers an agenttools tool via ACP (or document current limitation if codex-acp cannot consume client-provided tools). Capture [tool-event] evidence or note blocker."
+criteria = ["E2E attempted", "tool-event evidence or blocker documented"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Project review & sign-off"
 role = "backend-dev"
 deps = ["Add tests and docs"]
+artifact = "doc:codexacp-signoff"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "Confirm PROJECT_DOD.md checklist: tests green; CLI help/README updated; sample run (or documented why not run); open issues noted"
+criteria = ["PROJECT_DOD verified", "open issues noted", "tests pass"]

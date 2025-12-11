@@ -5,17 +5,22 @@ owner = "team-payments"
 template = "bug_fix"
 title = "Reproduce payment timeout"
 role = "backend-dev"
+artifact = "bug:payment-timeout"
 [tasks.dod]
+tests = ["echo repro-placeholder"]
 manual = "Document repro steps for timeout"
+criteria = ["repro documented with logs", "steps captured"]
 
 [[tasks]]
 template = "bug_fix"
 title = "Fix payment timeout handler"
 role = "backend-dev"
 deps = ["Reproduce payment timeout"]
+artifact = "bug:payment-timeout"
 [tasks.dod]
 tests = ["go test ./src/payments/..."]
 manual = "Verify timeout no longer occurs"
+criteria = ["repro no longer triggers", "tests pass"]
 on_failure = "block"
 
 [[tasks]]
@@ -23,8 +28,11 @@ template = "observability_hook"
 title = "Add timeout alert"
 role = "sre"
 deps = ["Fix payment timeout handler"]
+artifact = "obs:payment-timeout"
 [tasks.params]
 metric = "payment_timeout"
 [tasks.dod]
+tests = ["echo alert-check"]
 manual = "Ensure alert fires on simulated timeout"
+criteria = ["alert fires on simulated timeout"]
 on_failure = "flag"

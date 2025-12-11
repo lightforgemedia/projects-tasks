@@ -5,63 +5,80 @@ owner = "demo-team"
 template = "refactor"
 title = "Add next_hint support and surface in ready output"
 role = "backend-dev"
+artifact = "code:pt-next-hint"
 [tasks.dod]
 tests = ["go test ./cmd/pt/..."]
 manual = "ready --verbose shows next hints; manifests accept next_hint field"
+criteria = ["next_hint accepted in manifests", "ready shows next_hint", "tests pass"]
 
 [[tasks]]
 template = "refactor"
 title = "Add JSON mode for command + hook results"
 role = "backend-dev"
 deps = ["Add next_hint support and surface in ready output"]
+artifact = "code:pt-json-mode"
 [tasks.dod]
 tests = ["go test ./cmd/pt/..."]
 manual = "pt validate/claim/approve return machine-readable hook results"
+criteria = ["commands emit JSON mode", "hook results visible", "tests pass"]
 
 [[tasks]]
 template = "refactor"
 title = "Document hook result reporting and next_hint usage"
 role = "tech-writer"
 deps = ["Add JSON mode for command + hook results"]
+artifact = "doc:pt-hooks-next-hint"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "README/AGENTS updated; examples/hooks updated to show outputs-first flow"
+criteria = ["docs updated", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Add pt list with status filtering"
 role = "backend-dev"
+artifact = "code:pt-list-status"
 [tasks.dod]
 tests = ["go test ./cmd/pt/..."]
 manual = "pt list --status in_progress|needs_review works; ready remains unchanged"
+criteria = ["list status filter works", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Add pt show to display task details and DoD/comments"
 role = "backend-dev"
+artifact = "code:pt-show"
 [tasks.dod]
 tests = ["go test ./cmd/pt/..."]
 manual = "pt show <id> outputs title/status/assignee/next_hint/dod/comments"
+criteria = ["show includes DoD/comments", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Add pt add for ad-hoc task creation"
 role = "backend-dev"
+artifact = "code:pt-add"
 [tasks.dod]
 tests = ["go test ./cmd/pt/..."]
 manual = "pt add \"Title\" --role --template creates task with DoD/manual/default"
+criteria = ["add creates task with DoD", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Add pt comment to append notes"
 role = "backend-dev"
+artifact = "code:pt-comment"
 [tasks.dod]
 tests = ["go test ./cmd/pt/..."]
 manual = "pt comment <id> stores comment; show displays it"
+criteria = ["comment stored and shown", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Add pt snapshot for DB safety"
 role = "backend-dev"
+artifact = "code:pt-snapshot"
 [tasks.dod]
 tests = ["go test ./cmd/pt/..."]
 manual = "pt snapshot writes timestamped copy; documented in README/AGENTS"
+criteria = ["snapshot writes copy", "docs updated", "tests pass"]

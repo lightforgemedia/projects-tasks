@@ -5,24 +5,30 @@ owner = "demo-team"
 template = "backend_endpoint"
 title = "ACP client mcpServers wiring"
 role = "backend-dev"
+artifact = "code:codexacp-mcp"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "Add mcpServers field in session/new for tests; document codex-acp limitation if agent ignores client-provided MCP servers"
+criteria = ["mcpServers set in session/new", "codex-acp limitation documented if applicable"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Codex-acp MCP E2E (documented blocker)"
 role = "backend-dev"
 deps = ["ACP client mcpServers wiring"]
+artifact = "doc:codexacp-mcp-e2e"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "Attempt E2E tool call via MCP through codex-acp; if unsupported, capture limitation and log steps to enable in future"
+criteria = ["E2E attempted", "limitation documented", "next steps logged"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Inject MCP server via ACP wrapper"
 role = "backend-dev"
 deps = ["Codex-acp MCP E2E (documented blocker)"]
+artifact = "code:codexacp-acp-wrapper"
 [tasks.dod]
 tests = ["go test ./projects/codexacp-client/..."]
 manual = "Implement ACP wrapper changes needed to pass MCP servers through (even if adapter ignores); include a test that asserts mcpServers are set and logs injection attempt; if blocked, document the adapter limitation and next steps"
+criteria = ["wrapper sets mcpServers", "test asserts injection", "limitation documented if still blocked"]

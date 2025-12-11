@@ -5,6 +5,8 @@ owner = "demo-team"
 template = "backend_endpoint"
 title = "MCP standalone E2E test"
 role = "backend-dev"
+artifact = "test:agenttools-mcp-e2e"
 [tasks.dod]
 tests = ["go test ./projects/agenttools/..."]
 manual = "Start MCP server (stdio) in-process and call echo tool via mcp-go client; repeat for HTTP if possible; record outputs in task comments"
+criteria = ["stdio echo call succeeds", "HTTP echo call succeeds or blocker documented", "tests pass"]

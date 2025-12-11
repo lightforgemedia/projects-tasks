@@ -5,37 +5,50 @@ owner = "tawawhite"
 template = "refactor"
 title = "Fix CLI Flag Parsing for Context Init"
 role = "backend-dev"
+artifact = "code:pt-context-flags"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "Verify 'pt context init --role=builder <id>' works"
+criteria = ["context init accepts flags before/after id", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Align Review Status with README"
 role = "architect"
+artifact = "doc:pt-review-status"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "Decide on label vs status strategy and update README/Code"
+criteria = ["README and code aligned on review status", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Add CLI Integration Tests"
 role = "backend-dev"
 deps = ["Fix CLI Flag Parsing for Context Init"]
+artifact = "test:pt-cli-integration"
 [tasks.dod]
 tests = ["go test ./cmd/pt/..."]
 manual = "Verify end-to-end flow with script"
+criteria = ["integration script succeeds", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Update Documentation"
 role = "tech-writer"
 deps = ["Align Review Status with README"]
+artifact = "doc:pt-docs"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "Check README.md and AGENTS.md consistency"
+criteria = ["docs reflect current behavior", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Implement Circular Dependency Detection"
 role = "backend-dev"
+artifact = "code:pt-cycle-detect"
 [tasks.dod]
 tests = ["go test ./pkg/pt/..."]
 manual = "Verify sync fails on cycle"
+criteria = ["sync fails on cycle", "tests pass"]

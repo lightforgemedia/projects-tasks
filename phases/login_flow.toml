@@ -5,12 +5,14 @@ owner = "team-auth"
 template = "backend_endpoint"
 title = "Implement POST /login"
 role = "backend-dev"
+artifact = "api:/login"
 [tasks.params]
 path = "/login"
 method = "POST"
 [tasks.dod]
 tests = ["go test ./src/auth/..."]
 manual = "Verify JWT is returned in header"
+criteria = ["JWT present in Authorization header", "happy-path test passes"]
 on_failure = "block"
 
 [[tasks]]
@@ -18,19 +20,25 @@ template = "frontend_component"
 title = "Login Form UI"
 role = "frontend-dev"
 deps = ["Implement POST /login"]
+artifact = "ui:LoginForm"
 [tasks.params]
 component = "LoginForm"
 [tasks.dod]
 validation_cmd = "bun test src/components/LoginForm.test.ts"
 manual = "Visual check for errors"
+criteria = ["UI matches design", "tests pass", "no console errors"]
+tests = ["echo 'No explicit unit tests, relying on validation_cmd'"]
 
 [[tasks]]
 template = "observability_hook"
 title = "Add login metrics"
 role = "backend-dev"
 deps = ["Implement POST /login"]
+artifact = "obs:login_attempts"
 [tasks.params]
 metric = "login_attempts"
 [tasks.dod]
 manual = "Confirm metric emits on success/failure"
+criteria = ["metric emitted on success", "metric emitted on failure"]
 on_failure = "flag"
+tests = ["echo 'No automated tests, manual confirmation required'"]

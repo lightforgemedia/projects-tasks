@@ -6,9 +6,11 @@ template = "backend_endpoint"
 title = "Implement pkg/contract Loading"
 role = "backend-dev"
 estimated_effort = "2h"
+artifact = "code:contract-loading"
 [tasks.dod]
 tests = ["go test ./pkg/contract/..."]
 manual = "Verify Load() parses TOML correctly"
+criteria = ["Load parses valid TOML", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
@@ -16,9 +18,11 @@ title = "Implement pkg/contract Validation"
 role = "backend-dev"
 deps = ["Implement pkg/contract Loading"]
 estimated_effort = "4h"
+artifact = "code:contract-validation"
 [tasks.dod]
 tests = ["go test ./pkg/contract/..."]
 manual = "Verify Validate() catches schema errors"
+criteria = ["Validate catches schema errors", "tests pass"]
 
 [[tasks]]
 template = "backend_endpoint"
@@ -26,8 +30,11 @@ title = "Implement pt context CLI"
 role = "backend-dev"
 deps = ["Implement pkg/contract Validation"]
 estimated_effort = "3h"
+artifact = "code:pt-context-cli"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "Run pt context init/validate and verify output"
+criteria = ["pt context init/validate run clean", "output verified"]
 
 [[tasks]]
 template = "backend_endpoint"
@@ -35,5 +42,8 @@ title = "Document Context Contracts"
 role = "tech-writer"
 deps = ["Implement pt context CLI"]
 estimated_effort = "1h"
+artifact = "doc:context-contracts"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "Check README and AGENTS.md updates"
+criteria = ["README/AGENTS updated", "docs reviewed"]

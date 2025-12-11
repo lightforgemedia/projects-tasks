@@ -5,35 +5,50 @@ owner = "tawawhite"
 template = "refactor"
 title = "Define multi-agent concurrency and no-context onboarding"
 role = "architect"
+artifact = "doc:pt-concurrency-onboarding"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "Draft spec: locking/staleness rules, identity requirements, context bootstrap defaults"
+criteria = ["spec drafted", "identity/onboarding rules defined"]
 
 [[tasks]]
 template = "refactor"
 title = "Implement claim identity enforcement and ready UX hints"
 role = "backend-dev"
 deps = ["Define multi-agent concurrency and no-context onboarding"]
+artifact = "code:pt-claim-identity"
 [tasks.dod]
+tests = ["go test ./cmd/pt/... ./pkg/pt/..."]
 manual = "Claim/ready flows reflect identity and blocker guidance"
+criteria = ["claim requires identity", "ready shows blocker guidance", "tests pass"]
 
 [[tasks]]
 template = "refactor"
 title = "Document task taxonomy and creation guide"
 role = "tech-writer"
+artifact = "doc:pt-taxonomy"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "README and AGENTS updated with task types, creation steps, post-task cleanup"
+criteria = ["docs updated", "tests pass"]
 
 [[tasks]]
 template = "refactor"
 title = "Design automation hooks for state transitions"
 role = "backend-dev"
+artifact = "doc:pt-hooks"
 [tasks.dod]
+tests = ["go test ./cmd/pt/... ./pkg/pt/..."]
 manual = "Hook interface and sample wiring documented (pre/post claim/validate/approve/reject)"
+criteria = ["hook interface documented", "samples provided", "tests pass"]
 
 [[tasks]]
 template = "refactor"
 title = "Create example project dogfood runbook"
 role = "tech-writer"
 deps = ["Document task taxonomy and creation guide"]
+artifact = "doc:pt-runbook"
 [tasks.dod]
+tests = ["go test ./cmd/pt/..."]
 manual = "Runbook lives in examples/ with end-to-end pt usage"
+criteria = ["runbook added", "tests pass"]
