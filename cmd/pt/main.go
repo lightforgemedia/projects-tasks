@@ -359,6 +359,8 @@ func run(args []string) error {
 		return cmdHooksPrint()
 	case "history":
 		return cmdHistory(cmdArgs)
+	case "workflow":
+		return cmdWorkflow(cmdArgs)
 	case "-h", "--help", "help":
 		return cmdHelp(cmdArgs)
 	default:
@@ -399,6 +401,7 @@ Commands (SDLC flow):
   graph <manifest>                   Visualize manifest dependencies (cycles shown)
   hooks                              Print merged hook configuration (global + local)
   history <id>                       Show task history (created/claimed/validated/approved)
+  workflow status|next|check         Workflow guidance (phases, gates, suggested actions)
 
 Happy-path primer:
   1) pt sync phases/<file>.toml

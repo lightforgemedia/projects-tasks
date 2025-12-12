@@ -1,0 +1,91 @@
+# Frontend-First Workflow Template
+#
+# This workflow enforces a development process that validates external
+# dependencies first, then builds frontend against mocks, gets user approval,
+# and finally wires up the backend.
+#
+# Phases:
+#   1. Risk Assessment - Validate external APIs/services before building
+#   2. Frontend Development - Build UI against mocks, get user approval
+#   3. Backend Integration - Wire real services (blocked until frontend approved)
+#   4. Final Validation - Full test suite, user acceptance
+#
+# NOTE: Checkpoints and proofs are GUIDANCE ONLY in v1. They are displayed in
+# `pt workflow next` output but not enforced. Gate conditions (soft/hard) are
+# enforced via `pt workflow check`.
+
+name = "frontend-first"
+description = "Validate external deps → Build frontend → Wire backend → Validate"
+
+[phase_assignment]
+default_phase = "implementation"
+label_prefix = "phase:"
+
+# Map task templates to phases
+[phase_assignment.by_template]
+discovery = "risk"
+spike = "risk"
+frontend_component = "frontend"
+backend_endpoint = "backend"
+
+[[phases]]
+id = "risk"
+name = "Risk Assessment"
+order = 1
+description = "Validate external dependencies and data contracts before building"
+
+[phases.gate]
+type = "soft"
+condition = "all_closed"
+reminder_before = "⚠️  External dependencies not validated. Proceeding adds integration risk."
+reminder_after = "✓ Risk assessment complete. External data shapes confirmed."
+
+[phases.proof]
+required = true
+description = "Capture actual API response or data sample"
+hint = "Save response to outputs/<task-id>/response.json"
+
+[[phases]]
+id = "frontend"
+name = "Frontend Development"
+order = 2
+description = "Build UI components against mocks, get user approval"
+
+[phases.gate]
+type = "soft"
+condition = "phase:risk complete"
+reminder_before = "Starting frontend. Using mock data until backend wired."
+
+[phases.checkpoint]
+trigger = "first_task_complete"
+prompt = "Request user approval on UI before proceeding to backend integration"
+
+[phases.proof]
+required = true
+description = "Screenshot or live preview URL"
+hint = "Save screenshot to outputs/<task-id>/screenshot.png"
+
+[[phases]]
+id = "backend"
+name = "Backend Integration"
+order = 3
+description = "Wire real services, replace mocks"
+
+[phases.gate]
+type = "hard"
+condition = "phase:frontend has_comment:user-approved"
+block_message = "Backend integration blocked. Need user approval on frontend first (add comment with 'user-approved')."
+
+[phases.proof]
+required = false
+description = "Integration test results"
+
+[[phases]]
+id = "validation"
+name = "Final Validation"
+order = 4
+description = "Full test suite, user acceptance"
+
+[phases.gate]
+type = "soft"
+condition = "phase:backend complete"
