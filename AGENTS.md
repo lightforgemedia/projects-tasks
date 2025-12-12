@@ -44,6 +44,7 @@ Agents interacting with this repository or using the `pt` tool should follow thi
 - Identity: always set `--as` (or ensure `$USER` is correct) when claiming so ownership is auditable; `pt claim` fails if identity is empty.
 - Respect blockers: do not claim blocked work; resolve deps first or choose another task.
 - No-context starts: run `pt context init <id>` to bootstrap requirements; read DoD before coding.
+- Priming output: use `pt context prime [--json]` for a 10,000‑foot view; follow `DESIGN_PRIME_OUTPUT.md` when adding priming/discovery features (must report coverage; rankings must say “top N of M”; include stable `path:line` refs).
 - Staleness: if paused or stuck, `pt release <id>` and leave a brief comment so others can continue.
 - Next hints: manifests can include `next_hint`; `pt ready --verbose` will surface suggested follow-ups.
 - Safety: use `pt snapshot` before risky changes if you want a quick backup of the store.

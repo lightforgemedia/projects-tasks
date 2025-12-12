@@ -50,7 +50,8 @@ func (t Transitioner) Release(ctx context.Context, id, assignee string) error {
 	if err := sm.Release(issue.ID, assignee); err != nil {
 		return err
 	}
-	if err := client.UpdateIssue(ctx, issue.ID, "open", ""); err != nil {
+	// Use "-" to explicitly clear assignee
+	if err := client.UpdateIssue(ctx, issue.ID, "open", "-"); err != nil {
 		return err
 	}
 	_ = client.RemoveLabels(ctx, issue.ID, "state:claimed", "state:needs_review")

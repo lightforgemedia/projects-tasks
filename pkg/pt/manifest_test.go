@@ -205,3 +205,206 @@ func TestInvalidOnFailure(t *testing.T) {
 		t.Fatalf("expected on_failure validation error")
 	}
 }
+
+func TestManifestNewFields(t *testing.T) {
+	t.Run("JSON with handoff fields", func(t *testing.T) {
+		dir := t.TempDir()
+		manifest := `{
+			"title": "Handoff Test",
+			"tasks": [{
+				"template": "backend_endpoint",
+				"title": "Task With Context",
+				"role": "backend-dev",
+				"artifact": "code:pkg/user.go",
+				"context": "Users can submit invalid emails causing downstream failures",
+				"inputs": ["pkg/user/registration.go", "pkg/user/validation_test.go"],
+				"scope": "IN: email format validation. OUT: no UI changes",
+				"reference": "https://example.com/issue/123",
+				"dod": {
+					"tests": ["go test ./pkg/user/..."],
+					"manual": "Register with invalid email, verify error",
+					"criteria": ["Invalid emails rejected", "Valid emails pass"]
+				}
+			}]
+		}`
+		path := writeTemp(t, dir, "handoff.json", manifest)
+		got, err := ParseManifest(path)
+		if err != nil {
+			t.Fatalf("ParseManifest() error = %v", err)
+		}
+		task := got.Tasks[0]
+		if task.Context != "Users can submit invalid emails causing downstream failures" {
+			t.Fatalf("context not parsed: %q", task.Context)
+		}
+		if len(task.Inputs) != 2 || task.Inputs[0] != "pkg/user/registration.go" {
+			t.Fatalf("inputs not parsed: %v", task.Inputs)
+		}
+		if task.Scope != "IN: email format validation. OUT: no UI changes" {
+			t.Fatalf("scope not parsed: %q", task.Scope)
+		}
+		if task.Reference != "https://example.com/issue/123" {
+			t.Fatalf("reference not parsed: %q", task.Reference)
+		}
+	})
+
+	t.Run("TOML with handoff fields", func(t *testing.T) {
+		dir := t.TempDir()
+		content := `
+title = "TOML Handoff Test"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Task With Context"
+role = "backend-dev"
+artifact = "code:pkg/user.go"
+context = "Bug found in demo: release not clearing assignee"
+inputs = ["pkg/pt/store.go", "cmd/pt/main.go"]
+scope = "IN: fix UpdateIssue. OUT: no other status changes"
+reference = "https://github.com/example/issue/456"
+[tasks.dod]
+tests = ["go test ./pkg/pt/... -run TestRelease"]
+manual = "Release a task, verify assignee empty"
+criteria = ["release sets assignee to empty", "history shows assignee cleared"]
+`
+		path := writeTemp(t, dir, "handoff.toml", content)
+		got, err := ParseManifest(path)
+		if err != nil {
+			t.Fatalf("ParseManifest() error = %v", err)
+		}
+		task := got.Tasks[0]
+		if task.Context != "Bug found in demo: release not clearing assignee" {
+			t.Fatalf("TOML context not parsed: %q", task.Context)
+		}
+		if len(task.Inputs) != 2 || task.Inputs[1] != "cmd/pt/main.go" {
+			t.Fatalf("TOML inputs not parsed: %v", task.Inputs)
+		}
+		if task.Scope != "IN: fix UpdateIssue. OUT: no other status changes" {
+			t.Fatalf("TOML scope not parsed: %q", task.Scope)
+		}
+		if task.Reference != "https://github.com/example/issue/456" {
+			t.Fatalf("TOML reference not parsed: %q", task.Reference)
+		}
+	})
+
+	t.Run("Missing handoff fields do not break sync", func(t *testing.T) {
+		dir := t.TempDir()
+		manifest := `{
+			"title": "No Handoff Fields",
+			"tasks": [{
+				"template": "backend_endpoint",
+				"title": "Simple Task",
+				"role": "backend-dev",
+				"artifact": "code:simple.go",
+				"dod": {
+					"tests": ["go test ./..."],
+					"manual": "verify",
+					"criteria": ["works"]
+				}
+			}]
+		}`
+		path := writeTemp(t, dir, "simple.json", manifest)
+		got, err := ParseManifest(path)
+		if err != nil {
+			t.Fatalf("ParseManifest() should not fail with missing handoff fields: %v", err)
+		}
+		task := got.Tasks[0]
+		if task.Context != "" || len(task.Inputs) != 0 || task.Scope != "" || task.Reference != "" {
+			t.Fatalf("expected empty handoff fields, got context=%q inputs=%v scope=%q ref=%q",
+				task.Context, task.Inputs, task.Scope, task.Reference)
+		}
+	})
+}
+
+func TestManifestProject(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("TOML with project section", func(t *testing.T) {
+		manifest := `
+title = "PT CLI Tool"
+owner = "platform"
+
+[project]
+summary = "CLI tool for task management in agent-driven development"
+structure = ["cmd/pt", "pkg/pt", "docs"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Add feature"
+role = "dev"
+artifact = "code:feature.go"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "verify"
+criteria = ["works"]
+`
+		path := writeTemp(t, dir, "project.toml", manifest)
+		got, err := ParseManifest(path)
+		if err != nil {
+			t.Fatalf("ParseManifest() error: %v", err)
+		}
+
+		if got.Project.Summary != "CLI tool for task management in agent-driven development" {
+			t.Errorf("expected project summary, got %q", got.Project.Summary)
+		}
+		if len(got.Project.Structure) != 3 {
+			t.Errorf("expected 3 structure entries, got %d", len(got.Project.Structure))
+		}
+		if got.Project.Structure[0] != "cmd/pt" {
+			t.Errorf("expected first structure entry 'cmd/pt', got %q", got.Project.Structure[0])
+		}
+	})
+
+	t.Run("JSON with project section", func(t *testing.T) {
+		manifest := `{
+			"title": "PT CLI",
+			"owner": "platform",
+			"project": {
+				"summary": "Task management CLI",
+				"structure": ["cmd", "pkg"]
+			},
+			"tasks": [{
+				"template": "backend_endpoint",
+				"title": "Add feature",
+				"role": "dev",
+				"artifact": "code:feature.go",
+				"dod": {"tests": ["go test"], "manual": "verify", "criteria": ["works"]}
+			}]
+		}`
+		path := writeTemp(t, dir, "project.json", manifest)
+		got, err := ParseManifest(path)
+		if err != nil {
+			t.Fatalf("ParseManifest() error: %v", err)
+		}
+
+		if got.Project.Summary != "Task management CLI" {
+			t.Errorf("expected project summary, got %q", got.Project.Summary)
+		}
+		if len(got.Project.Structure) != 2 {
+			t.Errorf("expected 2 structure entries, got %d", len(got.Project.Structure))
+		}
+	})
+
+	t.Run("Missing project section is OK", func(t *testing.T) {
+		manifest := `
+title = "No Project"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Task"
+role = "dev"
+artifact = "code:task.go"
+[tasks.dod]
+tests = ["echo ok"]
+manual = "verify"
+criteria = ["works"]
+`
+		path := writeTemp(t, dir, "noproj.toml", manifest)
+		got, err := ParseManifest(path)
+		if err != nil {
+			t.Fatalf("ParseManifest() should not fail without project section: %v", err)
+		}
+		if got.Project.Summary != "" || len(got.Project.Structure) != 0 {
+			t.Fatalf("expected empty project, got %+v", got.Project)
+		}
+	})
+}

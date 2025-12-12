@@ -17,6 +17,12 @@ type TaskMeta struct {
 	NextHint string           `json:"next_hint,omitempty"`
 	Artifact string           `json:"artifact,omitempty"`
 	DoD      DefinitionOfDone `json:"dod"`
+
+	// Handoff fields - help agents understand the task without project context
+	Context   string   `json:"context,omitempty"`   // WHY: problem being solved, motivation
+	Inputs    []string `json:"inputs,omitempty"`    // WHERE: files/directories to read/modify
+	Scope     string   `json:"scope,omitempty"`     // BOUNDS: IN-scope and OUT-of-scope
+	Reference string   `json:"reference,omitempty"` // RELATED: links to docs, issues, prior work
 }
 
 // HistoryEvent captures lifecycle events for a task.
@@ -70,6 +76,12 @@ type UpdateOptions struct {
 	Assignee string `json:"assignee,omitempty"`
 	Priority *int   `json:"priority,omitempty"`
 	NextHint string `json:"next_hint,omitempty"`
+
+	// Handoff fields - use special value "-" to clear
+	Context   string   `json:"context,omitempty"`
+	Inputs    []string `json:"inputs,omitempty"`
+	Scope     string   `json:"scope,omitempty"`
+	Reference string   `json:"reference,omitempty"`
 }
 
 // BlockedInfo tracks why a task is blocked.
@@ -77,6 +89,14 @@ type BlockedInfo struct {
 	Reason    string `json:"reason"`
 	BlockedBy string `json:"blocked_by,omitempty"` // optional: who/what blocked it
 	BlockedAt string `json:"blocked_at,omitempty"` // timestamp
+}
+
+// WorktreeInfo tracks a git worktree associated with a task.
+type WorktreeInfo struct {
+	TaskID    string `json:"task_id"`
+	Path      string `json:"path"`       // worktree directory path
+	Branch    string `json:"branch"`     // branch name in the worktree
+	CreatedAt string `json:"created_at"` // timestamp
 }
 
 // buildDescription embeds metadata for later retrieval.
@@ -106,11 +126,15 @@ func buildDescription(task Task) (string, error) {
 		fmt.Fprintf(&b, " on_failure=%s", task.DoD.OnFailure)
 	}
 	meta := TaskMeta{
-		Template: task.Template,
-		Role:     task.Role,
-		NextHint: task.NextHint,
-		Artifact: task.Artifact,
-		DoD:      task.DoD,
+		Template:  task.Template,
+		Role:      task.Role,
+		NextHint:  task.NextHint,
+		Artifact:  task.Artifact,
+		DoD:       task.DoD,
+		Context:   task.Context,
+		Inputs:    task.Inputs,
+		Scope:     task.Scope,
+		Reference: task.Reference,
 	}
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {

@@ -30,14 +30,15 @@ func (c *StoreClient) CommentsFor(id string) []string {
 }
 
 type storeData struct {
-	NextID   int                            `json:"next_id"`
-	Issues   map[string]Issue               `json:"issues"`
-	Labels   map[string]map[string]struct{} `json:"labels"` // issue -> set
-	Deps     map[string][]string            `json:"deps"`   // issue -> deps
-	Comments map[string][]string            `json:"comments"`
-	TitleMap map[string]string              `json:"title_map"` // title -> id
-	History  map[string][]HistoryEvent      `json:"history"`   // issue -> events
-	Blocked  map[string]BlockedInfo         `json:"blocked"`   // issue -> blocked info
+	NextID    int                            `json:"next_id"`
+	Issues    map[string]Issue               `json:"issues"`
+	Labels    map[string]map[string]struct{} `json:"labels"` // issue -> set
+	Deps      map[string][]string            `json:"deps"`   // issue -> deps
+	Comments  map[string][]string            `json:"comments"`
+	TitleMap  map[string]string              `json:"title_map"` // title -> id
+	History   map[string][]HistoryEvent      `json:"history"`   // issue -> events
+	Blocked   map[string]BlockedInfo         `json:"blocked"`   // issue -> blocked info
+	Worktrees map[string]WorktreeInfo        `json:"worktrees"` // task_id -> worktree info
 }
 
 // NewStoreClient creates or opens a store at path. If path empty, defaults to ".pt.db.json".
@@ -141,20 +142,29 @@ func (c *StoreClient) UpdateIssue(ctx context.Context, id, status, assignee stri
 	if !ok {
 		return fmt.Errorf("issue %s not found", id)
 	}
+	// Capture old values before updating
+	oldStatus := iss.Status
+	oldAssignee := iss.Assignee
+
 	if status != "" {
 		iss.Status = status
 	}
-	if assignee != "" {
+	// Special value "-" means clear assignee; empty string means no change
+	if assignee == "-" {
+		iss.Assignee = ""
+	} else if assignee != "" {
 		iss.Assignee = assignee
 	}
 	c.data.Issues[id] = iss
-	actor := assignee
+
+	// Build history action with correct old->new format
+	actor := iss.Assignee
 	if strings.TrimSpace(actor) == "" {
-		actor = iss.Assignee
+		actor = oldAssignee
 	}
-	action := fmt.Sprintf("status:%s->%s", iss.Status, status)
-	if strings.TrimSpace(assignee) != "" && assignee != iss.Assignee {
-		action = fmt.Sprintf("%s;assignee:%s", action, assignee)
+	action := fmt.Sprintf("status:%s->%s", oldStatus, iss.Status)
+	if oldAssignee != iss.Assignee {
+		action = fmt.Sprintf("%s;assignee:%s->%s", action, oldAssignee, iss.Assignee)
 	}
 	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: actor, Action: action})
 	return c.saveLocked()
@@ -169,6 +179,8 @@ func (c *StoreClient) UpdateTask(ctx context.Context, id string, opts UpdateOpti
 		return fmt.Errorf("issue %s not found", id)
 	}
 	var changes []string
+
+	// Update top-level Issue fields
 	if strings.TrimSpace(opts.Title) != "" && opts.Title != iss.Title {
 		oldTitle := iss.Title
 		iss.Title = opts.Title
@@ -192,6 +204,86 @@ func (c *StoreClient) UpdateTask(ctx context.Context, id string, opts UpdateOpti
 		iss.NextHint = opts.NextHint
 		changes = append(changes, fmt.Sprintf("next_hint:%s->%s", oldHint, opts.NextHint))
 	}
+
+	// Update handoff fields in TaskMeta (embedded in description)
+	metaChanged := false
+	meta, _ := parseTaskMeta(iss.Description) // ignore error, may not have meta yet
+	if opts.Context != "" {
+		if opts.Context == "-" {
+			if meta.Context != "" {
+				meta.Context = ""
+				changes = append(changes, "context:cleared")
+				metaChanged = true
+			}
+		} else if opts.Context != meta.Context {
+			changes = append(changes, fmt.Sprintf("context:%s->%s", truncate(meta.Context, 20), truncate(opts.Context, 20)))
+			meta.Context = opts.Context
+			metaChanged = true
+		}
+	}
+	if len(opts.Inputs) > 0 {
+		oldInputs := strings.Join(meta.Inputs, ",")
+		newInputs := strings.Join(opts.Inputs, ",")
+		if newInputs == "-" {
+			if len(meta.Inputs) > 0 {
+				meta.Inputs = nil
+				changes = append(changes, "inputs:cleared")
+				metaChanged = true
+			}
+		} else if oldInputs != newInputs {
+			changes = append(changes, fmt.Sprintf("inputs:%s->%s", truncate(oldInputs, 20), truncate(newInputs, 20)))
+			meta.Inputs = opts.Inputs
+			metaChanged = true
+		}
+	}
+	if opts.Scope != "" {
+		if opts.Scope == "-" {
+			if meta.Scope != "" {
+				meta.Scope = ""
+				changes = append(changes, "scope:cleared")
+				metaChanged = true
+			}
+		} else if opts.Scope != meta.Scope {
+			changes = append(changes, fmt.Sprintf("scope:%s->%s", truncate(meta.Scope, 20), truncate(opts.Scope, 20)))
+			meta.Scope = opts.Scope
+			metaChanged = true
+		}
+	}
+	if opts.Reference != "" {
+		if opts.Reference == "-" {
+			if meta.Reference != "" {
+				meta.Reference = ""
+				changes = append(changes, "reference:cleared")
+				metaChanged = true
+			}
+		} else if opts.Reference != meta.Reference {
+			changes = append(changes, fmt.Sprintf("reference:%s->%s", truncate(meta.Reference, 20), truncate(opts.Reference, 20)))
+			meta.Reference = opts.Reference
+			metaChanged = true
+		}
+	}
+
+	// Rebuild description if meta changed
+	if metaChanged {
+		task := Task{
+			Template:  meta.Template,
+			Title:     iss.Title,
+			Role:      meta.Role,
+			Artifact:  meta.Artifact,
+			NextHint:  meta.NextHint,
+			DoD:       meta.DoD,
+			Context:   meta.Context,
+			Inputs:    meta.Inputs,
+			Scope:     meta.Scope,
+			Reference: meta.Reference,
+		}
+		desc, err := buildDescription(task)
+		if err != nil {
+			return fmt.Errorf("rebuild description: %w", err)
+		}
+		iss.Description = desc
+	}
+
 	if len(changes) == 0 {
 		return nil // No changes
 	}
@@ -199,6 +291,14 @@ func (c *StoreClient) UpdateTask(ctx context.Context, id string, opts UpdateOpti
 	action := "updated:" + strings.Join(changes, ";")
 	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: iss.Assignee, Action: action})
 	return c.saveLocked()
+}
+
+// truncate shortens a string for logging purposes
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 func (c *StoreClient) AddComment(ctx context.Context, id, body string) error {
@@ -278,6 +378,63 @@ func (c *StoreClient) ListBlocked(ctx context.Context) (map[string]BlockedInfo, 
 	defer c.mu.Unlock()
 	result := make(map[string]BlockedInfo, len(c.data.Blocked))
 	for id, info := range c.data.Blocked {
+		result[id] = info
+	}
+	return result, nil
+}
+
+// SetWorktree associates a worktree with a task.
+func (c *StoreClient) SetWorktree(ctx context.Context, taskID string, info WorktreeInfo) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.data.Issues[taskID]; !ok {
+		return fmt.Errorf("issue %s not found", taskID)
+	}
+	if c.data.Worktrees == nil {
+		c.data.Worktrees = make(map[string]WorktreeInfo)
+	}
+	info.TaskID = taskID
+	c.data.Worktrees[taskID] = info
+	c.appendHistoryLocked(taskID, HistoryEvent{At: time.Now().UTC(), Actor: "", Action: "worktree:start", Note: info.Path})
+	return c.saveLocked()
+}
+
+// ClearWorktree removes the worktree association for a task.
+func (c *StoreClient) ClearWorktree(ctx context.Context, taskID string, action string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.data.Issues[taskID]; !ok {
+		return fmt.Errorf("issue %s not found", taskID)
+	}
+	info, hasWT := c.data.Worktrees[taskID]
+	if !hasWT {
+		return nil // no worktree to clear
+	}
+	delete(c.data.Worktrees, taskID)
+	if action == "" {
+		action = "worktree:done"
+	}
+	c.appendHistoryLocked(taskID, HistoryEvent{At: time.Now().UTC(), Actor: "", Action: action, Note: info.Path})
+	return c.saveLocked()
+}
+
+// GetWorktree returns worktree info for a task, and whether one exists.
+func (c *StoreClient) GetWorktree(ctx context.Context, taskID string) (WorktreeInfo, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.data.Issues[taskID]; !ok {
+		return WorktreeInfo{}, false, fmt.Errorf("issue %s not found", taskID)
+	}
+	info, ok := c.data.Worktrees[taskID]
+	return info, ok, nil
+}
+
+// ListWorktrees returns all active worktree associations.
+func (c *StoreClient) ListWorktrees(ctx context.Context) (map[string]WorktreeInfo, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := make(map[string]WorktreeInfo, len(c.data.Worktrees))
+	for id, info := range c.data.Worktrees {
 		result[id] = info
 	}
 	return result, nil
@@ -446,6 +603,21 @@ func (c *StoreClient) addDepLocked(issueID, depID string) {
 	c.data.Deps[issueID] = appendUnique(c.data.Deps[issueID], depID)
 }
 
+// AddDependency adds a dependency from issueID to depID.
+// The issue with issueID will be blocked until depID is closed.
+func (c *StoreClient) AddDependency(ctx context.Context, issueID, depID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.data.Issues[issueID]; !ok {
+		return fmt.Errorf("issue %s not found", issueID)
+	}
+	if _, ok := c.data.Issues[depID]; !ok {
+		return fmt.Errorf("dependency issue %s not found", depID)
+	}
+	c.addDepLocked(issueID, depID)
+	return c.saveLocked()
+}
+
 func (c *StoreClient) depsDoneLocked(issueID string) bool {
 	for _, dep := range c.data.Deps[issueID] {
 		if depIssue, ok := c.data.Issues[dep]; !ok || depIssue.Status != "closed" && depIssue.Status != "done" {
@@ -525,6 +697,9 @@ func (c *StoreClient) load() {
 	if c.data.Blocked == nil {
 		c.data.Blocked = make(map[string]BlockedInfo)
 	}
+	if c.data.Worktrees == nil {
+		c.data.Worktrees = make(map[string]WorktreeInfo)
+	}
 }
 
 func (c *StoreClient) saveLocked() error {
@@ -541,7 +716,27 @@ func (c *StoreClient) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.path, raw, 0o644)
+
+	// Atomic write: temp file + rename
+	// Get existing file permissions (if file exists), otherwise use default
+	perm := os.FileMode(0o644)
+	if info, err := os.Stat(c.path); err == nil {
+		perm = info.Mode().Perm()
+	}
+
+	// Write to temp file in same directory (same filesystem ensures atomic rename)
+	tmpPath := c.path + ".tmp"
+	if err := os.WriteFile(tmpPath, raw, perm); err != nil {
+		return fmt.Errorf("write temp file: %w", err)
+	}
+
+	// Atomic rename (on POSIX systems, rename is atomic if target exists or not)
+	if err := os.Rename(tmpPath, c.path); err != nil {
+		// Cleanup temp file on failure
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rename temp file: %w", err)
+	}
+	return nil
 }
 
 func (c *StoreClient) lockFile() (*os.File, error) {

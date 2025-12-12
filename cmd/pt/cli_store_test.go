@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"projects-tasks/pkg/pt"
@@ -126,5 +129,304 @@ func TestCmdClaimWithDraft(t *testing.T) {
 	}
 	if !hasDraft {
 		t.Fatalf("expected state:draft label after claim --draft, got labels: %v", issue.Labels)
+	}
+}
+
+func TestValidateWorktree(t *testing.T) {
+	path, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{{Title: "WorktreeValidate", Template: "backend_endpoint", Role: "dev", Artifact: "spec:wt", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"pwd"}, Criteria: []string{"runs in worktree"}}}},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	// Claim task
+	if err := store.UpdateIssue(t.Context(), "pt-1", "in_progress", "bob"); err != nil {
+		t.Fatalf("claim err: %v", err)
+	}
+
+	// Create a worktree directory (simulated, no git)
+	worktreeDir := t.TempDir()
+	wtInfo := pt.WorktreeInfo{
+		Path:      worktreeDir,
+		Branch:    "test-branch",
+		CreatedAt: "2025-01-01T00:00:00Z",
+	}
+	if err := store.SetWorktree(t.Context(), "pt-1", wtInfo); err != nil {
+		t.Fatalf("set worktree err: %v", err)
+	}
+
+	// Reload client for test
+	_ = pt.NewStoreClient(path, "pt")
+
+	// Run validate - should detect worktree and change to it
+	if err := cmdValidate([]string{"--yes", "pt-1"}); err != nil {
+		t.Fatalf("validate with worktree err: %v", err)
+	}
+
+	// Verify task is now needs_review
+	store = pt.NewStoreClient(path, "pt")
+	issue, _, _ := store.GetTask(t.Context(), "pt-1")
+	if issue.Status != "needs_review" {
+		t.Fatalf("expected needs_review after validate, got %s", issue.Status)
+	}
+}
+
+func TestSyncGeneratesReviews(t *testing.T) {
+	path, _ := setupStoreEnv(t)
+	manifest := t.TempDir() + "/manifest.json"
+	data := `{
+		"title":"ReviewTest",
+		"tasks":[
+			{"title":"TaskA","role":"dev","template":"backend_endpoint","artifact":"spec:a",
+			 "dod":{"manual":"check","tests":["echo ok"],"criteria":["observed ok"]}}
+		]
+	}`
+	if err := os.WriteFile(manifest, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sync with --generate-reviews
+	if err := cmdSync([]string{"--generate-reviews", manifest}); err != nil {
+		t.Fatalf("cmdSync with --generate-reviews: %v", err)
+	}
+
+	store := pt.NewStoreClient(path, "pt")
+
+	// Find the implementation task
+	implIssue, _, err := store.GetTask(t.Context(), "pt-1")
+	if err != nil {
+		t.Fatalf("get impl task: %v", err)
+	}
+	if implIssue.Title != "TaskA" {
+		t.Fatalf("expected TaskA, got %s", implIssue.Title)
+	}
+
+	// Find the review task
+	reviewIssue, _, err := store.GetTask(t.Context(), "pt-2")
+	if err != nil {
+		t.Fatalf("get review task: %v", err)
+	}
+	if reviewIssue.Title != "[Review] TaskA" {
+		t.Fatalf("expected [Review] TaskA, got %s", reviewIssue.Title)
+	}
+
+	// Verify review task has role=planner
+	meta, err := pt.ParseTaskMeta(reviewIssue.Description)
+	if err != nil {
+		t.Fatalf("parse review meta: %v", err)
+	}
+	if meta.Role != "planner" {
+		t.Errorf("expected role planner, got %s", meta.Role)
+	}
+
+	// Verify impl depends on review
+	deps, _ := store.Dependencies(t.Context(), "pt-1")
+	found := false
+	for _, d := range deps {
+		if d.ID == "pt-2" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("implementation task should depend on review task")
+	}
+}
+
+func TestContextPrimeAgent(t *testing.T) {
+	_, _ = setupStoreEnv(t)
+
+	// Create a manifest with project metadata
+	manifestDir := t.TempDir()
+	manifestContent := `
+title = "Test Project"
+
+[project]
+summary = "A test project for context prime"
+structure = ["cmd", "pkg", "docs"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Task With Context"
+role = "dev"
+artifact = "code:feature.go"
+context = "This task adds a new feature"
+inputs = ["pkg/feature.go"]
+scope = "IN: add feature. OUT: refactor"
+[tasks.dod]
+tests = ["echo ok"]
+manual = "verify"
+criteria = ["works"]
+`
+	manifestPath := filepath.Join(manifestDir, "manifest.toml")
+	if err := os.WriteFile(manifestPath, []byte(manifestContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sync the manifest
+	if err := cmdSync([]string{manifestPath}); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	// Run context prime with manifest - capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdContextPrime([]string{"--manifest=" + manifestPath})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("context prime: %v", err)
+	}
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify project summary is shown
+	if !strings.Contains(output, "A test project for context prime") {
+		t.Error("expected project summary in output")
+	}
+
+	// Verify structure is shown
+	if !strings.Contains(output, "cmd, pkg, docs") {
+		t.Error("expected project structure in output")
+	}
+
+	// Verify task context is shown for ready tasks
+	if !strings.Contains(output, "This task adds a new feature") {
+		t.Error("expected task context in output")
+	}
+
+	// Verify inputs are shown
+	if !strings.Contains(output, "pkg/feature.go") {
+		t.Error("expected task inputs in output")
+	}
+}
+
+func TestHelpTaskAuthoring(t *testing.T) {
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdHelp([]string{"task-authoring"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("help task-authoring: %v", err)
+	}
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify key sections are present
+	if !strings.Contains(output, "# Task Authoring Guide") {
+		t.Error("expected Task Authoring Guide header")
+	}
+	if !strings.Contains(output, "Required Fields") {
+		t.Error("expected Required Fields section")
+	}
+	if !strings.Contains(output, "Handoff Fields") {
+		t.Error("expected Handoff Fields section")
+	}
+	if !strings.Contains(output, "Good vs Bad Examples") {
+		t.Error("expected examples section")
+	}
+	if !strings.Contains(output, "Task Template") {
+		t.Error("expected template section")
+	}
+	if !strings.Contains(output, "context") && !strings.Contains(output, "inputs") {
+		t.Error("expected handoff field documentation")
+	}
+}
+
+func TestCmdApproveShowsOnlyReadyWork(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+			{Title: "B", Template: "backend_endpoint", Role: "dev", Artifact: "spec:b", Deps: []string{"A"}, DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+			{Title: "C", Template: "backend_endpoint", Role: "dev", Artifact: "spec:c", Deps: []string{"B"}, DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+	if err := store.UpdateIssue(t.Context(), "pt-1", "needs_review", ""); err != nil {
+		t.Fatalf("set needs_review err: %v", err)
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdApprove([]string{"pt-1"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("approve err: %v", err)
+	}
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := buf.String()
+
+	if !strings.Contains(out, "Ready Work:") {
+		t.Fatalf("expected Ready Work header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "pt-2") {
+		t.Fatalf("expected pt-2 to be suggested as ready work, got:\n%s", out)
+	}
+	if strings.Contains(out, "pt-3") {
+		t.Fatalf("did not expect pt-3 (still blocked) in ready work, got:\n%s", out)
+	}
+}
+
+func TestContextPrimeReportsOverriddenDBPath(t *testing.T) {
+	td := t.TempDir()
+	dbPath := filepath.Join(td, "override.db.json")
+	store := pt.NewStoreClient(dbPath, "pt")
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	// Capture stdout (JSON output)
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdContextPrime([]string{"--db", dbPath, "--json"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("context prime err: %v", err)
+	}
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := buf.String()
+
+	if !strings.Contains(out, `"store_path":`) {
+		t.Fatalf("expected store_path field, got:\n%s", out)
+	}
+	if !strings.Contains(out, dbPath) {
+		t.Fatalf("expected store_path to include overridden db path %q, got:\n%s", dbPath, out)
 	}
 }

@@ -179,3 +179,54 @@ func TestNewStoreClient_Defaults(t *testing.T) {
 		t.Errorf("expected default file .pt.db.json to be created")
 	}
 }
+
+func TestAddDependency(t *testing.T) {
+	tmp := t.TempDir() + "/pt_adddep.db.json"
+	client := NewStoreClient(tmp, "pt")
+	ctx := context.Background()
+
+	// Create two independent tasks
+	manifest := Manifest{
+		Title: "AddDep Test",
+		Tasks: []Task{
+			{Title: "Task A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: minimalDoD},
+			{Title: "Task B", Template: "backend_endpoint", Role: "dev", Artifact: "spec:b", DoD: minimalDoD},
+		},
+	}
+	ids, err := client.Sync(ctx, manifest)
+	if err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+	taskA := ids["Task A"]
+	taskB := ids["Task B"]
+
+	// Initially, Task B has no dependencies
+	deps, _ := client.Dependencies(ctx, taskB)
+	if len(deps) != 0 {
+		t.Fatalf("expected 0 deps, got %d", len(deps))
+	}
+
+	// Add dependency: Task B depends on Task A
+	if err := client.AddDependency(ctx, taskB, taskA); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
+
+	// Verify dependency was added
+	deps, _ = client.Dependencies(ctx, taskB)
+	if len(deps) != 1 {
+		t.Fatalf("expected 1 dep, got %d", len(deps))
+	}
+	if deps[0].ID != taskA {
+		t.Errorf("expected dep ID %s, got %s", taskA, deps[0].ID)
+	}
+
+	// Error case: non-existent issueID
+	if err := client.AddDependency(ctx, "missing-id", taskA); err == nil {
+		t.Error("expected error for missing issueID")
+	}
+
+	// Error case: non-existent depID
+	if err := client.AddDependency(ctx, taskB, "missing-dep"); err == nil {
+		t.Error("expected error for missing depID")
+	}
+}

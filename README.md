@@ -34,7 +34,7 @@ Stateless logic package.
 
 Store-backed flow:
 - Manifest (TOML) → `pt sync` → issues/labels/deps persisted.
-- `pt ready` filters unblocked tasks (deps closed, status open).
+- `pt ready` lists open work and indicates blockers (deps not done and/or manually blocked). A task is “ready” to claim when it is open and has no blockers.
 - `pt claim/validate/approve/reject` drive the state machine.
 - Context builder/validator commands keep agent payloads in spec.
 
@@ -113,6 +113,7 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 - Attribution: always `pt claim <id> --as=<identity>` so ownership is explicit; `pt release <id>` when you stop to unblock others.
 - Collision avoidance: use `pt ready --verbose` to see blockers/assignees; do not bypass blocked tasks.
 - Fresh context: `pt context init <id>` to pull role-specific inputs; read issue text + DoD when you arrive mid-stream.
+- Priming contract: `pt context prime [--json]` outputs a 10,000‑foot project view; see `DESIGN_PRIME_OUTPUT.md` for the text/JSON/DOT contract (coverage, “top N of M”, stable file:line refs).
 - Staleness hygiene: add a comment when scope changes; re-validate before review after rebasing or major edits.
 - Identity enforcement: `pt claim` requires a non-empty identity (set `$USER` or pass `--as`).
 

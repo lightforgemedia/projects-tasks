@@ -11,11 +11,18 @@ import (
 	"strings"
 )
 
+// ProjectInfo holds project-level metadata for agent onboarding.
+type ProjectInfo struct {
+	Summary   string   `json:"summary,omitempty"`   // Brief description of what the project does
+	Structure []string `json:"structure,omitempty"` // Key directories/modules to know about
+}
+
 // Manifest represents a phase bundle containing multiple tasks.
 type Manifest struct {
-	Title string `json:"title"`
-	Owner string `json:"owner"`
-	Tasks []Task `json:"tasks"`
+	Title   string      `json:"title"`
+	Owner   string      `json:"owner"`
+	Project ProjectInfo `json:"project,omitempty"` // Project metadata for agent context
+	Tasks   []Task      `json:"tasks"`
 }
 
 // Task describes a unit of work to be synced into Beads.
@@ -29,6 +36,12 @@ type Task struct {
 	EstimatedEffort string            `json:"estimated_effort,omitempty"`
 	Params          map[string]string `json:"params,omitempty"`
 	DoD             DefinitionOfDone  `json:"dod"`
+
+	// Handoff fields - help agents understand the task without project context
+	Context   string   `json:"context,omitempty"`   // WHY: problem being solved, motivation
+	Inputs    []string `json:"inputs,omitempty"`    // WHERE: files/directories to read/modify
+	Scope     string   `json:"scope,omitempty"`     // BOUNDS: IN-scope and OUT-of-scope
+	Reference string   `json:"reference,omitempty"` // RELATED: links to docs, issues, prior work
 }
 
 // DefinitionOfDone describes required checks before a task can advance.
@@ -90,6 +103,7 @@ func parseJSONManifest(data []byte) (Manifest, error) {
 // parseTOMLManifest implements a narrow TOML reader for the documented manifest shape.
 // It supports:
 // - top-level key/value pairs
+// - [project] table for project metadata
 // - [[tasks]] array of tables
 // - [tasks.params] and [tasks.dod] subtables
 // - string values and string arrays
@@ -98,7 +112,7 @@ func parseTOMLManifest(data []byte) (Manifest, error) {
 	manifest := Manifest{}
 	var tasks []Task
 	var current *Task
-	context := "root" // root | task | params | dod
+	context := "root" // root | project | task | params | dod
 
 	lineNum := 0
 	for scanner.Scan() {
@@ -109,6 +123,9 @@ func parseTOMLManifest(data []byte) (Manifest, error) {
 		}
 
 		switch raw {
+		case "[project]":
+			context = "project"
+			continue
 		case "[[tasks]]":
 			// start new task
 			if current != nil {
@@ -142,6 +159,8 @@ func parseTOMLManifest(data []byte) (Manifest, error) {
 		switch context {
 		case "root":
 			assignRootKV(&manifest, key, value)
+		case "project":
+			assignProjectKV(&manifest.Project, key, value)
 		case "task":
 			if current == nil {
 				return Manifest{}, fmt.Errorf("line %d: value without task context", lineNum)
@@ -258,6 +277,15 @@ func assignRootKV(manifest *Manifest, key string, val value) {
 	}
 }
 
+func assignProjectKV(project *ProjectInfo, key string, val value) {
+	switch key {
+	case "summary":
+		project.Summary = val.asString()
+	case "structure":
+		project.Structure = val.arr
+	}
+}
+
 func assignTaskKV(task *Task, key string, val value) error {
 	switch key {
 	case "template":
@@ -274,6 +302,15 @@ func assignTaskKV(task *Task, key string, val value) error {
 		task.NextHint = val.asString()
 	case "estimated_effort":
 		task.EstimatedEffort = val.asString()
+	// Handoff fields
+	case "context":
+		task.Context = val.asString()
+	case "inputs":
+		task.Inputs = val.arr
+	case "scope":
+		task.Scope = val.asString()
+	case "reference":
+		task.Reference = val.asString()
 	default:
 		// Treat unknown keys in task context as params for forward compatibility.
 		if task.Params == nil {
