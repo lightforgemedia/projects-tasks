@@ -25,21 +25,26 @@ func TestParseJSONManifest(t *testing.T) {
 				"template": "backend_endpoint",
 				"title": "Implement POST /login",
 				"role": "backend-dev",
+				"artifact": "api:/login",
 				"next_hint": "Hook up backend integration next",
 				"params": {"path": "/login"},
 				"dod": {
 					"tests": ["go test ./src/auth/..."],
-					"manual": "Verify JWT is returned in header"
+					"manual": "Verify JWT is returned in header",
+					"criteria": ["JWT present in header"]
 				}
 			},
 			{
 				"template": "frontend_component",
 				"title": "Login Form UI",
 				"role": "frontend-dev",
+				"artifact": "ui:LoginForm",
 				"deps": ["Implement POST /login"],
 				"dod": {
+					"tests": ["bun test src/components/LoginForm.test.ts"],
 					"validation_cmd": "bun test src/components/LoginForm.test.ts",
-					"manual": "Visual check"
+					"manual": "Visual check",
+					"criteria": ["UI matches design", "tests green"]
 				}
 			}
 		]
@@ -78,19 +83,24 @@ owner = "team-auth"
 template = "backend_endpoint"
 title = "Implement POST /login"
 role = "backend-dev"
+artifact = "api:/login"
 [tasks.params]
 path = "/login"
 [tasks.dod]
 tests = ["go test ./src/auth/..."]
 manual = "Verify JWT is returned in header"
+criteria = ["JWT present in header"]
 
 [[tasks]]
 template = "frontend_component"
 title = "Login Form UI"
 role = "frontend-dev"
+artifact = "ui:LoginForm"
 deps = ["Implement POST /login"] # Dependency by title
 [tasks.dod]
+tests = ["bun test src/components/LoginForm.test.ts"]
 validation_cmd = "bun test src/components/LoginForm.test.ts"
+criteria = ["UI matches design", "tests green"]
 manual = "Visual check"
 `
 	path := writeTemp(t, dir, "manifest.toml", content)
@@ -130,11 +140,13 @@ func TestUnknownDependency(t *testing.T) {
 		"title": "Deps",
 		"tasks": [
 			{"template": "backend_endpoint", "title": "A", "role": "dev",
-			 "dod": {"manual": "check"}
+			 "artifact": "spec:a",
+			 "dod": {"manual": "check", "tests": ["go test ./..."], "criteria": ["validated"]}
 			},
 			{"template": "frontend_component", "title": "B", "role": "dev",
 			 "deps": ["Missing"],
-			 "dod": {"manual": "check"}
+			 "artifact": "spec:b",
+			 "dod": {"manual": "check", "tests": ["bun test ./..."], "criteria": ["validated"]}
 			}
 		]
 	}`
@@ -150,7 +162,8 @@ func TestInvalidTemplate(t *testing.T) {
 		"title": "BadTemplate",
 		"tasks": [
 			{"template": "unknown", "title": "A", "role": "dev",
-			 "dod": {"manual": "check"}
+			 "artifact": "spec:a",
+			 "dod": {"manual": "check", "tests": ["go test ./..."], "criteria": ["validated"]}
 			}
 		]
 	}`
@@ -160,19 +173,20 @@ func TestInvalidTemplate(t *testing.T) {
 	}
 }
 
-func TestManualOnlyDoDAllowed(t *testing.T) {
+func TestManualOnlyDoDFails(t *testing.T) {
 	dir := t.TempDir()
 	manifest := `{
 		"title": "ManualOnly",
 		"tasks": [
 			{"template": "bug_fix", "title": "Fix", "role": "dev",
+			 "artifact": "spec:fix",
 			 "dod": {"manual": "verify repro is gone"}
 			}
 		]
 	}`
 	path := writeTemp(t, dir, "manual.json", manifest)
-	if _, err := ParseManifest(path); err != nil {
-		t.Fatalf("expected manual-only dod to pass, got %v", err)
+	if _, err := ParseManifest(path); err == nil {
+		t.Fatalf("expected manual-only dod to fail")
 	}
 }
 
@@ -182,7 +196,7 @@ func TestInvalidOnFailure(t *testing.T) {
 		"title": "OnFailure",
 		"tasks": [
 			{"template": "refactor", "title": "Refactor", "role": "dev",
-			 "dod": {"manual": "check", "on_failure": "unknown"}
+			 "dod": {"manual": "check", "tests": ["go test ./..."], "on_failure": "unknown"}
 			}
 		]
 	}`

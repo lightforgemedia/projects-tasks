@@ -1,0 +1,64 @@
+title = "PT Agent Usability RFC"
+owner = "tawawhite"
+
+[[tasks]]
+template = "refactor"
+title = "Add discovery/draft mode for exploratory tasks"
+role = "backend-dev"
+artifact = "code:pt-draft-mode"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... ./pkg/pt/..."]
+manual = "pt claim --draft skips DoD; pt validate prompts for DoD completion; sync converts draft tasks"
+criteria = ["--draft flag works", "validate enforces DoD on draft", "sync handles draft tasks", "tests pass"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Add pt update for in-flight task edits"
+role = "backend-dev"
+artifact = "code:pt-update"
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "pt update <id> --title/--assignee/--priority modifies task; history recorded"
+criteria = ["update modifies task", "history recorded", "tests pass"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Add pt reopen for returning done tasks to in_progress"
+role = "backend-dev"
+artifact = "code:pt-reopen"
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "pt reopen <id> moves done→in_progress; history recorded"
+criteria = ["reopen works", "history recorded", "tests pass"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Add pt blocked command to mark/list blocked tasks"
+role = "backend-dev"
+artifact = "code:pt-blocked"
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "pt blocked <id> <reason> sets blocker; pt blocked lists all blocked; pt unblock <id> clears"
+criteria = ["blocked/unblock commands work", "blocked list works", "tests pass"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Add pt context prime for agent bootstrap"
+role = "backend-dev"
+deps = ["Add pt update for in-flight task edits"]
+artifact = "code:pt-context-prime"
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "pt context prime outputs summary for agent onboarding; includes project state and ready tasks"
+criteria = ["prime outputs context summary", "tests pass"]
+
+[[tasks]]
+template = "refactor"
+title = "Document agent usability commands"
+role = "tech-writer"
+deps = ["Add discovery/draft mode for exploratory tasks", "Add pt update for in-flight task edits", "Add pt reopen for returning done tasks to in_progress", "Add pt blocked command to mark/list blocked tasks", "Add pt context prime for agent bootstrap"]
+artifact = "doc:pt-agent-usability"
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "README/AGENTS updated with new commands; examples show agent workflow"
+criteria = ["docs updated", "examples added", "tests pass"]

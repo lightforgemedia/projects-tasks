@@ -16,8 +16,8 @@ func TestStoreClient_Extended(t *testing.T) {
 	manifest := Manifest{
 		Title: "Ext Test",
 		Tasks: []Task{
-			{Title: "Root", Template: "backend_endpoint", Role: "dev", DoD: DefinitionOfDone{}},
-			{Title: "Child", Template: "backend_endpoint", Role: "dev", Deps: []string{"Root"}, DoD: DefinitionOfDone{}},
+			{Title: "Root", Template: "backend_endpoint", Role: "dev", Artifact: "spec:root", DoD: minimalDoD},
+			{Title: "Child", Template: "backend_endpoint", Role: "dev", Artifact: "spec:child", Deps: []string{"Root"}, DoD: minimalDoD},
 		},
 	}
 	ids, err := client.Sync(ctx, manifest)
@@ -96,7 +96,7 @@ func TestStoreClient_Extended(t *testing.T) {
 		if err := client.AddLabels(ctx, rootID, "urgent", "frontend"); err != nil {
 			t.Fatalf("AddLabels failed: %v", err)
 		}
-		
+
 		iss, _, _ := client.GetTask(ctx, rootID)
 		hasUrgent := false
 		for _, l := range iss.Labels {
@@ -135,9 +135,9 @@ func TestStoreClient_Extended(t *testing.T) {
 		m2 := Manifest{
 			Title: "Bulk",
 			Tasks: []Task{
-				{Title: "T1", Template: "bug_fix", Role: "dev", DoD: DefinitionOfDone{}},
-				{Title: "T2", Template: "bug_fix", Role: "dev", DoD: DefinitionOfDone{}},
-				{Title: "T3", Template: "bug_fix", Role: "dev", DoD: DefinitionOfDone{}},
+				{Title: "T1", Template: "bug_fix", Role: "dev", Artifact: "spec:t1", DoD: minimalDoD},
+				{Title: "T2", Template: "bug_fix", Role: "dev", Artifact: "spec:t2", DoD: minimalDoD},
+				{Title: "T3", Template: "bug_fix", Role: "dev", Artifact: "spec:t3", DoD: minimalDoD},
 			},
 		}
 		_, err := client.Sync(ctx, m2)
@@ -164,17 +164,17 @@ func TestStoreClient_Extended(t *testing.T) {
 func TestNewStoreClient_Defaults(t *testing.T) {
 	// Create client with empty paths
 	c := NewStoreClient("", "")
-	// Check private fields via reflection or just assume if it doesn't crash it's ok? 
+	// Check private fields via reflection or just assume if it doesn't crash it's ok?
 	// Since we can't access private fields, we verify behavior that depends on defaults.
 	// Ideally we'd check the path, but it's private.
 	// We can check if it creates the default file.
-	
+
 	// Clean up potential default file
 	defer os.Remove(".pt.db.json")
-	
+
 	// Force a save to create the file
 	_ = c.saveLocked()
-	
+
 	if _, err := os.Stat(".pt.db.json"); err != nil {
 		t.Errorf("expected default file .pt.db.json to be created")
 	}

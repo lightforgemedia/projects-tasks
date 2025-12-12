@@ -11,7 +11,7 @@ import (
 func TestCmdSyncStore(t *testing.T) {
 	path, store := setupStoreEnv(t)
 	manifest := t.TempDir() + "/manifest.json"
-	data := `{"title":"T","tasks":[{"title":"A","role":"dev","template":"backend_endpoint","dod":{"manual":"check"}},{"title":"B","role":"dev","template":"backend_endpoint","deps":["A"],"dod":{"manual":"check"}}]}`
+	data := `{"title":"T","tasks":[{"title":"A","role":"dev","template":"backend_endpoint","artifact":"spec:a","dod":{"manual":"check","tests":["go test ./..."],"criteria":["observed go test pass"]}},{"title":"B","role":"dev","template":"backend_endpoint","artifact":"spec:b","deps":["A"],"dod":{"manual":"check","tests":["go test ./..."],"criteria":["observed go test pass"]}}]}`
 	if err := os.WriteFile(manifest, []byte(data), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestCmdSyncStore(t *testing.T) {
 func TestCmdClaimAndReleaseStore(t *testing.T) {
 	path, store := setupStoreEnv(t)
 	manifest := pt.Manifest{
-		Tasks: []pt.Task{{Title: "A", Template: "backend_endpoint", Role: "dev", DoD: pt.DefinitionOfDone{Manual: "check"}}},
+		Tasks: []pt.Task{{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"observed ok"}}}},
 	}
 	if _, err := store.Sync(t.Context(), manifest); err != nil {
 		t.Fatalf("sync err: %v", err)
@@ -54,7 +54,7 @@ func TestCmdClaimAndReleaseStore(t *testing.T) {
 func TestCmdValidateStoresComment(t *testing.T) {
 	path, store := setupStoreEnv(t)
 	manifest := pt.Manifest{
-		Tasks: []pt.Task{{Title: "A", Template: "backend_endpoint", Role: "dev", DoD: pt.DefinitionOfDone{Manual: "check"}}},
+		Tasks: []pt.Task{{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"observed ok"}}}},
 	}
 	if _, err := store.Sync(t.Context(), manifest); err != nil {
 		t.Fatalf("sync err: %v", err)
@@ -73,7 +73,7 @@ func TestCmdValidateStoresComment(t *testing.T) {
 
 func TestCmdAddCommentListSnapshot(t *testing.T) {
 	path, store := setupStoreEnv(t)
-	if err := cmdAdd([]string{"New Task", "--role", "dev", "--template", "backend_endpoint", "--manual", "check"}); err != nil {
+	if err := cmdAdd([]string{"New Task", "--role", "dev", "--template", "backend_endpoint", "--artifact", "spec:new", "--manual", "check", "--tests", "echo ok", "--criteria", "observed ok"}); err != nil {
 		t.Fatalf("add err: %v", err)
 	}
 	store = pt.NewStoreClient(path, "pt")
@@ -97,5 +97,34 @@ func TestCmdAddCommentListSnapshot(t *testing.T) {
 	}
 	if _, err := os.Stat(outPath); err != nil {
 		t.Fatalf("snapshot not written: %v", err)
+	}
+}
+
+func TestCmdClaimWithDraft(t *testing.T) {
+	path, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{{Title: "DraftTask", Template: "backend_endpoint", Role: "dev", Artifact: "spec:draft", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"observed ok"}}}},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	// Claim with --draft flag
+	if err := cmdClaim([]string{"--as", "alice", "--draft", "pt-1"}); err != nil {
+		t.Fatalf("claim --draft err: %v", err)
+	}
+
+	// Verify state:draft label is present
+	store = pt.NewStoreClient(path, "pt")
+	issue, _, _ := store.GetTask(t.Context(), "pt-1")
+	hasDraft := false
+	for _, l := range issue.Labels {
+		if l == "state:draft" {
+			hasDraft = true
+			break
+		}
+	}
+	if !hasDraft {
+		t.Fatalf("expected state:draft label after claim --draft, got labels: %v", issue.Labels)
 	}
 }

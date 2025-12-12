@@ -55,6 +55,24 @@ Agents interacting with this repository or using the `pt` tool should follow thi
 - Ad-hoc: use `pt add` for quick tasks; `pt comment` to log progress; `pt snapshot` to back up the store before risky changes. Multi-project helpers: `pt multi-ready` (read-only across DBs) and `pt propose` (diff only, no writes).
 - Search/read: `pt search --query="text"` to find tasks by title/labels/description; `pt list`/`pt show` to inspect status/DoD/comments; `--db`/`--prefix` to target specific stores.
 
+### Task Authoring Checklist (self-contained)
+- Assume the next agent has zero context; every task must stand alone.
+- Include artifact/spec link and affected files/modules.
+- Spell out exact commands to run (tests, validation) and manual steps.
+- Add acceptance criteria bullets (evidence/proof required).
+- Note dependencies and next likely task if relevant.
+- For bugs: capture repro steps/symptoms. For features: link UI/API contracts.
+- If you stop early, leave a status comment so others can continue.
+
+## Feedback Capture (reviews)
+- Use `pt feedback --desc="<short-slug>"` to create a feedback note template under `~/.pt/feedback/<datetime>.<slug>.feedback.md` (override dir with `--dir` or `PT_FEEDBACK_DIR`).
+- Template sections (keep concise):
+  - Summary: one paragraph of what was reviewed and the verdict.
+  - Findings: bullets by severity (Critical/Major/Minor) with file refs (path:line) and any data-model notes.
+  - Gaps/Risks: short bullets (auth, wiring, build integration, tests, etc.).
+  - Recommendations: numbered next actions.
+  - Status: Ready / Blocked / Needs follow-up.
+
 ## Automation Hooks (planned)
 - Configure hooks in repo `hooks.toml` or global `$HOME/.config/pt/hooks.toml` (env `PT_HOOKS` overrides). Events: pre/post sync/claim/validate, post release/approve/reject.
 - Hooks receive env: `PT_EVENT`, `PT_ID`, `PT_TITLE`, `PT_ASSIGNEE`, `PT_ACTOR`, `PT_STATUS_FROM/TO`, `PT_ROLE`, `PT_DOD` (JSON); full payload arrives via stdin. Enable hook logs with `--hook-verbose` or `PT_HOOK_VERBOSE=1`. Bypass with `PT_SKIP_HOOKS=1`.

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // StoreClient implements Client using a JSON-backed local store (no external deps).
@@ -35,6 +36,8 @@ type storeData struct {
 	Deps     map[string][]string            `json:"deps"`   // issue -> deps
 	Comments map[string][]string            `json:"comments"`
 	TitleMap map[string]string              `json:"title_map"` // title -> id
+	History  map[string][]HistoryEvent      `json:"history"`   // issue -> events
+	Blocked  map[string]BlockedInfo         `json:"blocked"`   // issue -> blocked info
 }
 
 // NewStoreClient creates or opens a store at path. If path empty, defaults to ".pt.db.json".
@@ -63,6 +66,7 @@ func (c *StoreClient) Sync(ctx context.Context, manifest Manifest) (map[string]s
 			return nil, err
 		}
 		idByTitle[task.Title] = id
+		c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: "", Action: "synced"})
 	}
 	for _, task := range manifest.Tasks {
 		taskID := idByTitle[task.Title]
@@ -144,6 +148,56 @@ func (c *StoreClient) UpdateIssue(ctx context.Context, id, status, assignee stri
 		iss.Assignee = assignee
 	}
 	c.data.Issues[id] = iss
+	actor := assignee
+	if strings.TrimSpace(actor) == "" {
+		actor = iss.Assignee
+	}
+	action := fmt.Sprintf("status:%s->%s", iss.Status, status)
+	if strings.TrimSpace(assignee) != "" && assignee != iss.Assignee {
+		action = fmt.Sprintf("%s;assignee:%s", action, assignee)
+	}
+	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: actor, Action: action})
+	return c.saveLocked()
+}
+
+// UpdateTask updates task fields specified in opts. Only non-empty/non-nil fields are applied.
+func (c *StoreClient) UpdateTask(ctx context.Context, id string, opts UpdateOptions) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	iss, ok := c.data.Issues[id]
+	if !ok {
+		return fmt.Errorf("issue %s not found", id)
+	}
+	var changes []string
+	if strings.TrimSpace(opts.Title) != "" && opts.Title != iss.Title {
+		oldTitle := iss.Title
+		iss.Title = opts.Title
+		// Update title map
+		delete(c.data.TitleMap, oldTitle)
+		c.data.TitleMap[opts.Title] = id
+		changes = append(changes, fmt.Sprintf("title:%s->%s", oldTitle, opts.Title))
+	}
+	if strings.TrimSpace(opts.Assignee) != "" && opts.Assignee != iss.Assignee {
+		oldAssignee := iss.Assignee
+		iss.Assignee = opts.Assignee
+		changes = append(changes, fmt.Sprintf("assignee:%s->%s", oldAssignee, opts.Assignee))
+	}
+	if opts.Priority != nil && *opts.Priority != iss.Priority {
+		oldPriority := iss.Priority
+		iss.Priority = *opts.Priority
+		changes = append(changes, fmt.Sprintf("priority:%d->%d", oldPriority, *opts.Priority))
+	}
+	if strings.TrimSpace(opts.NextHint) != "" && opts.NextHint != iss.NextHint {
+		oldHint := iss.NextHint
+		iss.NextHint = opts.NextHint
+		changes = append(changes, fmt.Sprintf("next_hint:%s->%s", oldHint, opts.NextHint))
+	}
+	if len(changes) == 0 {
+		return nil // No changes
+	}
+	c.data.Issues[id] = iss
+	action := "updated:" + strings.Join(changes, ";")
+	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: iss.Assignee, Action: action})
 	return c.saveLocked()
 }
 
@@ -157,6 +211,7 @@ func (c *StoreClient) AddComment(ctx context.Context, id, body string) error {
 		c.data.Comments = make(map[string][]string)
 	}
 	c.data.Comments[id] = append(c.data.Comments[id], body)
+	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: "", Action: "commented", Note: body})
 	return c.saveLocked()
 }
 
@@ -166,6 +221,66 @@ func (c *StoreClient) Comments(ctx context.Context, id string) ([]string, error)
 	defer c.mu.Unlock()
 	comments := c.data.Comments[id]
 	return append([]string{}, comments...), nil
+}
+
+// History returns lifecycle events for an issue.
+func (c *StoreClient) History(ctx context.Context, id string) ([]HistoryEvent, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]HistoryEvent{}, c.data.History[id]...), nil
+}
+
+// SetBlocked marks a task as blocked with a reason.
+func (c *StoreClient) SetBlocked(ctx context.Context, id, reason, blockedBy string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.data.Issues[id]; !ok {
+		return fmt.Errorf("issue %s not found", id)
+	}
+	if c.data.Blocked == nil {
+		c.data.Blocked = make(map[string]BlockedInfo)
+	}
+	c.data.Blocked[id] = BlockedInfo{
+		Reason:    reason,
+		BlockedBy: blockedBy,
+		BlockedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: blockedBy, Action: "blocked", Note: reason})
+	return c.saveLocked()
+}
+
+// ClearBlocked removes the blocked status from a task.
+func (c *StoreClient) ClearBlocked(ctx context.Context, id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.data.Issues[id]; !ok {
+		return fmt.Errorf("issue %s not found", id)
+	}
+	delete(c.data.Blocked, id)
+	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: "", Action: "unblocked"})
+	return c.saveLocked()
+}
+
+// GetBlocked returns blocked info for a task, and whether it is blocked.
+func (c *StoreClient) GetBlocked(ctx context.Context, id string) (BlockedInfo, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.data.Issues[id]; !ok {
+		return BlockedInfo{}, false, fmt.Errorf("issue %s not found", id)
+	}
+	info, ok := c.data.Blocked[id]
+	return info, ok, nil
+}
+
+// ListBlocked returns all blocked tasks with their blocked info.
+func (c *StoreClient) ListBlocked(ctx context.Context) (map[string]BlockedInfo, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := make(map[string]BlockedInfo, len(c.data.Blocked))
+	for id, info := range c.data.Blocked {
+		result[id] = info
+	}
+	return result, nil
 }
 
 // AddTask creates a single task ad-hoc.
@@ -193,6 +308,7 @@ func (c *StoreClient) AddTask(ctx context.Context, task Task) (string, error) {
 	for _, dep := range task.Deps {
 		c.addDepLocked(id, dep)
 	}
+	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: "", Action: "added"})
 	if err := c.saveLocked(); err != nil {
 		return "", err
 	}
@@ -279,8 +395,15 @@ func (c *StoreClient) ensureIssueLocked(task Task) (string, error) {
 			}
 			c.data.Labels[id][fmt.Sprintf("role:%s", task.Role)] = struct{}{}
 			c.data.Labels[id][fmt.Sprintf("template:%s", task.Template)] = struct{}{}
-			c.refreshIssueLabels(id)
+			// If task was draft and manifest now provides complete DoD, remove draft label
+			if _, isDraft := c.data.Labels[id]["state:draft"]; isDraft {
+				dodComplete := len(task.DoD.Tests) > 0 || strings.TrimSpace(task.DoD.Manual) != "" || len(task.DoD.Criteria) > 0
+				if dodComplete {
+					delete(c.data.Labels[id], "state:draft")
+				}
+			}
 			c.data.Issues[id] = iss
+			c.refreshIssueLabels(id) // must be after setting issue to update its Labels
 			return iss.ID, nil
 		}
 	}
@@ -312,6 +435,7 @@ func (c *StoreClient) ensureIssueLocked(task Task) (string, error) {
 	for _, l := range issue.Labels {
 		c.data.Labels[id][l] = struct{}{}
 	}
+	c.appendHistoryLocked(id, HistoryEvent{At: time.Now().UTC(), Actor: "", Action: "created"})
 	return id, nil
 }
 
@@ -329,6 +453,13 @@ func (c *StoreClient) depsDoneLocked(issueID string) bool {
 		}
 	}
 	return true
+}
+
+func (c *StoreClient) appendHistoryLocked(id string, ev HistoryEvent) {
+	if c.data.History == nil {
+		c.data.History = make(map[string][]HistoryEvent)
+	}
+	c.data.History[id] = append(c.data.History[id], ev)
 }
 
 func (c *StoreClient) hasLabelLocked(id, label string) bool {
@@ -384,6 +515,15 @@ func (c *StoreClient) load() {
 	}
 	if c.data.TitleMap == nil {
 		c.data.TitleMap = make(map[string]string)
+	}
+	if c.data.Comments == nil {
+		c.data.Comments = make(map[string][]string)
+	}
+	if c.data.History == nil {
+		c.data.History = make(map[string][]HistoryEvent)
+	}
+	if c.data.Blocked == nil {
+		c.data.Blocked = make(map[string]BlockedInfo)
 	}
 }
 

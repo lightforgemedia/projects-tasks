@@ -48,7 +48,7 @@ func TestCmdValidateMarksNeedsReview(t *testing.T) {
 	path, store := setupStoreEnv(t)
 	manifest := pt.Manifest{
 		Tasks: []pt.Task{
-			{Title: "Test Task", Template: "backend_endpoint", Role: "builder", DoD: pt.DefinitionOfDone{}},
+			{Title: "Test Task", Template: "backend_endpoint", Role: "builder", Artifact: "spec:test", DoD: pt.DefinitionOfDone{Manual: "verify output", Tests: []string{"echo ok"}, Criteria: []string{"observed ok"}}},
 		},
 	}
 	if _, err := store.Sync(t.Context(), manifest); err != nil {
@@ -59,7 +59,7 @@ func TestCmdValidateMarksNeedsReview(t *testing.T) {
 		t.Fatalf("update err: %v", err)
 	}
 
-	if err := cmdValidate([]string{"pt-1"}); err != nil {
+	if err := cmdValidate([]string{"--yes", "pt-1"}); err != nil {
 		t.Fatalf("cmdValidate failed: %v", err)
 	}
 	store2 := pt.NewStoreClient(path, "pt")
@@ -73,7 +73,7 @@ func TestCmdValidateManualYesSkipsPrompt(t *testing.T) {
 	path, store := setupStoreEnv(t)
 	manifest := pt.Manifest{
 		Tasks: []pt.Task{
-			{Title: "Test Task 2", Template: "backend_endpoint", Role: "builder", DoD: pt.DefinitionOfDone{Manual: "Step one\nStep two"}},
+			{Title: "Test Task 2", Template: "backend_endpoint", Role: "builder", Artifact: "spec:test2", DoD: pt.DefinitionOfDone{Manual: "Step one\nStep two", Tests: []string{"echo ok"}, Criteria: []string{"observed ok"}}},
 		},
 	}
 	if _, err := store.Sync(t.Context(), manifest); err != nil {
@@ -98,6 +98,33 @@ func TestCmdContextErrors(t *testing.T) {
 	}
 	if err := cmdContext([]string{"unknown"}); err == nil {
 		t.Error("expected error for unknown subcommand")
+	}
+}
+
+func TestCmdContextPrime(t *testing.T) {
+	_, _ = setupStoreEnv(t)
+
+	// Add some tasks
+	if err := cmdAdd([]string{"Task A", "--role", "dev", "--template", "backend_endpoint", "--artifact", "spec:a", "--manual", "check", "--tests", "echo ok", "--criteria", "verified"}); err != nil {
+		t.Fatalf("add task A: %v", err)
+	}
+	if err := cmdAdd([]string{"Task B", "--role", "dev", "--template", "backend_endpoint", "--artifact", "spec:b", "--manual", "check", "--tests", "echo ok", "--criteria", "verified"}); err != nil {
+		t.Fatalf("add task B: %v", err)
+	}
+
+	// Claim one task
+	if err := cmdClaim([]string{"--as", "alice", "pt-1"}); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	// Test context prime runs without error
+	if err := cmdContextPrime([]string{}); err != nil {
+		t.Fatalf("context prime: %v", err)
+	}
+
+	// Test JSON output
+	if err := cmdContextPrime([]string{"--json"}); err != nil {
+		t.Fatalf("context prime --json: %v", err)
 	}
 }
 

@@ -130,6 +130,27 @@ func (t Transitioner) Reject(ctx context.Context, id, reason string) error {
 	return nil
 }
 
+// Reopen moves a done/closed task back to in_progress.
+func (t Transitioner) Reopen(ctx context.Context, id, assignee string) error {
+	client, err := t.ensureClient()
+	if err != nil {
+		return err
+	}
+	issue, sm, err := t.loadIssueState(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := sm.Reopen(issue.ID, assignee); err != nil {
+		return err
+	}
+	if err := client.UpdateIssue(ctx, issue.ID, string(StatusInProgress), assignee); err != nil {
+		return err
+	}
+	_ = client.AddLabels(ctx, issue.ID, "state:claimed")
+	_ = client.AddComment(ctx, issue.ID, fmt.Sprintf("Reopened by %s", assignee))
+	return nil
+}
+
 func (t Transitioner) loadIssueState(ctx context.Context, id string) (Issue, *StateManager, error) {
 	client, err := t.ensureClient()
 	if err != nil {

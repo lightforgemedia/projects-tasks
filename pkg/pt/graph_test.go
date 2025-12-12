@@ -6,13 +6,14 @@ import (
 )
 
 func TestRenderManifestTree(t *testing.T) {
+	dod := DefinitionOfDone{Tests: []string{"echo ok"}, Manual: "check", Criteria: []string{"observed ok"}}
 	m := Manifest{
 		Title: "Test Phase",
 		Tasks: []Task{
-			{Title: "Root", Role: "arch"},
-			{Title: "Child A", Role: "dev", Deps: []string{"Root"}},
-			{Title: "Child B", Role: "dev", Deps: []string{"Root"}},
-			{Title: "Grandchild", Role: "qa", Deps: []string{"Child A"}},
+			{Title: "Root", Role: "arch", Template: "backend_endpoint", Artifact: "spec:root", DoD: dod},
+			{Title: "Child A", Role: "dev", Template: "backend_endpoint", Artifact: "spec:a", Deps: []string{"Root"}, DoD: dod},
+			{Title: "Child B", Role: "dev", Template: "backend_endpoint", Artifact: "spec:b", Deps: []string{"Root"}, DoD: dod},
+			{Title: "Grandchild", Role: "qa", Template: "backend_endpoint", Artifact: "spec:c", Deps: []string{"Child A"}, DoD: dod},
 		},
 	}
 
@@ -35,11 +36,12 @@ func TestRenderManifestTree(t *testing.T) {
 }
 
 func TestRenderManifestTreeCyclesAreMarked(t *testing.T) {
+	dod := DefinitionOfDone{Tests: []string{"echo ok"}, Manual: "check", Criteria: []string{"observed ok"}}
 	m := Manifest{
 		Title: "Cycle Phase",
 		Tasks: []Task{
-			{Title: "A", Role: "dev", Deps: []string{"B"}},
-			{Title: "B", Role: "dev", Deps: []string{"A"}},
+			{Title: "A", Role: "dev", Template: "backend_endpoint", Artifact: "spec:a", Deps: []string{"B"}, DoD: dod},
+			{Title: "B", Role: "dev", Template: "backend_endpoint", Artifact: "spec:b", Deps: []string{"A"}, DoD: dod},
 		},
 	}
 

@@ -10,6 +10,10 @@ func BuildMcpServers(cmd string, args []string, env []acp.EnvVariable) []acp.Mcp
 	if cmd == "" {
 		return nil
 	}
+	// Some agents validate that env is an array, not null. Ensure we send an empty slice when unset.
+	if env == nil {
+		env = []acp.EnvVariable{}
+	}
 	return []acp.McpServer{
 		{
 			Stdio: &acp.McpServerStdio{

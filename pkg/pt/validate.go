@@ -31,11 +31,8 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 		if strings.TrimSpace(cmdStr) == "" {
 			return nil
 		}
-		args := strings.Fields(cmdStr)
-		if len(args) == 0 {
-			return nil
-		}
-		out, err := vr.Runner.Run(ctx, args...)
+		// Execute via shell to honor quoted args; callers should pass safe/known commands.
+		out, err := vr.Runner.Run(ctx, "sh", "-c", cmdStr)
 		outputs = append(outputs, cmdStr, string(out))
 		if err != nil {
 			return fmt.Errorf("command %q failed: %w", cmdStr, err)

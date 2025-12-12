@@ -36,3 +36,4 @@ go.work.sum
 context_*.json
 .pt.db*
 .beads/
+/pt

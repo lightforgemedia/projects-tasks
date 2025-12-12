@@ -269,7 +269,8 @@ func runHook(h hookEntry, defaults hookDefaults, event string, payload hookPaylo
 		"PT_STATUS_FROM="+payload.StatusFrom,
 		"PT_STATUS_TO="+payload.StatusTo,
 		"PT_ROLE="+payload.Role,
-		"PT_DOD="+payload.DoDJSON,
+		// Keep PT_DOD small; full payload is already on stdin to avoid E2BIG.
+		"PT_DOD="+truncateForEnv(payload.DoDJSON, 1024),
 	)
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
@@ -319,6 +320,14 @@ func applyPlaceholders(s string, p hookPayload) string {
 		"{{role}}", p.Role,
 	)
 	return repl.Replace(s)
+}
+
+// truncateForEnv trims a string to maxLen bytes (UTF-8 safe enough for JSON here).
+func truncateForEnv(s string, maxLen int) string {
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
 }
 
 func skipHooks() bool {

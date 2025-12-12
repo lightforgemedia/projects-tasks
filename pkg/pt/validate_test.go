@@ -37,14 +37,20 @@ func TestValidateDoDCommandsPass(t *testing.T) {
 	if !res.Passed {
 		t.Fatalf("expected pass, got fail")
 	}
-	if len(r.log) != 2 {
-		t.Fatalf("expected two commands, got %v", r.log)
+	want := []string{"sh -c go test ./pkg", "sh -c echo validate"}
+	if len(r.log) != len(want) {
+		t.Fatalf("expected %d commands, got %v", len(want), r.log)
+	}
+	for i, cmd := range want {
+		if r.log[i] != cmd {
+			t.Fatalf("command %d mismatch: want %q got %q", i, cmd, r.log[i])
+		}
 	}
 }
 
 func TestValidateDoDCommandFailure(t *testing.T) {
 	r := &stubRunner{errFor: map[string]error{
-		"go test ./pkg": errors.New("boom"),
+		"sh -c go test ./pkg": errors.New("boom"),
 	}}
 	vr := ValidationRunner{Runner: r}
 	dod := DefinitionOfDone{Tests: []string{"go test ./pkg"}}
@@ -69,5 +75,20 @@ func TestValidateDoDManualRequired(t *testing.T) {
 	}
 	if res.Passed {
 		t.Fatalf("expected failed result")
+	}
+}
+
+func TestValidateDoDQuotedCommand(t *testing.T) {
+	r := &stubRunner{}
+	vr := ValidationRunner{Runner: r}
+	dod := DefinitionOfDone{
+		Tests: []string{`bash -c "echo 'hello world'"`},
+	}
+	res, err := vr.ValidateDoD(context.Background(), dod, true)
+	if err != nil || !res.Passed {
+		t.Fatalf("expected pass, got err=%v res=%+v", err, res)
+	}
+	if got := r.log; len(got) != 1 || got[0] != `sh -c bash -c "echo 'hello world'"` {
+		t.Fatalf("unexpected command log: %v", got)
 	}
 }

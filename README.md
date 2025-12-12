@@ -11,7 +11,7 @@ This repository ships a **Go SDK** and **CLI** with a built-in store to provide 
 - **CLI (`cmd/pt`):** A thin wrapper around the SDK. Guides users through schema fields, enforces state machines (`planned` → `ready` → `in_progress` → `needs_review` → `done`), and handles user interaction.
 - **Manifests:** TOML/JSON files for "Phase Bundles". These act as "Infrastructure as Code" for project management.
 - **Context Contracts:** Strict schemas (`contracts/*.toml`) that validate agent inputs (files, goals, criteria) to prevent drift and hallucination.
-- **Validation:** "Definition of Done" (DoD) per template, plus ready-work queries that only surface unblocked tasks.
+- **Validation:** "Definition of Done" (DoD) per template (tests + manual steps + acceptance criteria required; optional validation_cmd), plus ready-work queries that only surface unblocked tasks.
 
 ## Library & CLI Split
 
@@ -25,7 +25,7 @@ Stateless logic package.
 
 ### CLI (`cmd/pt`)
 - `pt sync <manifest.toml>`: Applies a plan.
-- `pt ready [--role=coder|architect]`: Lists available work.
+- `pt ready [--role=coder|architect]`: Lists all open work (blocked items are shown with a blocker indicator).
 - `pt claim <id>`: Marks as `in_progress`.
 - `pt validate <id>`: Runs hooks; if pass → `needs_review`.
 - `pt approve/reject <id>`: Human review steps.
@@ -62,6 +62,7 @@ owner = "team-auth"
 template = "backend_endpoint"
 title = "Implement POST /login"
 role = "backend-dev"
+artifact = "api:/login"
 estimated_effort = "4h"
 [tasks.params]
     path = "/login"
@@ -69,16 +70,21 @@ estimated_effort = "4h"
 [tasks.dod]
     tests = ["go test ./src/auth/..."]
     manual = "Verify JWT is returned in header"
+    criteria = ["JWT present in Authorization header"]
 
 [[tasks]]
 template = "frontend_component"
 title = "Login Form UI"
 role = "frontend-dev"
+artifact = "ui:LoginForm"
 deps = ["Implement POST /login"] # Dependency by title
 [tasks.params]
     component = "LoginForm"
 [tasks.dod]
+    tests = ["bun test src/components/LoginForm.test.ts"]
     validation_cmd = "bun test src/components/LoginForm.test.ts"
+    criteria = ["UI matches design", "tests green"]
+    manual = "Visual check"
 ```
 
 ## CLI Usage
@@ -97,7 +103,7 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 ### Inspect & Manage
 - `pt list --status=in_progress,needs_review` — see WIP/review queues.
 - `pt show <id> [--json]` — see title/status/DoD/comments.
-- `pt add "Title" --role=... --template=... [--manual|--tests|--validation-cmd]` — ad-hoc task.
+- `pt add "Title" --role=... --template=... --artifact=... --manual=... --tests=... --criteria=... [--validation-cmd=...]` — ad-hoc task (DoD must include tests + manual + acceptance criteria).
 - `pt comment <id> "text"` — append notes.
 - `pt snapshot` — copy `.pt.db.json` to a timestamped backup.
 - Multi-project (read-only/plan): `pt multi-ready --dbs=a.json,b.json` to aggregate ready tasks; `pt propose <manifest> --db=...` to show adds/updates without writing.
@@ -111,7 +117,7 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 - Identity enforcement: `pt claim` requires a non-empty identity (set `$USER` or pass `--as`).
 
 ## Task Creation & Taxonomy
-- Templates: `backend_endpoint` (APIs), `frontend_component` (UI), `bug_fix` (regressions), `refactor` (cleanup), `observability_hook` (SLO/alerts), `migration` (schema).
+- Templates: `backend_endpoint` (APIs), `frontend_component` (UI), `bug_fix` (regressions), `refactor` (cleanup), `observability_hook` (SLO/alerts), `migration` (schema), `discovery` (requirements/mental simulation), `spike` (assumption tests).
 - Include: `title`, `role`, `template`, `deps`, optional `next_hint`, DoD (`tests`, `manual`). Keep titles unique; reference deps by title or ID.
 - Example:
 ```toml

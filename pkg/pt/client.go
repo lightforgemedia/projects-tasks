@@ -12,6 +12,7 @@ type Client interface {
 	List(ctx context.Context, statuses []string, role string, limit int) ([]Issue, error)
 	Search(ctx context.Context, opts SearchOptions) ([]SearchResult, error)
 	UpdateIssue(ctx context.Context, id, status, assignee string) error
+	UpdateTask(ctx context.Context, id string, opts UpdateOptions) error
 	AddLabels(ctx context.Context, id string, labels ...string) error
 	RemoveLabels(ctx context.Context, id string, labels ...string) error
 	AddComment(ctx context.Context, id, body string) error
@@ -19,6 +20,11 @@ type Client interface {
 	AddTask(ctx context.Context, task Task) (string, error)
 	GetTask(ctx context.Context, id string) (Issue, TaskMeta, error)
 	Dependencies(ctx context.Context, id string) ([]Dependency, error)
+	History(ctx context.Context, id string) ([]HistoryEvent, error)
+	SetBlocked(ctx context.Context, id, reason, blockedBy string) error
+	ClearBlocked(ctx context.Context, id string) error
+	GetBlocked(ctx context.Context, id string) (BlockedInfo, bool, error)
+	ListBlocked(ctx context.Context) (map[string]BlockedInfo, error)
 }
 
 // NewClientFromEnv chooses backend based on PT_BACKEND env var.

@@ -23,6 +23,7 @@ type Task struct {
 	Template        string            `json:"template"`
 	Title           string            `json:"title"`
 	Role            string            `json:"role"`
+	Artifact        string            `json:"artifact,omitempty"`
 	Deps            []string          `json:"deps,omitempty"`
 	NextHint        string            `json:"next_hint,omitempty"`
 	EstimatedEffort string            `json:"estimated_effort,omitempty"`
@@ -35,6 +36,7 @@ type DefinitionOfDone struct {
 	Tests         []string `json:"tests,omitempty"`
 	ValidationCmd string   `json:"validation_cmd,omitempty"`
 	Manual        string   `json:"manual,omitempty"`
+	Criteria      []string `json:"criteria,omitempty"`
 	OnFailure     string   `json:"on_failure,omitempty"`
 }
 
@@ -45,6 +47,8 @@ var allowedTemplates = map[string]struct{}{
 	"bug_fix":            {},
 	"refactor":           {},
 	"observability_hook": {},
+	"discovery":          {},
+	"spike":              {},
 }
 
 // ParseManifest reads and validates a manifest file (JSON or subset TOML).
@@ -262,6 +266,8 @@ func assignTaskKV(task *Task, key string, val value) error {
 		task.Title = val.asString()
 	case "role":
 		task.Role = val.asString()
+	case "artifact":
+		task.Artifact = val.asString()
 	case "deps":
 		task.Deps = val.arr
 	case "next_hint":
@@ -286,6 +292,8 @@ func assignDoDKV(dod *DefinitionOfDone, key string, val value) error {
 		dod.ValidationCmd = val.asString()
 	case "manual":
 		dod.Manual = val.asString()
+	case "criteria":
+		dod.Criteria = val.arr
 	case "on_failure":
 		dod.OnFailure = val.asString()
 	default:
@@ -332,11 +340,20 @@ func validateTask(task Task) error {
 	if strings.TrimSpace(task.Role) == "" {
 		return errors.New("task role is required")
 	}
+	if strings.TrimSpace(task.Artifact) == "" {
+		return errors.New("task artifact is required (link to API/IDL/UI spec)")
+	}
 	if task.DoD.OnFailure != "" && task.DoD.OnFailure != "block" && task.DoD.OnFailure != "flag" {
 		return fmt.Errorf("dod.on_failure must be one of: block, flag, or empty")
 	}
-	if len(task.DoD.Tests) == 0 && strings.TrimSpace(task.DoD.ValidationCmd) == "" && strings.TrimSpace(task.DoD.Manual) == "" {
-		return errors.New("definition of done requires at least one of: tests, validation_cmd, manual")
+	if len(task.DoD.Tests) == 0 {
+		return errors.New("definition of done requires tests (at least one command)")
+	}
+	if strings.TrimSpace(task.DoD.Manual) == "" {
+		return errors.New("definition of done requires manual instructions (human validation)")
+	}
+	if len(task.DoD.Criteria) == 0 {
+		return errors.New("definition of done requires acceptance criteria")
 	}
 	return nil
 }

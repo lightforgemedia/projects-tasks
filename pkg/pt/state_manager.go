@@ -163,6 +163,24 @@ func (m *StateManager) Complete(id string) error {
 	return nil
 }
 
+// Reopen moves a done task back to in_progress.
+func (m *StateManager) Reopen(id, assignee string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.tasks[id]
+	if !ok {
+		return fmt.Errorf("unknown task %s", id)
+	}
+	if t.Status != StatusDone {
+		return fmt.Errorf("task %s not done (status=%s)", id, t.Status)
+	}
+	t.Status = StatusInProgress
+	if strings.TrimSpace(assignee) != "" {
+		t.Assignee = assignee
+	}
+	return nil
+}
+
 func (m *StateManager) depsDone(t *taskState) bool {
 	for _, dep := range t.Deps {
 		d, ok := m.tasks[dep]

@@ -35,6 +35,44 @@ cd projects/codexacp-client
 go test ./...
 ```
 
+## MCP smoke harness (Gemini/Claude)
+Run an ACP agent that honors `mcpServers` (e.g., `gemini --experimental-acp`), and let the client register the stdio MCP server:
+```bash
+cd projects/codexacp-client
+go run ./cmd/acp-mcp-smoke \
+  --agent gemini \
+  --agent-args "--experimental-acp" \
+  --mcp-cmd "$(pwd)/../agenttools/cmd/mcp-server" \
+  --mcp-args "-transport=stdio" \
+  --prompt "Call the MCP echo tool with text=hello" \
+  --debug
+```
+If the agent honors `mcpServers`, you should see `[tool-event]` lines for MCP tool calls. If nothing appears, the agent likely ignored the registration (known issue with some adapters, including codex-acp).
+
+## Quick Gemini prompt (no MCP)
+A minimal wrapper to send one prompt to Gemini over ACP and stream the response:
+```bash
+cd projects/codexacp-client
+go run ./cmd/gemini-acp \
+  --agent gemini \
+  --agent-args "--experimental-acp" \
+  --prompt "Summarize this workspace."
+```
+Tool events and streamed text will print to stdout. Use `--debug` for slog output.
+
+### With MCP registration
+Pass an MCP server (stdio) into the same wrapper:
+```bash
+go run ./cmd/gemini-acp \
+  --agent gemini \
+  --agent-args "--experimental-acp" \
+  --mcp-cmd "$(pwd)/../agenttools/cmd/mcp-server" \
+  --mcp-args "-transport=stdio" \
+  --prompt "Call the MCP echo tool with text=hello" \
+  --debug
+```
+If the agent honors `mcpServers`, you’ll see `[tool-event]` logs for the MCP tool. If not, the agent is likely ignoring client-supplied servers (known limitation for some adapters).
+
 ## Project Definition of Done
 See `projects/codexacp-client/PROJECT_DOD.md` for the project-level checklist (tests, CLI UX, tool-event logging, smoke run notes, known gaps).
 

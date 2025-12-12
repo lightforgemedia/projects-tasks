@@ -15,7 +15,16 @@ type TaskMeta struct {
 	Template string           `json:"template"`
 	Role     string           `json:"role"`
 	NextHint string           `json:"next_hint,omitempty"`
+	Artifact string           `json:"artifact,omitempty"`
 	DoD      DefinitionOfDone `json:"dod"`
+}
+
+// HistoryEvent captures lifecycle events for a task.
+type HistoryEvent struct {
+	At     time.Time `json:"at"`
+	Actor  string    `json:"actor"`
+	Action string    `json:"action"` // e.g., created, claimed, released, validated, approved, rejected, commented, synced
+	Note   string    `json:"note,omitempty"`
 }
 
 // CommandRunner abstracts external command execution; allows mocking in tests.
@@ -54,10 +63,29 @@ type Dependency struct {
 	Status string `json:"status"`
 }
 
+// UpdateOptions specifies which fields to update on a task.
+// Only non-empty fields are applied.
+type UpdateOptions struct {
+	Title    string `json:"title,omitempty"`
+	Assignee string `json:"assignee,omitempty"`
+	Priority *int   `json:"priority,omitempty"`
+	NextHint string `json:"next_hint,omitempty"`
+}
+
+// BlockedInfo tracks why a task is blocked.
+type BlockedInfo struct {
+	Reason    string `json:"reason"`
+	BlockedBy string `json:"blocked_by,omitempty"` // optional: who/what blocked it
+	BlockedAt string `json:"blocked_at,omitempty"` // timestamp
+}
+
 // buildDescription embeds metadata for later retrieval.
 func buildDescription(task Task) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Template: %s\nRole: %s\n", task.Template, task.Role)
+	if strings.TrimSpace(task.Artifact) != "" {
+		fmt.Fprintf(&b, "Artifact: %s\n", task.Artifact)
+	}
 	if len(task.Params) > 0 {
 		fmt.Fprintf(&b, "Params: %+v\n", task.Params)
 	}
@@ -71,6 +99,9 @@ func buildDescription(task Task) (string, error) {
 	if task.DoD.Manual != "" {
 		fmt.Fprintf(&b, " manual=%s", task.DoD.Manual)
 	}
+	if len(task.DoD.Criteria) > 0 {
+		fmt.Fprintf(&b, " criteria=%v", task.DoD.Criteria)
+	}
 	if task.DoD.OnFailure != "" {
 		fmt.Fprintf(&b, " on_failure=%s", task.DoD.OnFailure)
 	}
@@ -78,6 +109,7 @@ func buildDescription(task Task) (string, error) {
 		Template: task.Template,
 		Role:     task.Role,
 		NextHint: task.NextHint,
+		Artifact: task.Artifact,
 		DoD:      task.DoD,
 	}
 	metaJSON, err := json.Marshal(meta)
@@ -101,6 +133,12 @@ func parseTaskMeta(desc string) (TaskMeta, error) {
 		return TaskMeta{}, fmt.Errorf("parse pt-meta: %w", err)
 	}
 	return meta, nil
+}
+
+// ParseTaskMeta is an exported wrapper around parseTaskMeta for consumers that
+// need to extract metadata from an issue description.
+func ParseTaskMeta(desc string) (TaskMeta, error) {
+	return parseTaskMeta(desc)
 }
 
 // ContextWithTimeout is a helper to create a context with a sensible default timeout.

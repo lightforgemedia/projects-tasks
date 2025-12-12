@@ -10,7 +10,7 @@ func TestSearchFindsByTitleAndLabel(t *testing.T) {
 	ctx := context.Background()
 	_, _ = client.Sync(ctx, Manifest{
 		Tasks: []Task{
-			{Title: "Fix login bug", Template: "bug_fix", Role: "dev", DoD: DefinitionOfDone{Manual: "check"}},
+			{Title: "Fix login bug", Template: "bug_fix", Role: "dev", Artifact: "spec:bug", DoD: DefinitionOfDone{Manual: "check UI", Tests: []string{"go test ./..."}, Criteria: []string{"UI passes manual review"}}},
 		},
 	})
 	results, err := client.Search(ctx, SearchOptions{Query: "login", Limit: 5})

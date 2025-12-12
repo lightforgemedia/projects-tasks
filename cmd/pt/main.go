@@ -92,6 +92,68 @@ func projectDoDStatus() (string, bool) {
 	return path, false
 }
 
+func feedbackBaseDir(explicit string) (string, error) {
+	if v := strings.TrimSpace(explicit); v != "" {
+		return v, nil
+	}
+	if env := strings.TrimSpace(os.Getenv("PT_FEEDBACK_DIR")); env != "" {
+		return env, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".pt", "feedback"), nil
+}
+
+func feedbackSlug(desc string) string {
+	s := strings.ToLower(strings.TrimSpace(desc))
+	if s == "" {
+		return "review"
+	}
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+		case r == ' ' || r == '.':
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "review"
+	}
+	return out
+}
+
+func feedbackFilename(desc string, now time.Time) string {
+	return fmt.Sprintf("%s.%s.feedback.md", now.Format("2006-01-02-1504"), feedbackSlug(desc))
+}
+
+func feedbackTemplate() string {
+	return `# Feedback
+
+Summary: <one paragraph of what was reviewed and the main verdict>
+
+Findings:
+- Critical: <file:line – issue>
+- Major: <file:line – issue>
+- Minor: <file:line – issue>
+
+Gaps/Risks:
+- <short bullets for auth/wiring/build/tests/etc.>
+
+Recommendations:
+1. <next action>
+2. <next action>
+
+Status: Ready | Blocked | Needs follow-up
+`
+}
+
 func readyBlockers(ctx context.Context, client pt.Client, iss pt.Issue) []string {
 	deps, err := client.Dependencies(ctx, iss.ID)
 	if err != nil {
@@ -141,6 +203,27 @@ func main() {
 	}
 }
 
+// issueArtifact extracts artifact from task meta embedded in description.
+func issueArtifact(iss pt.Issue) string {
+	meta, err := pt.ParseTaskMeta(iss.Description)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.Artifact)
+}
+
+// issueCriteria returns a compact criteria string (semicolon-delimited) from task meta.
+func issueCriteria(iss pt.Issue) string {
+	meta, err := pt.ParseTaskMeta(iss.Description)
+	if err != nil {
+		return ""
+	}
+	if len(meta.DoD.Criteria) == 0 {
+		return ""
+	}
+	return strings.Join(meta.DoD.Criteria, "; ")
+}
+
 func run(args []string) error {
 	if len(args) < 2 {
 		usage()
@@ -172,6 +255,12 @@ func run(args []string) error {
 		return cmdApprove(cmdArgs)
 	case "reject":
 		return cmdReject(cmdArgs)
+	case "reopen":
+		return cmdReopen(cmdArgs)
+	case "blocked":
+		return cmdBlocked(cmdArgs)
+	case "unblock":
+		return cmdUnblock(cmdArgs)
 	case "context":
 		return cmdContext(cmdArgs)
 	case "graph":
@@ -184,6 +273,8 @@ func run(args []string) error {
 		return cmdAdd(cmdArgs)
 	case "comment":
 		return cmdComment(cmdArgs)
+	case "update":
+		return cmdUpdate(cmdArgs)
 	case "snapshot":
 		return cmdSnapshot(cmdArgs)
 	case "propose":
@@ -192,8 +283,12 @@ func run(args []string) error {
 		return cmdMultiReady(cmdArgs)
 	case "search":
 		return cmdSearch(cmdArgs)
+	case "feedback":
+		return cmdFeedback(cmdArgs)
 	case "hooks":
 		return cmdHooksPrint()
+	case "history":
+		return cmdHistory(cmdArgs)
 	case "-h", "--help", "help":
 		usage()
 		return nil
@@ -211,20 +306,26 @@ Commands (SDLC flow):
   ready [--role=ROLE] [--limit=N]    List unblocked work (status=open)
   list  [--status=...]               List tasks by status (open|in_progress|needs_review|closed)
   show  <id> [--json]                Show task details (DoD, deps, comments)
-  claim <id> [--as=USER]             Mark in_progress and assign
+  claim <id> [--as=USER] [--draft]   Mark in_progress and assign (--draft skips DoD check)
   release <id>                       Return to open and clear assignee
   validate <id> [--yes]              Run DoD hooks; on success -> needs_review
   approve <id>                       Mark done
   reject <id> --reason="text"        Send back to in_progress with a comment
+  reopen <id> [--as=USER]            Reopen a closed task (done -> in_progress)
+  blocked [<id> <reason>]            Mark task as blocked, or list all blocked
+  unblock <id>                       Clear blocked status from task
   add "Title" [flags]                Create ad-hoc task (role/template required)
+  update <id> [flags]                Update task fields (title/assignee/priority/next-hint)
   comment <id> "text"                Append a comment to a task
   snapshot [--out=...]               Copy the store to a timestamped file
   propose <manifest> [--db=PATH]     Show proposed adds/updates without writing
   multi-ready --dbs=a.json,b.json    Read-only ready aggregation across stores
   search --query="text"              Search titles/labels/description (read-only)
-  context init <id>|validate <file>  Manage agent context contracts
+  feedback --desc=TEXT [--dry-run]   Create a feedback template under ~/.pt/feedback
+  context init <id>|validate|prime    Manage agent context (prime outputs project summary)
   graph <manifest>                   Visualize manifest dependencies (cycles shown)
   hooks                              Print merged hook configuration (global + local)
+  history <id>                       Show task history (created/claimed/validated/approved)
 
 Happy-path primer:
   1) pt sync phases/<file>.toml
@@ -333,6 +434,8 @@ func cmdReady(args []string) error {
 				"labels":    iss.Labels,
 				"blockers":  blockers,
 				"next_hint": iss.NextHint,
+				"artifact":  issueArtifact(iss),
+				"criteria":  issueCriteria(iss),
 			})
 		}
 		return printJSON(out)
@@ -353,6 +456,12 @@ func cmdReady(args []string) error {
 			if extra != "" {
 				line = fmt.Sprintf("%s %s", line, extra)
 			}
+			if art := issueArtifact(iss); art != "" {
+				line = fmt.Sprintf("%s artifact:%s", line, art)
+			}
+			if crit := issueCriteria(iss); crit != "" {
+				line = fmt.Sprintf("%s criteria:%s", line, crit)
+			}
 			if strings.TrimSpace(iss.NextHint) != "" {
 				line = fmt.Sprintf("%s next:%s", line, iss.NextHint)
 			}
@@ -371,9 +480,9 @@ func cmdReady(args []string) error {
 	if !printed {
 		path, exists := projectDoDStatus()
 		if exists {
-			fmt.Printf("No ready tasks. Review project DoD at %s (set PT_PROJECT_DOD to override). If the DoD is not satisfied, identify the gaps and add tasks (via manifest or pt add) to close them with full tests/docs/review—avoid shortcuts. Only ask the user when requirements are unclear or external approval is needed.\n", path)
+			fmt.Printf("No ready tasks. Review project DoD at %s (set PT_PROJECT_DOD to override). If the DoD is not satisfied, identify the gaps and add tasks (via manifest or pt add) with explicit tests + manual checks (and docs/review)—avoid shortcuts. Only ask the user when requirements are unclear or external approval is needed.\n", path)
 		} else {
-			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set PT_PROJECT_DOD), then create tasks to reach that DoD using best practices (tests, docs, review) and minimize user prompts unless requirements are unclear.\n", path)
+			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set PT_PROJECT_DOD), then create tasks to reach that DoD using best practices: explicit tests + manual checks, docs, and review. Minimize user prompts unless requirements are unclear.\n", path)
 		}
 	}
 	return nil
@@ -388,7 +497,9 @@ func cmdList(args []string) error {
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt list [--status=open,in_progress] [--role=ROLE] [--limit=N] [--json]") }
+	fs.Usage = func() {
+		fmt.Println("Usage: pt list [--status=open,in_progress,needs_review,closed] [--role=ROLE] [--limit=N] [--json]")
+	}
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -475,6 +586,9 @@ func cmdShow(args []string) error {
 		fmt.Printf("Next: %s\n", iss.NextHint)
 	}
 	fmt.Printf("Role: %s  Template: %s\n", meta.Role, meta.Template)
+	if strings.TrimSpace(meta.Artifact) != "" {
+		fmt.Printf("Artifact: %s\n", meta.Artifact)
+	}
 	if len(iss.Labels) > 0 {
 		fmt.Printf("Labels: %s\n", strings.Join(iss.Labels, ","))
 	}
@@ -495,6 +609,9 @@ func cmdShow(args []string) error {
 	if meta.DoD.Manual != "" {
 		fmt.Printf("  manual: %s\n", meta.DoD.Manual)
 	}
+	if len(meta.DoD.Criteria) > 0 {
+		fmt.Printf("  criteria: %s\n", strings.Join(meta.DoD.Criteria, "; "))
+	}
 	if len(comments) > 0 {
 		fmt.Println("Comments:")
 		for _, c := range comments {
@@ -507,22 +624,27 @@ func cmdShow(args []string) error {
 func cmdClaim(args []string) error {
 	fs := flag.NewFlagSet("claim", flag.ContinueOnError)
 	as := fs.String("as", "", "override assignee (defaults to $USER)")
+	draft := fs.Bool("draft", false, "claim in draft mode (skip DoD validation)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER]") }
+	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER] [--draft]") }
+	// Parse flags first, then get positional arg
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	id := ""
+	if fs.NArg() > 0 {
+		id = fs.Arg(0)
 	}
 	if *hookVerboseFlag {
 		os.Setenv("PT_HOOK_VERBOSE", "1")
 	}
-	if fs.NArg() != 1 {
+	if id == "" {
 		fs.Usage()
 		return errors.New("missing id argument")
 	}
-	id := fs.Arg(0)
 	user, err := requireUser(*as)
 	if err != nil {
 		return err
@@ -553,6 +675,12 @@ func cmdClaim(args []string) error {
 	if err := trans.Claim(ctx, id, user); err != nil {
 		return fmt.Errorf("claim failed: %w", err)
 	}
+	// Add draft label if --draft flag is set
+	if *draft {
+		if err := client.AddLabels(ctx, id, "state:draft"); err != nil {
+			return fmt.Errorf("add draft label: %w", err)
+		}
+	}
 	postHooks, err := runHooks("post-claim", payload)
 	if err != nil {
 		return err
@@ -562,10 +690,15 @@ func cmdClaim(args []string) error {
 			"status":   "ok",
 			"id":       id,
 			"assignee": user,
+			"draft":    *draft,
 			"hooks":    combineHooks(preHooks, postHooks),
 		})
 	}
-	fmt.Printf("Claimed %s as %s\n", id, user)
+	if *draft {
+		fmt.Printf("Claimed %s as %s (draft mode - DoD not enforced until validate)\n", id, user)
+	} else {
+		fmt.Printf("Claimed %s as %s\n", id, user)
+	}
 	return nil
 }
 
@@ -637,7 +770,7 @@ func cmdValidate(args []string) error {
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt validate <id>") }
+	fs.Usage = func() { fmt.Println("Usage: pt validate <id> [--yes]") }
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -656,6 +789,46 @@ func cmdValidate(args []string) error {
 	if err != nil {
 		return fmt.Errorf("get task failed: %w", err)
 	}
+
+	// Check if this is a draft task
+	isDraft := false
+	for _, label := range issue.Labels {
+		if label == "state:draft" {
+			isDraft = true
+			break
+		}
+	}
+
+	// If draft, check if DoD is incomplete and warn
+	if isDraft {
+		dodIncomplete := len(meta.DoD.Tests) == 0 || strings.TrimSpace(meta.DoD.Manual) == "" || len(meta.DoD.Criteria) == 0
+		if dodIncomplete {
+			fmt.Println("WARNING: This is a draft task with incomplete DoD:")
+			if len(meta.DoD.Tests) == 0 {
+				fmt.Println("  - No tests defined")
+			}
+			if strings.TrimSpace(meta.DoD.Manual) == "" {
+				fmt.Println("  - No manual steps defined")
+			}
+			if len(meta.DoD.Criteria) == 0 {
+				fmt.Println("  - No acceptance criteria defined")
+			}
+			if !*yes {
+				fmt.Print("Continue with validation anyway? [y/N]: ")
+				scanner := bufio.NewScanner(os.Stdin)
+				if !scanner.Scan() {
+					return errors.New("validation cancelled")
+				}
+				resp := strings.TrimSpace(strings.ToLower(scanner.Text()))
+				if resp != "y" && resp != "yes" {
+					return errors.New("validation cancelled - please complete DoD first")
+				}
+			}
+		}
+		// Remove draft label since we're proceeding with validation
+		_ = client.RemoveLabels(ctx, id, "state:draft")
+	}
+
 	dodJSON, _ := json.Marshal(meta.DoD)
 	actor := strings.TrimSpace(os.Getenv("USER"))
 	payload := hookPayload{
@@ -688,6 +861,9 @@ func cmdValidate(args []string) error {
 	if len(manualSteps) > 0 {
 		comment = fmt.Sprintf("Validation passed; manual steps confirmed: %s", strings.Join(manualSteps, "; "))
 	}
+	if isDraft {
+		comment = fmt.Sprintf("%s (was draft)", comment)
+	}
 	if err := trans.SubmitForReview(ctx, issue.ID, comment); err != nil {
 		return fmt.Errorf("mark needs_review failed: %w", err)
 	}
@@ -701,6 +877,7 @@ func cmdValidate(args []string) error {
 			"id":               issue.ID,
 			"new_status":       string(pt.StatusNeedsReview),
 			"manual_confirmed": confirm,
+			"was_draft":        isDraft,
 			"hooks":            combineHooks(preHooks, postHooks),
 		})
 	}
@@ -843,12 +1020,172 @@ func cmdReject(args []string) error {
 	return nil
 }
 
+func cmdReopen(args []string) error {
+	fs := flag.NewFlagSet("reopen", flag.ContinueOnError)
+	as := fs.String("as", "", "override assignee (defaults to $USER)")
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	fs.Usage = func() { fmt.Println("Usage: pt reopen <id> [--as=USER]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("missing id argument")
+	}
+	id := fs.Arg(0)
+	user, err := requireUser(*as)
+	if err != nil {
+		return err
+	}
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	issue, meta, err := client.GetTask(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get task failed: %w", err)
+	}
+	dodJSON, _ := json.Marshal(meta.DoD)
+	payload := hookPayload{
+		ID:         issue.ID,
+		Title:      issue.Title,
+		Assignee:   user,
+		Actor:      user,
+		StatusFrom: issue.Status,
+		StatusTo:   string(pt.StatusInProgress),
+		Role:       meta.Role,
+		DoDJSON:    string(dodJSON),
+	}
+	preHooks, err := runHooks("pre-reopen", payload)
+	if err != nil {
+		return err
+	}
+	trans := pt.Transitioner{Client: client}
+	if err := trans.Reopen(ctx, id, user); err != nil {
+		return fmt.Errorf("reopen failed: %w", err)
+	}
+	postHooks, err := runHooks("post-reopen", payload)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status":     "ok",
+			"id":         id,
+			"assignee":   user,
+			"new_status": string(pt.StatusInProgress),
+			"hooks":      combineHooks(preHooks, postHooks),
+		})
+	}
+	fmt.Printf("Reopened %s as %s\n", id, user)
+	return nil
+}
+
+func cmdBlocked(args []string) error {
+	fs := flag.NewFlagSet("blocked", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt blocked [<id> <reason>]")
+		fmt.Println("  Without args: list all blocked tasks")
+		fmt.Println("  With id and reason: mark task as blocked")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Get positional args
+	var id, reason string
+	if fs.NArg() > 0 {
+		id = fs.Arg(0)
+	}
+	if fs.NArg() > 1 {
+		reason = strings.Join(fs.Args()[1:], " ")
+	}
+
+	// If no ID, list all blocked
+	if id == "" {
+		blocked, err := client.ListBlocked(ctx)
+		if err != nil {
+			return fmt.Errorf("list blocked: %w", err)
+		}
+		if *jsonOut {
+			return printJSON(blocked)
+		}
+		if len(blocked) == 0 {
+			fmt.Println("No blocked tasks")
+			return nil
+		}
+		for taskID, info := range blocked {
+			iss, _, _ := client.GetTask(ctx, taskID)
+			line := fmt.Sprintf("%s [%s] blocked: %s", taskID, iss.Title, info.Reason)
+			if info.BlockedBy != "" {
+				line += fmt.Sprintf(" (by %s)", info.BlockedBy)
+			}
+			fmt.Println(line)
+		}
+		return nil
+	}
+
+	// Mark as blocked
+	if reason == "" {
+		return errors.New("reason required when marking task as blocked")
+	}
+	actor := strings.TrimSpace(os.Getenv("USER"))
+	if err := client.SetBlocked(ctx, id, reason, actor); err != nil {
+		return fmt.Errorf("set blocked: %w", err)
+	}
+	if *jsonOut {
+		return printJSON(map[string]string{"status": "ok", "id": id, "blocked": "true", "reason": reason})
+	}
+	fmt.Printf("Marked %s as blocked: %s\n", id, reason)
+	return nil
+}
+
+func cmdUnblock(args []string) error {
+	fs := flag.NewFlagSet("unblock", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	fs.Usage = func() { fmt.Println("Usage: pt unblock <id>") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("missing id argument")
+	}
+	id := fs.Arg(0)
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := client.ClearBlocked(ctx, id); err != nil {
+		return fmt.Errorf("clear blocked: %w", err)
+	}
+	if *jsonOut {
+		return printJSON(map[string]string{"status": "ok", "id": id, "blocked": "false"})
+	}
+	fmt.Printf("Unblocked %s\n", id)
+	return nil
+}
+
 func cmdAdd(args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	role := fs.String("role", "", "role label (required)")
 	template := fs.String("template", "", "task template (required)")
-	manual := fs.String("manual", "", "manual DoD text")
-	tests := fs.String("tests", "", "comma-separated test commands")
+	artifact := fs.String("artifact", "", "artifact implemented (API/UI spec/ADR) (required)")
+	manual := fs.String("manual", "", "manual DoD text (required)")
+	tests := fs.String("tests", "", "comma-separated test commands (required)")
+	criteria := fs.String("criteria", "", "comma-separated acceptance criteria (required)")
 	validation := fs.String("validation-cmd", "", "validation command")
 	deps := fs.String("deps", "", "comma-separated dependency IDs")
 	nextHint := fs.String("next-hint", "", "suggested next task")
@@ -856,7 +1193,7 @@ func cmdAdd(args []string) error {
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt add \"Title\" --role=... --template=... [--manual=...] [--tests=...] [--validation-cmd=...] [--deps=...] [--next-hint=...]")
+		fmt.Println("Usage: pt add \"Title\" --role=... --template=... --artifact=... --manual=... --tests=... --criteria=... [--validation-cmd=...] [--deps=...] [--next-hint=...]")
 	}
 	var title string
 	var flagArgs []string
@@ -881,6 +1218,9 @@ func cmdAdd(args []string) error {
 	if strings.TrimSpace(*role) == "" || strings.TrimSpace(*template) == "" {
 		return errors.New("role and template are required")
 	}
+	if strings.TrimSpace(*artifact) == "" {
+		return errors.New("artifact is required (link to API/UI/ADR)")
+	}
 	var depList []string
 	if strings.TrimSpace(*deps) != "" {
 		for _, d := range strings.Split(*deps, ",") {
@@ -899,18 +1239,35 @@ func cmdAdd(args []string) error {
 			}
 		}
 	}
+	var criteriaList []string
+	if strings.TrimSpace(*criteria) != "" {
+		for _, c := range strings.Split(*criteria, ",") {
+			c = strings.TrimSpace(c)
+			if c != "" {
+				criteriaList = append(criteriaList, c)
+			}
+		}
+	}
 	dod := pt.DefinitionOfDone{
 		Tests:         testList,
 		ValidationCmd: *validation,
 		Manual:        *manual,
+		Criteria:      criteriaList,
 	}
-	if len(dod.Tests) == 0 && strings.TrimSpace(dod.ValidationCmd) == "" && strings.TrimSpace(dod.Manual) == "" {
-		return errors.New("definition of done requires at least one of: tests, validation_cmd, manual")
+	if len(dod.Tests) == 0 {
+		return errors.New("definition of done requires tests (--tests)")
+	}
+	if strings.TrimSpace(dod.Manual) == "" {
+		return errors.New("definition of done requires manual instructions (--manual)")
+	}
+	if len(dod.Criteria) == 0 {
+		return errors.New("definition of done requires acceptance criteria (--criteria)")
 	}
 	task := pt.Task{
 		Title:    title,
 		Template: *template,
 		Role:     *role,
+		Artifact: *artifact,
 		Deps:     depList,
 		NextHint: *nextHint,
 		DoD:      dod,
@@ -926,6 +1283,74 @@ func cmdAdd(args []string) error {
 		return printJSON(map[string]string{"status": "ok", "id": id})
 	}
 	fmt.Printf("Created %s\n", id)
+	printTaskAuthoringChecklist()
+	return nil
+}
+
+// printTaskAuthoringChecklist reminds authors to make tasks self-contained for low-context agents.
+func printTaskAuthoringChecklist() {
+	fmt.Println("Task authoring checklist (self-contained; assume no extra context):")
+	fmt.Println("- Include artifact/spec link and affected files/modules.")
+	fmt.Println("- State exact commands to run (tests, validation) and manual steps to perform.")
+	fmt.Println("- Add acceptance criteria bullets (what proof/outcome is needed).")
+	fmt.Println("- Note dependencies and next likely task if applicable.")
+	fmt.Println("- Record repro/symptoms for bugs; for features, link UI/API contracts.")
+	fmt.Println("- Leave a short status comment if you stop early so others can continue.")
+}
+
+func cmdFeedback(args []string) error {
+	fs := flag.NewFlagSet("feedback", flag.ContinueOnError)
+	desc := fs.String("desc", "", "short description for filename (e.g., ce-ui)")
+	dir := fs.String("dir", "", "override feedback directory (default PT_FEEDBACK_DIR or ~/.pt/feedback)")
+	dryRun := fs.Bool("dry-run", false, "print path/template without writing a file")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt feedback --desc=TEXT [--dir=PATH] [--dry-run]")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*desc) == "" {
+		fs.Usage()
+		return errors.New("description is required (example: --desc=\"ce-ui\")")
+	}
+	baseDir, err := feedbackBaseDir(*dir)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(baseDir, feedbackFilename(*desc, time.Now()))
+	template := feedbackTemplate()
+	if *dryRun {
+		if *jsonOut {
+			return printJSON(map[string]interface{}{
+				"status":   "ok",
+				"path":     path,
+				"written":  false,
+				"template": template,
+			})
+		}
+		fmt.Printf("Feedback path: %s\n", path)
+		fmt.Println(template)
+		return nil
+	}
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return fmt.Errorf("create feedback dir: %w", err)
+	}
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("feedback file already exists: %s", path)
+	}
+	if err := os.WriteFile(path, []byte(template), 0o644); err != nil {
+		return fmt.Errorf("write feedback file: %w", err)
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status":   "ok",
+			"path":     path,
+			"written":  true,
+			"template": template,
+		})
+	}
+	fmt.Printf("Feedback template created at %s\n", path)
 	return nil
 }
 
@@ -957,6 +1382,79 @@ func cmdComment(args []string) error {
 		return printJSON(map[string]string{"status": "ok", "id": id})
 	}
 	fmt.Printf("Comment added to %s\n", id)
+	return nil
+}
+
+func cmdUpdate(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	title := fs.String("title", "", "new title")
+	assignee := fs.String("assignee", "", "new assignee")
+	priority := fs.Int("priority", -1, "new priority (0-5)")
+	nextHint := fs.String("next-hint", "", "new next hint")
+	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt update <id> [--title=...] [--assignee=...] [--priority=N] [--next-hint=...]")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *hookVerboseFlag {
+		os.Setenv("PT_HOOK_VERBOSE", "1")
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("missing id argument")
+	}
+	id := fs.Arg(0)
+	opts := pt.UpdateOptions{
+		Title:    *title,
+		Assignee: *assignee,
+		NextHint: *nextHint,
+	}
+	if *priority >= 0 {
+		opts.Priority = priority
+	}
+	if opts.Title == "" && opts.Assignee == "" && opts.Priority == nil && opts.NextHint == "" {
+		return errors.New("at least one update flag required (--title, --assignee, --priority, --next-hint)")
+	}
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// Get task before update for hooks
+	issue, meta, err := client.GetTask(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get task failed: %w", err)
+	}
+	actor := strings.TrimSpace(os.Getenv("USER"))
+	payload := hookPayload{
+		ID:       issue.ID,
+		Title:    issue.Title,
+		Assignee: issue.Assignee,
+		Actor:    actor,
+		Role:     meta.Role,
+	}
+	preHooks, err := runHooks("pre-update", payload)
+	if err != nil {
+		return err
+	}
+	if err := client.UpdateTask(ctx, id, opts); err != nil {
+		return fmt.Errorf("update failed: %w", err)
+	}
+	postHooks, err := runHooks("post-update", payload)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]interface{}{
+			"status": "ok",
+			"id":     id,
+			"hooks":  combineHooks(preHooks, postHooks),
+		})
+	}
+	fmt.Printf("Updated %s\n", id)
 	return nil
 }
 
@@ -1147,6 +1645,7 @@ func cmdMultiReady(args []string) error {
 			if iss.Status != "open" {
 				continue
 			}
+			meta, _ := pt.ParseTaskMeta(iss.Description)
 			results = append(results, map[string]interface{}{
 				"db":        db,
 				"id":        iss.ID,
@@ -1154,6 +1653,8 @@ func cmdMultiReady(args []string) error {
 				"assignee":  iss.Assignee,
 				"status":    iss.Status,
 				"next_hint": iss.NextHint,
+				"role":      meta.Role,
+				"artifact":  meta.Artifact,
 			})
 		}
 	}
@@ -1166,6 +1667,12 @@ func cmdMultiReady(args []string) error {
 			line += " [unassigned]"
 		} else {
 			line += fmt.Sprintf(" @%s", r["assignee"])
+		}
+		if art, ok := r["artifact"].(string); ok && strings.TrimSpace(art) != "" {
+			line += fmt.Sprintf(" artifact:%s", art)
+		}
+		if roleVal, ok := r["role"].(string); ok && strings.TrimSpace(roleVal) != "" {
+			line += fmt.Sprintf(" role:%s", roleVal)
 		}
 		if nh, ok := r["next_hint"].(string); ok && strings.TrimSpace(nh) != "" {
 			line += fmt.Sprintf(" next:%s", nh)
@@ -1216,7 +1723,7 @@ func cmdSearch(args []string) error {
 
 func cmdContext(args []string) error {
 	if len(args) < 1 {
-		return errors.New("Usage: pt context <init|validate> [args]")
+		return errors.New("Usage: pt context <init|validate|prime> [args]")
 	}
 	sub := args[0]
 	subArgs := args[1:]
@@ -1226,6 +1733,8 @@ func cmdContext(args []string) error {
 		return cmdContextInit(subArgs)
 	case "validate":
 		return cmdContextValidate(subArgs)
+	case "prime":
+		return cmdContextPrime(subArgs)
 	default:
 		return fmt.Errorf("unknown context command: %s", sub)
 	}
@@ -1413,5 +1922,153 @@ func cmdGraph(args []string) error {
 		return fmt.Errorf("parse manifest: %w", err)
 	}
 	fmt.Print(pt.RenderManifestTree(manifest))
+	return nil
+}
+
+func cmdContextPrime(args []string) error {
+	fs := flag.NewFlagSet("context prime", flag.ContinueOnError)
+	roleFilter := fs.String("role", "", "filter tasks by role")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	fs.Usage = func() { fmt.Fprintln(os.Stderr, "Usage: pt context prime [--role=ROLE] [--json]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Get all tasks
+	allTasks, err := client.List(ctx, nil, "", 100)
+	if err != nil {
+		return fmt.Errorf("list tasks: %w", err)
+	}
+
+	// Categorize tasks by status
+	var openTasks, inProgress, needsReview, doneTasks []pt.Issue
+	for _, t := range allTasks {
+		if *roleFilter != "" {
+			hasRole := false
+			for _, l := range t.Labels {
+				if l == fmt.Sprintf("role:%s", *roleFilter) {
+					hasRole = true
+					break
+				}
+			}
+			if !hasRole {
+				continue
+			}
+		}
+		switch t.Status {
+		case "open":
+			openTasks = append(openTasks, t)
+		case "in_progress":
+			inProgress = append(inProgress, t)
+		case "needs_review":
+			needsReview = append(needsReview, t)
+		case "closed":
+			doneTasks = append(doneTasks, t)
+		}
+	}
+
+	// Get blocked tasks
+	blockedMap, _ := client.ListBlocked(ctx)
+
+	// Get ready tasks (unblocked open tasks)
+	var readyTasks []pt.Issue
+	trans := pt.Transitioner{Client: client}
+	for _, t := range openTasks {
+		if _, blocked := blockedMap[t.ID]; blocked {
+			continue
+		}
+		// Check if dependencies are satisfied
+		deps, _ := client.Dependencies(ctx, t.ID)
+		allDone := true
+		for _, d := range deps {
+			if d.Status != "closed" {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			readyTasks = append(readyTasks, t)
+		}
+	}
+	_ = trans // silence unused
+
+	if *jsonOut {
+		summary := map[string]interface{}{
+			"total":        len(allTasks),
+			"open":         len(openTasks),
+			"in_progress":  len(inProgress),
+			"needs_review": len(needsReview),
+			"done":         len(doneTasks),
+			"blocked":      len(blockedMap),
+			"ready":        len(readyTasks),
+			"ready_tasks":  readyTasks,
+		}
+		return printJSON(summary)
+	}
+
+	// Human-readable output
+	fmt.Println("# Project Status Summary")
+	fmt.Println()
+	fmt.Printf("**Tasks:** %d total (%d open, %d in-progress, %d needs-review, %d done)\n",
+		len(allTasks), len(openTasks), len(inProgress), len(needsReview), len(doneTasks))
+	fmt.Printf("**Blocked:** %d tasks\n", len(blockedMap))
+	fmt.Printf("**Ready:** %d tasks\n", len(readyTasks))
+	fmt.Println()
+
+	if len(inProgress) > 0 {
+		fmt.Println("## In Progress")
+		for _, t := range inProgress {
+			assignee := t.Assignee
+			if assignee == "" {
+				assignee = "(unassigned)"
+			}
+			fmt.Printf("- %s: %s [%s]\n", t.ID, t.Title, assignee)
+		}
+		fmt.Println()
+	}
+
+	if len(needsReview) > 0 {
+		fmt.Println("## Needs Review")
+		for _, t := range needsReview {
+			fmt.Printf("- %s: %s\n", t.ID, t.Title)
+		}
+		fmt.Println()
+	}
+
+	if len(readyTasks) > 0 {
+		fmt.Println("## Ready to Start")
+		for _, t := range readyTasks {
+			meta, err := pt.ParseTaskMeta(t.Description)
+			roleLabel := ""
+			if err == nil && meta.Role != "" {
+				roleLabel = fmt.Sprintf(" [%s]", meta.Role)
+			}
+			fmt.Printf("- %s: %s%s\n", t.ID, t.Title, roleLabel)
+		}
+		fmt.Println()
+	}
+
+	if len(blockedMap) > 0 {
+		fmt.Println("## Blocked Tasks")
+		for id, info := range blockedMap {
+			iss, _, err := client.GetTask(ctx, id)
+			title := id
+			if err == nil {
+				title = iss.Title
+			}
+			fmt.Printf("- %s: %s (reason: %s)\n", id, title, info.Reason)
+		}
+		fmt.Println()
+	}
+
+	fmt.Println("---")
+	fmt.Println("Use `pt ready` to see workable tasks, `pt show <id>` for details.")
+
 	return nil
 }
