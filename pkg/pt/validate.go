@@ -11,6 +11,8 @@ import (
 // ValidationRunner executes DoD checks for a task.
 type ValidationRunner struct {
 	Runner CommandRunner
+	// WorkDir is the directory to run commands in. If empty, uses current working directory.
+	WorkDir string
 }
 
 // ValidationResult captures outputs and pass/fail.
@@ -23,7 +25,7 @@ type ValidationResult struct {
 // confirmManual should be true if a human/agent confirmed manual steps when dod.Manual is non-empty.
 func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone, confirmManual bool) (ValidationResult, error) {
 	if vr.Runner == nil {
-		vr.Runner = ExecRunner{}
+		vr.Runner = ExecRunner{Dir: vr.WorkDir}
 	}
 	var outputs []string
 

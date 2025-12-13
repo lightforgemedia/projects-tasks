@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -37,6 +38,42 @@ func requireUser(explicit string) (string, error) {
 		return "", errors.New("no user identity set; use --as or set $USER")
 	}
 	return user, nil
+}
+
+// reorderArgs moves task ID arguments (like "pt-1") to the end so Go's flag
+// package can parse flags that appear after them.
+// e.g., "pt-1 --as=bob" becomes "--as=bob pt-1"
+// Only moves args that look like task IDs (contain "-" followed by digits).
+func reorderArgs(args []string) []string {
+	var reordered, taskIDs []string
+	for _, arg := range args {
+		// Check if this looks like a task ID (e.g., pt-1, task-42)
+		if isTaskID(arg) {
+			taskIDs = append(taskIDs, arg)
+		} else {
+			reordered = append(reordered, arg)
+		}
+	}
+	return append(reordered, taskIDs...)
+}
+
+// isTaskID checks if arg looks like a task ID (prefix-number pattern).
+func isTaskID(arg string) bool {
+	if strings.HasPrefix(arg, "-") {
+		return false // It's a flag
+	}
+	// Look for pattern like "prefix-N" where N is a number
+	idx := strings.LastIndex(arg, "-")
+	if idx == -1 || idx == len(arg)-1 {
+		return false
+	}
+	suffix := arg[idx+1:]
+	for _, c := range suffix {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func splitManualSteps(prompt string) []string {
@@ -915,6 +952,7 @@ func cmdShow(args []string) error {
 }
 
 func cmdClaim(args []string) error {
+	args = reorderArgs(args) // Allow flags after positional args
 	fs := flag.NewFlagSet("claim", flag.ContinueOnError)
 	as := fs.String("as", "", "override assignee (defaults to $USER)")
 	draft := fs.Bool("draft", false, "claim in draft mode (skip DoD validation)")
@@ -992,10 +1030,41 @@ func cmdClaim(args []string) error {
 	} else {
 		fmt.Printf("Claimed %s as %s\n", id, user)
 	}
+
+	// Suggest worktree if in a git repo and task doesn't have one
+	if isGitRepo() {
+		if _, hasWT, _ := client.GetWorktree(ctx, id); !hasWT {
+			fmt.Printf("\n💡 Start a worktree for isolated work:\n")
+			fmt.Printf("   pt worktree start %s\n", id)
+		}
+	} else {
+		fmt.Printf("\n⚠️  Not a git repo. Consider: git init && git add -A && git commit -m \"initial\"\n")
+		fmt.Printf("   Worktrees require git for branch isolation.\n")
+	}
+
 	return nil
 }
 
+// isGitRepoAt checks if the given path is in a git repository.
+// If path is empty, uses current working directory.
+func isGitRepoAt(path string) bool {
+	var cmd *exec.Cmd
+	if path != "" {
+		cmd = exec.Command("git", "-C", path, "rev-parse", "--git-dir")
+	} else {
+		cmd = exec.Command("git", "rev-parse", "--git-dir")
+	}
+	return cmd.Run() == nil
+}
+
+// isGitRepo checks if current directory is in a git repository.
+// Deprecated: prefer isGitRepoAt with explicit path.
+func isGitRepo() bool {
+	return isGitRepoAt("")
+}
+
 func cmdRelease(args []string) error {
+	args = reorderArgs(args) // Allow flags after positional args
 	fs := flag.NewFlagSet("release", flag.ContinueOnError)
 	as := fs.String("as", "", "override assignee check (defaults to $USER)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
@@ -1139,28 +1208,18 @@ func cmdValidate(args []string) error {
 		return err
 	}
 
-	// Check for active worktree and change to it for test execution
+	// Determine working directory for test execution
+	// If task has an active worktree, run tests there; otherwise use current directory
+	workDir := ""
 	if wtInfo, hasWT, _ := client.GetWorktree(ctx, id); hasWT {
-		worktreePath := wtInfo.Path
-		// Save current directory
-		origDir, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("get cwd: %w", err)
-		}
-		// Change to worktree
-		if err := os.Chdir(worktreePath); err != nil {
-			return fmt.Errorf("change to worktree %s: %w", worktreePath, err)
-		}
-		fmt.Printf("Running tests in worktree: %s\n", worktreePath)
-		// Restore original directory on exit
-		defer func() {
-			_ = os.Chdir(origDir)
-		}()
+		workDir = wtInfo.Path
+		fmt.Printf("Running tests in worktree: %s\n", workDir)
 	}
 
 	manualSteps := splitManualSteps(meta.DoD.Manual)
 	confirm := confirmManual(manualSteps, *yes)
-	vr := pt.ValidationRunner{Runner: pt.ExecRunner{}}
+	// Pass working directory to runner instead of using os.Chdir
+	vr := pt.ValidationRunner{Runner: pt.ExecRunner{Dir: workDir}}
 	res, err := vr.ValidateDoD(ctx, meta.DoD, confirm)
 	fmt.Print(res.Output)
 	if err != nil || !res.Passed {
@@ -1331,6 +1390,7 @@ func cmdReject(args []string) error {
 }
 
 func cmdReopen(args []string) error {
+	args = reorderArgs(args) // Allow flags after positional args
 	fs := flag.NewFlagSet("reopen", flag.ContinueOnError)
 	as := fs.String("as", "", "override assignee (defaults to $USER)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")

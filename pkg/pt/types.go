@@ -39,14 +39,20 @@ type CommandRunner interface {
 }
 
 // ExecRunner executes commands using os/exec.
-type ExecRunner struct{}
+type ExecRunner struct {
+	// Dir is the working directory for commands. If empty, uses current working directory.
+	Dir string
+}
 
 // Run executes a command with context.
-func (ExecRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+func (r ExecRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	if len(args) == 0 {
 		return nil, errors.New("no command provided")
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec
+	if r.Dir != "" {
+		cmd.Dir = r.Dir
+	}
 	return cmd.CombinedOutput()
 }
 

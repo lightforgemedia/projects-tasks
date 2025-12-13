@@ -92,3 +92,25 @@ func TestValidateDoDQuotedCommand(t *testing.T) {
 		t.Fatalf("unexpected command log: %v", got)
 	}
 }
+
+func TestValidateDoDWorkDirWired(t *testing.T) {
+	// When Runner is nil, WorkDir should be passed to the default ExecRunner
+	tmpDir := t.TempDir()
+
+	// Create a test script that prints pwd
+	vr := ValidationRunner{WorkDir: tmpDir}
+	dod := DefinitionOfDone{
+		Tests: []string{"pwd"},
+	}
+	res, err := vr.ValidateDoD(context.Background(), dod, true)
+	if err != nil {
+		t.Fatalf("ValidateDoD error: %v", err)
+	}
+	if !res.Passed {
+		t.Fatalf("expected pass")
+	}
+	// The output should contain the temp directory path
+	if !strings.Contains(res.Output, tmpDir) {
+		t.Errorf("expected output to contain workdir %q, got: %q", tmpDir, res.Output)
+	}
+}

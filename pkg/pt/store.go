@@ -42,6 +42,7 @@ type storeData struct {
 }
 
 // NewStoreClient creates or opens a store at path. If path empty, defaults to ".pt.db.json".
+// Paths are resolved to absolute at construction time to ensure operations are cwd-independent.
 func NewStoreClient(path, prefix string) *StoreClient {
 	if strings.TrimSpace(path) == "" {
 		path = ".pt.db.json"
@@ -49,7 +50,15 @@ func NewStoreClient(path, prefix string) *StoreClient {
 	if strings.TrimSpace(prefix) == "" {
 		prefix = "pt"
 	}
-	c := &StoreClient{path: path, prefix: prefix, lockPath: path + ".lock"}
+	// Resolve to absolute path at construction time.
+	// This ensures all subsequent operations are independent of working directory changes.
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		// Fall back to original path if Abs fails (shouldn't happen in practice)
+		absPath = path
+	}
+	lockPath := absPath + ".lock"
+	c := &StoreClient{path: absPath, prefix: prefix, lockPath: lockPath}
 	c.load()
 	return c
 }

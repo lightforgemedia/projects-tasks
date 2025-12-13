@@ -77,12 +77,17 @@ func cmdWorktreeStart(args []string) error {
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
+	// Find the git repo root (works from any subdirectory)
+	repoRoot, err := gitRepoRoot("")
+	if err != nil {
+		return fmt.Errorf("find git repo: %w", err)
+	}
+
 	// Determine worktree path
 	wtPath := *basePath
 	if wtPath == "" {
-		// Default: ../worktrees/<branch>
-		cwd, _ := os.Getwd()
-		wtPath = filepath.Join(filepath.Dir(cwd), "worktrees", branchName)
+		// Default: ../worktrees/<branch> (relative to repo root)
+		wtPath = filepath.Join(filepath.Dir(repoRoot), "worktrees", branchName)
 	} else {
 		wtPath = filepath.Join(wtPath, branchName)
 	}
@@ -92,27 +97,27 @@ func cmdWorktreeStart(args []string) error {
 		return fmt.Errorf("worktree path already exists: %s", wtPath)
 	}
 
-	// Check for uncommitted changes in main repo
-	if dirty, err := gitIsDirty(); err != nil {
+	// Check for uncommitted changes in main repo (using explicit path)
+	if dirty, err := gitIsDirtyAt(repoRoot); err != nil {
 		return fmt.Errorf("check git status: %w", err)
 	} else if dirty {
 		return fmt.Errorf("main repo has uncommitted changes; commit or stash first")
 	}
 
-	// Check if branch already exists
-	branchExists, err := gitBranchExists(branchName)
+	// Check if branch already exists (using explicit path)
+	branchExists, err := gitBranchExistsAt(repoRoot, branchName)
 	if err != nil {
 		return fmt.Errorf("check branch: %w", err)
 	}
 
-	// Create worktree (and branch if needed)
+	// Create worktree (and branch if needed) using explicit repo path
 	var wtErr error
 	if branchExists {
 		// Use existing branch
-		wtErr = gitWorktreeAdd(wtPath, branchName, false)
+		wtErr = gitWorktreeAddAt(repoRoot, wtPath, branchName, false)
 	} else {
 		// Create new branch from current HEAD
-		wtErr = gitWorktreeAdd(wtPath, branchName, true)
+		wtErr = gitWorktreeAddAt(repoRoot, wtPath, branchName, true)
 	}
 	if wtErr != nil {
 		return fmt.Errorf("create worktree: %w", wtErr)
@@ -127,7 +132,7 @@ func cmdWorktreeStart(args []string) error {
 	}
 	if err := client.SetWorktree(ctx, taskID, wtInfo); err != nil {
 		// Try to cleanup worktree on failure
-		_ = gitWorktreeRemove(wtPath)
+		_ = gitWorktreeRemoveAt(repoRoot, wtPath)
 		return fmt.Errorf("record worktree: %w", err)
 	}
 
@@ -191,13 +196,8 @@ func cmdWorktreeDone(args []string) error {
 		return nil
 	}
 
-	// Check for uncommitted changes in worktree
-	cwd, _ := os.Getwd()
-	if err := os.Chdir(wtInfo.Path); err != nil {
-		return fmt.Errorf("chdir to worktree: %w", err)
-	}
-	dirty, err := gitIsDirty()
-	_ = os.Chdir(cwd) // restore
+	// Check for uncommitted changes in worktree (using explicit path, no chdir)
+	dirty, err := gitIsDirtyAt(wtInfo.Path)
 	if err != nil {
 		return fmt.Errorf("check worktree status: %w", err)
 	}
@@ -205,16 +205,22 @@ func cmdWorktreeDone(args []string) error {
 		return fmt.Errorf("worktree has uncommitted changes at %s; commit or stash first", wtInfo.Path)
 	}
 
-	// Remove worktree
-	if err := gitWorktreeRemove(wtInfo.Path); err != nil {
+	// Find the main repo root for git operations (derive from worktree path, not cwd)
+	repoRoot, err := gitRepoRoot(wtInfo.Path)
+	if err != nil {
+		return fmt.Errorf("find git repo from worktree %s: %w", wtInfo.Path, err)
+	}
+
+	// Remove worktree (using explicit repo path)
+	if err := gitWorktreeRemoveAt(repoRoot, wtInfo.Path); err != nil {
 		return fmt.Errorf("remove worktree: %w", err)
 	}
 
-	// Optionally delete branch
+	// Optionally delete branch (using explicit repo path)
 	branchDeleted := false
 	if !*keepBranch {
 		// Try to delete branch (may fail if not merged, that's ok)
-		if err := gitDeleteBranch(wtInfo.Branch); err == nil {
+		if err := gitDeleteBranchAt(repoRoot, wtInfo.Branch); err == nil {
 			branchDeleted = true
 		}
 	}
@@ -360,14 +366,9 @@ func cmdWorktreeAbort(args []string) error {
 		return nil
 	}
 
-	// Check for uncommitted changes unless forced
+	// Check for uncommitted changes unless forced (using explicit path, no chdir)
 	if !*force {
-		cwd, _ := os.Getwd()
-		if err := os.Chdir(wtInfo.Path); err != nil {
-			return fmt.Errorf("chdir to worktree: %w", err)
-		}
-		dirty, err := gitIsDirty()
-		_ = os.Chdir(cwd)
+		dirty, err := gitIsDirtyAt(wtInfo.Path)
 		if err != nil {
 			return fmt.Errorf("check worktree status: %w", err)
 		}
@@ -376,8 +377,14 @@ func cmdWorktreeAbort(args []string) error {
 		}
 	}
 
-	// Remove worktree (force mode)
-	if err := gitWorktreeRemoveForce(wtInfo.Path); err != nil {
+	// Find the main repo root for git operations (derive from worktree path, not cwd)
+	repoRoot, err := gitRepoRoot(wtInfo.Path)
+	if err != nil {
+		return fmt.Errorf("find git repo from worktree %s: %w", wtInfo.Path, err)
+	}
+
+	// Remove worktree (force mode, using explicit repo path)
+	if err := gitWorktreeRemoveForceAt(repoRoot, wtInfo.Path); err != nil {
 		return fmt.Errorf("remove worktree: %w", err)
 	}
 
@@ -399,6 +406,8 @@ func cmdWorktreeAbort(args []string) error {
 }
 
 // --- git helpers ---
+// All git helpers that depend on repo context now take an explicit repoPath.
+// They use 'git -C <path>' to ensure operations are cwd-independent.
 
 func sanitizeBranch(s string) string {
 	// Replace spaces and special chars with dashes, lowercase
@@ -428,8 +437,31 @@ func validateBranchName(name string) error {
 	return nil
 }
 
-func gitIsDirty() (bool, error) {
-	cmd := exec.Command("git", "status", "--porcelain")
+// gitRepoRoot returns the root of the git repository containing the given path.
+// If path is empty, uses current working directory.
+func gitRepoRoot(path string) (string, error) {
+	var cmd *exec.Cmd
+	if path != "" {
+		cmd = exec.Command("git", "-C", path, "rev-parse", "--show-toplevel")
+	} else {
+		cmd = exec.Command("git", "rev-parse", "--show-toplevel")
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("not a git repository")
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// gitIsDirtyAt checks if the repo at repoPath has uncommitted changes.
+// If repoPath is empty, uses current working directory.
+func gitIsDirtyAt(repoPath string) (bool, error) {
+	var cmd *exec.Cmd
+	if repoPath != "" {
+		cmd = exec.Command("git", "-C", repoPath, "status", "--porcelain")
+	} else {
+		cmd = exec.Command("git", "status", "--porcelain")
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return false, err
@@ -437,8 +469,20 @@ func gitIsDirty() (bool, error) {
 	return len(strings.TrimSpace(string(out))) > 0, nil
 }
 
-func gitBranchExists(name string) (bool, error) {
-	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/"+name)
+// gitIsDirty checks if the current repo has uncommitted changes.
+// Deprecated: prefer gitIsDirtyAt with explicit path.
+func gitIsDirty() (bool, error) {
+	return gitIsDirtyAt("")
+}
+
+// gitBranchExistsAt checks if a branch exists in the repo at repoPath.
+func gitBranchExistsAt(repoPath, name string) (bool, error) {
+	var cmd *exec.Cmd
+	if repoPath != "" {
+		cmd = exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "refs/heads/"+name)
+	} else {
+		cmd = exec.Command("git", "rev-parse", "--verify", "refs/heads/"+name)
+	}
 	err := cmd.Run()
 	if err != nil {
 		// Branch doesn't exist (exit code != 0)
@@ -447,33 +491,90 @@ func gitBranchExists(name string) (bool, error) {
 	return true, nil
 }
 
-func gitWorktreeAdd(path, branch string, createBranch bool) error {
+// gitBranchExists checks if a branch exists in the current repo.
+// Deprecated: prefer gitBranchExistsAt with explicit path.
+func gitBranchExists(name string) (bool, error) {
+	return gitBranchExistsAt("", name)
+}
+
+// gitWorktreeAddAt creates a worktree from the repo at repoPath.
+func gitWorktreeAddAt(repoPath, wtPath, branch string, createBranch bool) error {
 	var cmd *exec.Cmd
 	if createBranch {
-		cmd = exec.Command("git", "worktree", "add", "-b", branch, path)
+		if repoPath != "" {
+			cmd = exec.Command("git", "-C", repoPath, "worktree", "add", "-b", branch, wtPath)
+		} else {
+			cmd = exec.Command("git", "worktree", "add", "-b", branch, wtPath)
+		}
 	} else {
-		cmd = exec.Command("git", "worktree", "add", path, branch)
+		if repoPath != "" {
+			cmd = exec.Command("git", "-C", repoPath, "worktree", "add", wtPath, branch)
+		} else {
+			cmd = exec.Command("git", "worktree", "add", wtPath, branch)
+		}
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
+// gitWorktreeAdd creates a worktree (uses cwd as repo).
+// Deprecated: prefer gitWorktreeAddAt with explicit path.
+func gitWorktreeAdd(path, branch string, createBranch bool) error {
+	return gitWorktreeAddAt("", path, branch, createBranch)
+}
+
+// gitWorktreeRemoveAt removes a worktree from the repo at repoPath.
+func gitWorktreeRemoveAt(repoPath, wtPath string) error {
+	var cmd *exec.Cmd
+	if repoPath != "" {
+		cmd = exec.Command("git", "-C", repoPath, "worktree", "remove", wtPath)
+	} else {
+		cmd = exec.Command("git", "worktree", "remove", wtPath)
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// gitWorktreeRemove removes a worktree (uses cwd as repo).
+// Deprecated: prefer gitWorktreeRemoveAt with explicit path.
 func gitWorktreeRemove(path string) error {
-	cmd := exec.Command("git", "worktree", "remove", path)
+	return gitWorktreeRemoveAt("", path)
+}
+
+// gitWorktreeRemoveForceAt force-removes a worktree from the repo at repoPath.
+func gitWorktreeRemoveForceAt(repoPath, wtPath string) error {
+	var cmd *exec.Cmd
+	if repoPath != "" {
+		cmd = exec.Command("git", "-C", repoPath, "worktree", "remove", "--force", wtPath)
+	} else {
+		cmd = exec.Command("git", "worktree", "remove", "--force", wtPath)
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
+// gitWorktreeRemoveForce force-removes a worktree (uses cwd as repo).
+// Deprecated: prefer gitWorktreeRemoveForceAt with explicit path.
 func gitWorktreeRemoveForce(path string) error {
-	cmd := exec.Command("git", "worktree", "remove", "--force", path)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	return gitWorktreeRemoveForceAt("", path)
+}
+
+// gitDeleteBranchAt deletes a branch in the repo at repoPath.
+func gitDeleteBranchAt(repoPath, name string) error {
+	var cmd *exec.Cmd
+	if repoPath != "" {
+		cmd = exec.Command("git", "-C", repoPath, "branch", "-d", name)
+	} else {
+		cmd = exec.Command("git", "branch", "-d", name)
+	}
 	return cmd.Run()
 }
 
+// gitDeleteBranch deletes a branch in the current repo.
+// Deprecated: prefer gitDeleteBranchAt with explicit path.
 func gitDeleteBranch(name string) error {
-	cmd := exec.Command("git", "branch", "-d", name)
-	return cmd.Run()
+	return gitDeleteBranchAt("", name)
 }

@@ -97,6 +97,39 @@ func ResetDiscoverCache() {
 }
 
 func doDiscoverParentStore() string {
+	// First, try to find store in the current git repo root (main repo or worktree)
+	repoRoot := findGitRepoRoot()
+	if repoRoot != "" {
+		// Check for stores in current repo root
+		if found := findStoreInDir(repoRoot); found != "" {
+			return found
+		}
+	}
+
+	// If we're in a worktree, check the main repo
+	mainRepoRoot := findMainRepoRoot()
+	if mainRepoRoot != "" && mainRepoRoot != repoRoot {
+		if found := findStoreInDir(mainRepoRoot); found != "" {
+			return found
+		}
+	}
+
+	return "" // no store found
+}
+
+// findGitRepoRoot returns the root of the current git repository.
+func findGitRepoRoot() string {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// findMainRepoRoot returns the root of the main repository when in a worktree.
+// Returns empty string if not in a worktree or if we're in the main repo.
+func findMainRepoRoot() string {
 	// Get git common dir (points to main repo's .git from worktree)
 	cmd := exec.Command("git", "rev-parse", "--git-common-dir")
 	out, err := cmd.Output()
@@ -126,17 +159,25 @@ func doDiscoverParentStore() string {
 	// We're in a worktree - find the parent repo root
 	// common-dir is typically <parent>/.git, so parent is dirname(common-dir)
 	parentRoot := filepath.Dir(absCommon)
-	if filepath.Base(absCommon) != ".git" {
-		// bare repo or unusual layout - try worktrees structure
-		// common-dir might be <parent>/.git for linked worktrees
-		parentRoot = filepath.Dir(absCommon)
+	return parentRoot
+}
+
+// findStoreInDir looks for a PT store in the given directory.
+// Checks multiple locations in order of preference:
+//  1. .pt/db.json (recommended, gitignored)
+//  2. .pt.db.json (legacy, often git-tracked)
+func findStoreInDir(dir string) string {
+	// Check .pt/db.json first (recommended location)
+	newPath := filepath.Join(dir, ".pt", "db.json")
+	if _, err := os.Stat(newPath); err == nil {
+		return newPath
 	}
 
-	// Check for PT store in parent root
-	storePath := filepath.Join(parentRoot, ".pt.db.json")
-	if _, err := os.Stat(storePath); err == nil {
-		return storePath
+	// Check legacy .pt.db.json
+	legacyPath := filepath.Join(dir, ".pt.db.json")
+	if _, err := os.Stat(legacyPath); err == nil {
+		return legacyPath
 	}
 
-	return "" // no parent store found
+	return ""
 }
