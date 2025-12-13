@@ -1,0 +1,106 @@
+# Risk-First Workflow Template
+#
+# Philosophy: Don't build on sand. Prove unknowns before investing.
+#
+# Phases:
+#   1. Prove - Validate external deps, algorithms, data shapes
+#   2. Explore - Present options, user picks direction
+#   3. Build - Implement hardest/vaguest first
+#   4. Integrate - Wire real systems, retire mocks
+#   5. Signoff - Full validation, user acceptance
+#
+# See: docs/WORKFLOW-PRINCIPLES.md
+
+name = "risk-first"
+description = "Prove unknowns → Explore UX → Build (hardest first) → Integrate → Signoff"
+
+[phase_assignment]
+default_phase = "build"
+label_prefix = "phase:"
+
+[phase_assignment.by_template]
+spike = "prove"
+discovery = "prove"
+# Use phase:explore label for UX exploration tasks
+
+[[phases]]
+id = "prove"
+name = "Prove Unknowns"
+order = 1
+description = "Validate external deps, algorithms, data shapes before building"
+
+[phases.gate]
+type = "soft"
+condition = "all_closed"
+reminder_before = "⚠️  External dependencies not validated. Integration risk high."
+reminder_after = "✓ Unknowns proven. Data shapes confirmed."
+
+[phases.proof]
+required = true
+description = "Captured real response or documented behavior"
+hint = "Save to outputs/<task-id>/response.json. Document edge cases."
+
+[[phases]]
+id = "explore"
+name = "Explore UX"
+order = 2
+description = "Present 3-5 options, user picks direction"
+
+[phases.gate]
+type = "soft"
+condition = "phase:prove complete"
+reminder_before = "Starting UX exploration. Prove phase should be complete."
+
+[phases.checkpoint]
+trigger = "all_tasks_complete"
+prompt = "User must pick direction. Add comment: user-picked:<option>"
+
+[phases.proof]
+required = true
+description = "Multiple options (ASCII, CLI examples, API alternatives)"
+hint = "Present 3-5 distinct approaches. User picks in comment."
+
+[[phases]]
+id = "build"
+name = "Build"
+order = 3
+description = "Implement hardest/vaguest first. Mocks allowed with integration plan."
+
+[phases.gate]
+type = "hard"
+condition = "phase:explore has_comment:user-picked"
+block_message = "Build blocked. User must pick direction in explore phase (add comment with 'user-picked')."
+
+[phases.proof]
+required = false
+
+[[phases]]
+id = "integrate"
+name = "Integrate"
+order = 4
+description = "Wire real systems, retire mocks, run integration tests"
+
+[phases.gate]
+type = "soft"
+condition = "phase:build complete"
+reminder_before = "Starting integration. Build phase should be complete."
+
+[phases.proof]
+required = true
+description = "Integration test results against real systems"
+hint = "go test -tags=integration ./..."
+
+[[phases]]
+id = "signoff"
+name = "Signoff"
+order = 5
+description = "Full validation, user acceptance, ready for release"
+
+[phases.gate]
+type = "hard"
+condition = "phase:integrate complete"
+block_message = "Signoff blocked. All integration tasks must be closed and tests passing."
+
+[phases.checkpoint]
+trigger = "phase_start"
+prompt = "Final user acceptance. Ready for production?"

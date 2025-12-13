@@ -1,0 +1,213 @@
+# PT Workflow Improvements
+# Based on findings from SPY options tool development
+# See: docs/PT-FINDINGS.md
+
+title = "PT Workflow Improvements"
+owner = "tawawhite"
+
+# =============================================================================
+# PHASE 1: BLOCKING BUGS (Coupled fixes - do as focused sprint)
+# =============================================================================
+# These issues are interconnected:
+# - Path resolution affects store, lock files, and git helpers
+# - os.Chdir affects store saves and git commands
+# - Fixing one without others may create new bugs or mask old ones
+
+[[tasks]]
+template = "spike"
+title = "Spike: Audit all path and cwd dependencies"
+role = "backend-dev"
+artifact = "doc:outputs/spike-cwd-audit/findings.md"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestPath"]
+manual = "Audit git helpers, os.Chdir sites, store paths, worktree detection. Reproduce bugs from repo root, subdir, worktree root, worktree subdir."
+criteria = ["all cwd-dependent code identified", "bug reproduction documented", "fix approach outlined"]
+
+[[tasks]]
+template = "refactor"
+title = "Fix: Resolve store paths to absolute at construction"
+role = "backend-dev"
+deps = ["Spike: Audit all path and cwd dependencies"]
+artifact = "code:store-absolute-paths"
+[tasks.dod]
+tests = ["go test ./pkg/pt/... -run TestStore"]
+manual = "In NewStoreClient: resolve path to absolute, store absolute path, derive lockPath from absolute. Verify chdir doesn't affect store operations."
+criteria = ["paths resolved at construction", "lock path absolute", "chdir-safe verified"]
+
+[[tasks]]
+template = "refactor"
+title = "Fix: Replace os.Chdir with git -C patterns"
+role = "backend-dev"
+deps = ["Spike: Audit all path and cwd dependencies"]
+artifact = "code:eliminate-chdir"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestWorktree"]
+manual = "Replace os.Chdir with gitIsDirtyAt(path) in worktree.go and pass workdir to test runner in main.go. Never use os.Chdir for git operations."
+criteria = ["no os.Chdir for git ops", "path passed explicitly", "tests pass from any cwd"]
+
+[[tasks]]
+template = "refactor"
+title = "Fix: All git helpers use explicit repo path"
+role = "backend-dev"
+deps = ["Spike: Audit all path and cwd dependencies"]
+artifact = "code:git-helpers-explicit-path"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestGit"]
+manual = "Refactor git helpers to take repo path arg and use git -C pattern: gitIsDirtyAt, gitBranchExistsAt, gitDeleteBranchAt, isGitRepoAt."
+criteria = ["all helpers take path arg", "git -C used", "cwd-independent"]
+
+[[tasks]]
+template = "refactor"
+title = "Fix: Add worktree-aware db discovery"
+role = "backend-dev"
+deps = ["Fix: Resolve store paths to absolute at construction", "Fix: All git helpers use explicit repo path"]
+artifact = "code:db-discovery"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestDBDiscovery"]
+manual = "Detect worktree via .git file, use git-common-dir to find main repo, search PT_DB env > .pt/db.json > .pt.db.json > XDG. Return absolute path."
+criteria = ["worktree detection works", "finds main repo db from worktree", "precedence documented"]
+
+[[tasks]]
+template = "refactor"
+title = "Add integration tests for path scenarios"
+role = "backend-dev"
+deps = ["Fix: Resolve store paths to absolute at construction", "Fix: Replace os.Chdir with git -C patterns", "Fix: All git helpers use explicit repo path"]
+artifact = "test:path-scenarios"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestPathScenarios"]
+manual = "Add tests from repo root, subdir, worktree root, worktree subdir. Each runs sync/claim/validate/show and verifies same db affected."
+criteria = ["all 4 scenarios tested", "same db verified", "tests pass"]
+
+# =============================================================================
+# PHASE 2: STORE ARCHITECTURE (After path fixes are solid)
+# =============================================================================
+
+[[tasks]]
+template = "spike"
+title = "Spike: Evaluate store split architecture"
+role = "architect"
+deps = ["Add integration tests for path scenarios"]
+artifact = "doc:outputs/spike-store-split/findings.md"
+[tasks.dod]
+tests = ["go test ./pkg/pt/..."]
+manual = "Evaluate splitting store: tasks/status shared vs worktrees local. Consider git worktree list alternative. Document team sync, CI access, migration."
+criteria = ["options documented", "team/CI use cases addressed", "recommendation made"]
+
+[[tasks]]
+template = "refactor"
+title = "Implement store split or worktree tracking alternative"
+role = "backend-dev"
+deps = ["Spike: Evaluate store split architecture"]
+artifact = "code:store-architecture"
+[tasks.dod]
+tests = ["go test ./pkg/pt/... ./cmd/pt/..."]
+manual = "Implement chosen approach from spike: split store, git worktree list, or gitignored store. Ensure parallel worktree creation works."
+criteria = ["parallel worktrees work", "no uncommitted change conflicts", "tests pass"]
+
+# =============================================================================
+# PHASE 3: WORKFLOW IMPROVEMENTS (After foundation is solid)
+# =============================================================================
+
+[[tasks]]
+template = "refactor"
+title = "Add spike task type with time-box and artifact requirements"
+role = "backend-dev"
+deps = ["Add integration tests for path scenarios"]
+artifact = "code:spike-task-type"
+[tasks.dod]
+tests = ["go test ./pkg/pt/... -run TestSpike"]
+manual = "Spikes have max_hours field, require artifact output, show in pt ready differently"
+criteria = ["spike template recognized", "time-box tracked", "artifact required"]
+
+[[tasks]]
+template = "refactor"
+title = "Add mock tracking commands"
+role = "backend-dev"
+deps = ["Add integration tests for path scenarios"]
+artifact = "code:mock-commands"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestMock"]
+manual = "pt mock register/list/check/retire commands work as documented in FINDINGS.md"
+criteria = ["mock register requires spike source", "mock register requires integration task", "mock check fails on orphans"]
+
+[[tasks]]
+template = "refactor"
+title = "Add checkpoint system for user feedback"
+role = "backend-dev"
+deps = ["Add integration tests for path scenarios"]
+artifact = "code:checkpoints"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestCheckpoint"]
+manual = "Tasks can be marked checkpoint:required, workflow shows pending checkpoints"
+criteria = ["checkpoint label supported", "workflow status shows pending checkpoints", "tests pass"]
+
+[[tasks]]
+template = "refactor"
+title = "Improve phase assignment visibility"
+role = "backend-dev"
+deps = ["Add integration tests for path scenarios"]
+artifact = "code:phase-visibility"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... ./pkg/pt/..."]
+manual = "pt show displays phase, pt list can filter by phase"
+criteria = ["phase shown in task output", "filter by phase works", "tests pass"]
+
+# =============================================================================
+# PHASE 4: UX POLISH
+# =============================================================================
+
+[[tasks]]
+template = "refactor"
+title = "Add porcelain mode for machine-readable output"
+role = "backend-dev"
+artifact = "code:porcelain-mode"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestPorcelain"]
+manual = "pt list --porcelain outputs TSV, pt show --porcelain outputs JSON"
+criteria = ["porcelain flag works", "output is stable format", "tests pass"]
+
+[[tasks]]
+template = "refactor"
+title = "Reduce command verbosity"
+role = "backend-dev"
+artifact = "code:command-ux"
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "Common workflows need fewer flags. pt status = pt workflow status, auto-discover workflow file."
+criteria = ["shortcuts work", "smart defaults", "tests pass"]
+
+[[tasks]]
+template = "refactor"
+title = "Add shell integration helpers"
+role = "backend-dev"
+artifact = "code:shell-integration"
+[tasks.dod]
+tests = ["go test ./cmd/pt/... -run TestShell"]
+manual = "pt cd <task> outputs worktree path (for shell integration), pt env outputs db path"
+criteria = ["cd helper works", "env helper works", "tests pass"]
+
+# =============================================================================
+# PHASE 5: DOCUMENTATION
+# =============================================================================
+
+[[tasks]]
+template = "refactor"
+title = "Update README with workflow philosophy"
+role = "tech-writer"
+deps = ["Add mock tracking commands", "Add checkpoint system for user feedback"]
+artifact = "doc:readme-update"
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "README documents risk-first workflow, mock discipline, checkpoint pattern"
+criteria = ["philosophy documented", "examples provided"]
+
+[[tasks]]
+template = "refactor"
+title = "Create quick-start guide for new projects"
+role = "tech-writer"
+deps = ["Fix: Add worktree-aware db discovery"]
+artifact = "doc:quickstart"
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "Quick-start shows minimal setup: init, sync, claim, validate, done"
+criteria = ["5-minute onboarding", "copy-paste commands"]

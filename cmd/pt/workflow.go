@@ -102,6 +102,9 @@ func cmdWorkflowStatus(args []string) error {
 		return err
 	}
 
+	// Check git repo status for workflow onboarding
+	checkGitRepoWarning()
+
 	// Find workflow file
 	wfPath := *workflowPath
 	if wfPath == "" {
@@ -177,6 +180,8 @@ func buildWorkflowStatus(workflow pt.Workflow, allIssues []pt.Issue, comments ma
 
 		// Gates only matter if there is work remaining in this phase.
 		// Completed/empty phases are not "blocked" even if their gates would evaluate false.
+		// NOTE: A phase's gate blocks LATER phases, not itself. Phase 1's "all_closed" gate
+		// means Phase 2 can't start until Phase 1 is done - it doesn't block Phase 1 tasks.
 		if ps.TotalTasks > 0 && ps.ClosedTasks < ps.TotalTasks {
 			// Check if blocked by any prior phase gate.
 			for j := 0; j < i; j++ {
@@ -191,19 +196,6 @@ func buildWorkflowStatus(workflow pt.Workflow, allIssues []pt.Issue, comments ma
 						ps.BlockReason = fmt.Sprintf("⚠️  Soft gate (phase:%s): %s", prior.ID, reason)
 					}
 					break
-				}
-			}
-
-			// Check phase's own gate
-			if !ps.IsBlocked && phase.Gate.Condition != "" {
-				satisfied, reason := workflow.EvaluateGate(phase, tasks, allIssues, comments)
-				if !satisfied {
-					ps.IsBlocked = true
-					if phase.Gate.Type == "hard" {
-						ps.BlockReason = fmt.Sprintf("🚫 Hard gate (phase:%s): %s", phase.ID, reason)
-					} else {
-						ps.BlockReason = fmt.Sprintf("⚠️  Soft gate (phase:%s): %s", phase.ID, reason)
-					}
 				}
 			}
 		}
@@ -532,4 +524,23 @@ func cmdWorkflowCheck(args []string) error {
 	fmt.Printf("  pt comment %s \"risk-acknowledged: <reason>\"\n", *taskID)
 
 	return nil
+}
+
+// checkGitRepoWarning prints a warning if not in a git repo
+// This is important for workflow onboarding since worktrees require git
+func checkGitRepoWarning() {
+	if !isGitRepo() {
+		fmt.Println("┌─────────────────────────────────────────────────────────────┐")
+		fmt.Println("│  ⚠️  WARNING: Not a git repository                          │")
+		fmt.Println("└─────────────────────────────────────────────────────────────┘")
+		fmt.Println()
+		fmt.Println("Workflows work best with git for:")
+		fmt.Println("  • Worktrees (parallel task isolation)")
+		fmt.Println("  • Branch-per-task workflow")
+		fmt.Println("  • Change tracking and rollback")
+		fmt.Println()
+		fmt.Println("Initialize git:")
+		fmt.Println("  git init && git add -A && git commit -m \"initial\"")
+		fmt.Println()
+	}
 }
