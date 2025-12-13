@@ -8,7 +8,7 @@ This repository ships a **Go SDK** and **CLI** with a built-in store to provide 
 
 - **Data Backbone:** Built-in JSON store (or pluggable backend) for issues/deps/status/labels.
 - **Go SDK (`pkg/pt`):** Reusable library exposing plan/sync/ready/validate primitives. Any service or agent can embed this logic.
-- **CLI (`cmd/pt`):** A thin wrapper around the SDK. Guides users through schema fields, enforces state machines (`planned` → `ready` → `in_progress` → `needs_review` → `done`), and handles user interaction.
+- **CLI (`cmd/pt`):** A thin wrapper around the SDK. Guides users through schema fields, enforces state machines (`open` → `in_progress` → `needs_review` → `closed`), and handles user interaction.
 - **Manifests:** TOML/JSON files for "Phase Bundles". These act as "Infrastructure as Code" for project management.
 - **Context Contracts:** Strict schemas (`contracts/*.toml`) that validate agent inputs (files, goals, criteria) to prevent drift and hallucination.
 - **Validation:** "Definition of Done" (DoD) per template (tests + manual steps + acceptance criteria required; optional validation_cmd), plus ready-work queries that only surface unblocked tasks.
@@ -19,7 +19,7 @@ This repository ships a **Go SDK** and **CLI** with a built-in store to provide 
 Stateless logic package.
 - `PlanPhase(manifest)`: Validates and parses a manifest into a graph structure.
 - `Sync(manifest)`: Idempotently applies the plan to the store (creates/updates issues, sets deps).
-- `Ready(filter)`: Returns tasks where `status != done` AND `blocking_deps == done`.
+- `Ready(filter)`: Returns tasks where `status == open` AND all `blocking_deps` are `closed`.
 - `Validate(taskID)`: Runs defined hooks (tests, lint) and returns pass/fail.
 - `Claim(taskID, owner)`, `Release(taskID)`, `Reject(taskID, reason)`.
 
@@ -42,12 +42,12 @@ Store-backed flow:
 
 The system enforces the following transitions:
 
-1.  **Planned** → **Ready**: (Automatic) All dependencies are `done`.
-2.  **Ready** → **In Progress**: (Manual) `pt claim`.
-3.  **In Progress** → **Needs Review**: (Auto/Manual) `pt validate` passes (tests/hooks ok).
-4.  **In Progress** → **In Progress**: (Auto) `pt validate` fails (fix and retry).
-5.  **Needs Review** → **Done**: (Manual) `pt approve`.
-6.  **Needs Review** → **In Progress**: (Manual) `pt reject "Fix X"`.
+1.  **Open** → **In Progress**: (Manual) `pt claim`. Task must have all dependencies closed.
+2.  **In Progress** → **Needs Review**: (Auto/Manual) `pt validate` passes (tests/hooks ok).
+3.  **In Progress** → **In Progress**: (Auto) `pt validate` fails (fix and retry).
+4.  **Needs Review** → **Closed**: (Manual) `pt approve`.
+5.  **Needs Review** → **In Progress**: (Manual) `pt reject "Fix X"`.
+6.  **Closed** → **In Progress**: (Manual) `pt reopen` (reopens a completed task).
 
 ## Manifest Example
 
@@ -236,7 +236,7 @@ The SDK supports various templates to standardize work:
     3. On success, moves to `needs_review`.
     4. On failure, reads output, iterates (self-corrects), retries.
 - **Emergency Hotfix:** Add a `bug_fix` task to a "Hotfix" manifest. `pt sync` creates it; `pt ready` prioritizes it (if dependencies allow).
-- **Cross-Team Handoff:** Frontend tasks stay invisible in `pt ready` until backend dependencies are marked `done`.
+- **Cross-Team Handoff:** Frontend tasks stay invisible in `pt ready` until backend dependencies are `closed`.
 - **Gated Reviews:** `pt validate` ensures tests pass *before* a human is asked to review, saving time.
 
 ## Test Cases
@@ -245,7 +245,7 @@ The SDK supports various templates to standardize work:
 | :--- | :--- | :--- |
 | **Sync Malformed Manifest** | `pt sync bad.toml` | Fails gracefully; no partial issues created. |
 | **Sync Idempotency** | Run `pt sync` twice | No duplicate issues; updates fields if changed. |
-| **Dependency Gating** | A->B. Mark A `done` | B appears in `pt ready`. B absent while A is `in_progress`. |
+| **Dependency Gating** | A->B. Mark A `closed` | B appears in `pt ready`. B absent while A is `in_progress`. |
 | **Validation Rejection** | `pt reject <id> "Fix imports"` | Task status `needs_review` → `in_progress`; comment recorded. |
 | **Validation Failure** | Force test fail; `pt validate` | Task stays `in_progress`; error output surfaced. |
 | **Concurrent Claim** | Two agents `pt claim <id>` | First succeeds; second gets "Already claimed" error. |
