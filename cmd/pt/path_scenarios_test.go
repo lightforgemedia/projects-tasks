@@ -147,6 +147,9 @@ func TestPathScenarios_GitHelpers(t *testing.T) {
 // TestPathScenarios_DiscoveryFromWorktree tests that db discovery finds
 // the main repo's store when running from a worktree.
 func TestPathScenarios_DiscoveryFromWorktree(t *testing.T) {
+	// Clear PT_DB env var so discovery is based on git, not env
+	t.Setenv("PT_DB", "")
+
 	// Skip if git not available
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")

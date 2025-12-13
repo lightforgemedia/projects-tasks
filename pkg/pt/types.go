@@ -23,6 +23,29 @@ type TaskMeta struct {
 	Inputs    []string `json:"inputs,omitempty"`    // WHERE: files/directories to read/modify
 	Scope     string   `json:"scope,omitempty"`     // BOUNDS: IN-scope and OUT-of-scope
 	Reference string   `json:"reference,omitempty"` // RELATED: links to docs, issues, prior work
+
+	// UX discovery - optional exploration loop
+	UX      *UXConfig `json:"ux,omitempty"`       // UX requirements from manifest
+	UXState *UXState  `json:"ux_state,omitempty"` // Runtime UX exploration state
+}
+
+// UXState tracks the current state of UX exploration for a task.
+type UXState struct {
+	Status     string    `json:"status"`               // pending|cases|explore|selected|approved
+	UseCases   []UseCase `json:"use_cases,omitempty"`  // Confirmed use cases
+	Options    []string  `json:"options,omitempty"`    // Generated options (labels: A, B, C...)
+	Selection  string    `json:"selection,omitempty"`  // User's choice (e.g., "A+C")
+	Note       string    `json:"note,omitempty"`       // User's notes on selection
+	Iterations int       `json:"iterations"`           // Refinement count
+	ApprovedAt string    `json:"approved_at,omitempty"`
+}
+
+// UseCase describes a user scenario that the UX must satisfy.
+type UseCase struct {
+	ID      string `json:"id"`                // Short identifier (e.g., "UC1")
+	Actor   string `json:"actor"`             // Who is performing the action
+	Goal    string `json:"goal"`              // What they want to achieve
+	Context string `json:"context,omitempty"` // When/where this happens
 }
 
 // HistoryEvent captures lifecycle events for a task.
@@ -141,6 +164,7 @@ func buildDescription(task Task) (string, error) {
 		Inputs:    task.Inputs,
 		Scope:     task.Scope,
 		Reference: task.Reference,
+		UX:        task.UX,
 	}
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {

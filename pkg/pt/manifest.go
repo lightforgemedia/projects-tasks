@@ -42,6 +42,16 @@ type Task struct {
 	Inputs    []string `json:"inputs,omitempty"`    // WHERE: files/directories to read/modify
 	Scope     string   `json:"scope,omitempty"`     // BOUNDS: IN-scope and OUT-of-scope
 	Reference string   `json:"reference,omitempty"` // RELATED: links to docs, issues, prior work
+
+	// UX discovery - optional exploration loop for user-facing tasks
+	UX *UXConfig `json:"ux,omitempty"`
+}
+
+// UXConfig defines UX exploration requirements for a task.
+type UXConfig struct {
+	Type         string `json:"type"`          // cli|tui|web|api|doc|error
+	OptionsMin   int    `json:"options_min"`   // minimum options to present (default: 2)
+	IterationMax int    `json:"iteration_max"` // max refinement rounds (default: 3)
 }
 
 // DefinitionOfDone describes required checks before a task can advance.
@@ -149,6 +159,15 @@ func parseTOMLManifest(data []byte) (Manifest, error) {
 			}
 			context = "dod"
 			continue
+		case "[tasks.ux]":
+			if current == nil {
+				return Manifest{}, fmt.Errorf("line %d: ux table before any task", lineNum)
+			}
+			if current.UX == nil {
+				current.UX = &UXConfig{}
+			}
+			context = "ux"
+			continue
 		}
 
 		key, value, err := parseKV(raw)
@@ -181,6 +200,16 @@ func parseTOMLManifest(data []byte) (Manifest, error) {
 				return Manifest{}, fmt.Errorf("line %d: dod without task context", lineNum)
 			}
 			if err := assignDoDKV(&current.DoD, key, value); err != nil {
+				return Manifest{}, fmt.Errorf("line %d: %w", lineNum, err)
+			}
+		case "ux":
+			if current == nil {
+				return Manifest{}, fmt.Errorf("line %d: ux without task context", lineNum)
+			}
+			if current.UX == nil {
+				current.UX = &UXConfig{}
+			}
+			if err := assignUXKV(current.UX, key, value); err != nil {
 				return Manifest{}, fmt.Errorf("line %d: %w", lineNum, err)
 			}
 		default:
@@ -335,6 +364,29 @@ func assignDoDKV(dod *DefinitionOfDone, key string, val value) error {
 		dod.OnFailure = val.asString()
 	default:
 		return fmt.Errorf("unsupported dod field %q", key)
+	}
+	return nil
+}
+
+func assignUXKV(ux *UXConfig, key string, val value) error {
+	switch key {
+	case "type":
+		ux.Type = val.asString()
+	case "options_min":
+		// Parse int from string
+		var n int
+		if _, err := fmt.Sscanf(val.asString(), "%d", &n); err != nil {
+			return fmt.Errorf("options_min must be integer: %w", err)
+		}
+		ux.OptionsMin = n
+	case "iteration_max":
+		var n int
+		if _, err := fmt.Sscanf(val.asString(), "%d", &n); err != nil {
+			return fmt.Errorf("iteration_max must be integer: %w", err)
+		}
+		ux.IterationMax = n
+	default:
+		return fmt.Errorf("unsupported ux field %q", key)
 	}
 	return nil
 }

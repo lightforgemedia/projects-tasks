@@ -396,8 +396,23 @@ func run(args []string) error {
 		return cmdHooksPrint()
 	case "history":
 		return cmdHistory(cmdArgs)
+	case "handoff":
+		return cmdHandoff(cmdArgs)
+	case "ux-cases":
+		return cmdUXCases(cmdArgs)
+	case "ux-explore":
+		return cmdUXExplore(cmdArgs)
+	case "ux-select":
+		return cmdUXSelect(cmdArgs)
+	case "ux-status":
+		return cmdUXStatus(cmdArgs)
 	case "workflow":
 		return cmdWorkflow(cmdArgs)
+	// Shortcuts for common workflow commands
+	case "status":
+		return cmdWorkflow([]string{"status"})
+	case "next":
+		return cmdWorkflow([]string{"next"})
 	case "-h", "--help", "help":
 		return cmdHelp(cmdArgs)
 	default:
@@ -438,7 +453,16 @@ Commands (SDLC flow):
   graph <manifest>                   Visualize manifest dependencies (cycles shown)
   hooks                              Print merged hook configuration (global + local)
   history <id>                       Show task history (created/claimed/validated/approved)
+  handoff <id> [--out=PATH]          Generate handoff document from task data
+  ux-cases <id>                      Show/confirm use cases for UX-enabled task
+  ux-explore <id>                    Generate and display UX options
+  ux-select <id> <choice>            Record UX selection, unlock building
+  ux-status <id>                     Show current UX exploration state
   workflow status|next|check         Workflow guidance (phases, gates, suggested actions)
+
+Shortcuts:
+  status                             Alias for: pt workflow status
+  next                               Alias for: pt workflow next
 
 Happy-path primer:
   1) pt sync phases/<file>.toml
@@ -822,13 +846,14 @@ func cmdList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	status := fs.String("status", "open", "comma-separated statuses (open,in_progress,needs_review,closed). Empty for all.")
 	role := fs.String("role", "", "filter by role label")
+	phase := fs.String("phase", "", "filter by workflow phase (requires workflow file)")
 	limit := fs.Int("limit", 50, "max issues")
 	sortKey := fs.String("sort", "priority", "sort by priority|title")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt list [--status=open,in_progress,needs_review,closed] [--role=ROLE] [--limit=N] [--json]")
+		fmt.Println("Usage: pt list [--status=...] [--role=ROLE] [--phase=PHASE] [--limit=N] [--json]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -848,6 +873,26 @@ func cmdList(args []string) error {
 	issues, err := client.List(ctx, statuses, *role, *limit)
 	if err != nil {
 		return fmt.Errorf("list failed: %w", err)
+	}
+	// Filter by phase if specified
+	if *phase != "" {
+		wfPath, err := findWorkflowFile()
+		if err != nil {
+			return fmt.Errorf("--phase requires workflow file: %w", err)
+		}
+		wf, err := pt.ParseWorkflow(wfPath)
+		if err != nil {
+			return fmt.Errorf("parse workflow: %w", err)
+		}
+		var filtered []pt.Issue
+		for _, iss := range issues {
+			meta, _ := pt.ParseTaskMeta(iss.Description)
+			taskPhase := wf.GetTaskPhase(iss, meta)
+			if taskPhase == *phase {
+				filtered = append(filtered, iss)
+			}
+		}
+		issues = filtered
 	}
 	pt.SortIssues(issues, *sortKey)
 	if *jsonOut {
@@ -916,6 +961,17 @@ func cmdShow(args []string) error {
 		fmt.Printf("Next: %s\n", iss.NextHint)
 	}
 	fmt.Printf("Role: %s  Template: %s\n", meta.Role, meta.Template)
+	// Show phase if workflow exists
+	if wfPath, err := findWorkflowFile(); err == nil {
+		if wf, err := pt.ParseWorkflow(wfPath); err == nil {
+			phaseID := wf.GetTaskPhase(iss, meta)
+			if phase := wf.GetPhaseByID(phaseID); phase != nil {
+				fmt.Printf("Phase: %s\n", phase.Name)
+			} else if phaseID != "" && phaseID != "unassigned" {
+				fmt.Printf("Phase: %s\n", phaseID)
+			}
+		}
+	}
 	if strings.TrimSpace(meta.Artifact) != "" {
 		fmt.Printf("Artifact: %s\n", meta.Artifact)
 	}
@@ -1040,6 +1096,16 @@ func cmdClaim(args []string) error {
 	} else {
 		fmt.Printf("\n⚠️  Not a git repo. Consider: git init && git add -A && git commit -m \"initial\"\n")
 		fmt.Printf("   Worktrees require git for branch isolation.\n")
+	}
+
+	// Check if task requires UX exploration
+	if meta.UX != nil {
+		fmt.Printf("\n🎨 This task requires UX exploration before building.\n")
+		fmt.Printf("   Run: pt ux-cases %s\n", id)
+		fmt.Printf("\n   UX Discovery Flow:\n")
+		fmt.Printf("   1. pt ux-cases %s    - Define use cases\n", id)
+		fmt.Printf("   2. pt ux-explore %s  - Generate options\n", id)
+		fmt.Printf("   3. pt ux-select %s   - Select approach\n", id)
 	}
 
 	return nil
@@ -1209,14 +1275,32 @@ func cmdValidate(args []string) error {
 	}
 
 	// Determine working directory for test execution
-	// If task has an active worktree, run tests there; otherwise use current directory
+	// If task has an active worktree, run tests there; otherwise use project directory
 	workDir := ""
 	if wtInfo, hasWT, _ := client.GetWorktree(ctx, id); hasWT {
 		workDir = wtInfo.Path
 		fmt.Printf("Running tests in worktree: %s\n", workDir)
+	} else {
+		// Default to project directory (where store is located)
+		storePath := pt.DiscoveredStorePath()
+		if storePath != "" {
+			workDir = filepath.Dir(storePath)
+		}
 	}
 
 	manualSteps := splitManualSteps(meta.DoD.Manual)
+
+	// Add UX use cases as manual verification prompts if present
+	if meta.UXState != nil && len(meta.UXState.UseCases) > 0 {
+		fmt.Println("\n📋 UX Use Cases to Verify:")
+		for _, uc := range meta.UXState.UseCases {
+			ucStep := fmt.Sprintf("[%s] As a %s, verify: %s", uc.ID, uc.Actor, uc.Goal)
+			manualSteps = append(manualSteps, ucStep)
+			fmt.Printf("   • %s\n", ucStep)
+		}
+		fmt.Println()
+	}
+
 	confirm := confirmManual(manualSteps, *yes)
 	// Pass working directory to runner instead of using os.Chdir
 	vr := pt.ValidationRunner{Runner: pt.ExecRunner{Dir: workDir}}
@@ -2623,4 +2707,244 @@ func cmdContextPrime(args []string) error {
 	}
 
 	return nil
+}
+
+func cmdHandoff(args []string) error {
+	fs := flag.NewFlagSet("handoff", flag.ContinueOnError)
+	outPath := fs.String("out", "", "output path (default: HANDOFF-{id}.md)")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt handoff <id> [--out=PATH]")
+		fmt.Println("\nGenerate a handoff document from template + task data.")
+		fmt.Println("\nFlags:")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("missing id argument")
+	}
+	id := fs.Arg(0)
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	iss, meta, err := client.GetTask(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+
+	// Build handoff document
+	doc := buildHandoffDoc(iss, meta)
+
+	// Write to file
+	path := *outPath
+	if path == "" {
+		path = fmt.Sprintf("HANDOFF-%s.md", id)
+	}
+	if err := os.WriteFile(path, []byte(doc), 0644); err != nil {
+		return fmt.Errorf("write handoff: %w", err)
+	}
+	fmt.Printf("Handoff document created: %s\n", path)
+	return nil
+}
+
+func buildHandoffDoc(iss pt.Issue, meta pt.TaskMeta) string {
+	now := time.Now().Format("2006-01-02")
+	author := os.Getenv("USER")
+	if author == "" {
+		author = "Agent"
+	}
+
+	// Get scope from context if available
+	scope := meta.Scope
+	if scope == "" {
+		scope = "{ONE_LINE_SCOPE - describe the boundary of this work}"
+	}
+
+	// Build DoD section
+	var dodTests, dodManual, dodCriteria string
+	if len(meta.DoD.Tests) > 0 {
+		dodTests = strings.Join(meta.DoD.Tests, "\n")
+	} else {
+		dodTests = "{TEST_COMMANDS}"
+	}
+	if meta.DoD.Manual != "" {
+		dodManual = meta.DoD.Manual
+	} else {
+		dodManual = "{MANUAL_VERIFICATION_STEPS}"
+	}
+	if len(meta.DoD.Criteria) > 0 {
+		dodCriteria = strings.Join(meta.DoD.Criteria, "; ")
+	} else {
+		dodCriteria = "{ACCEPTANCE_CRITERIA}"
+	}
+
+	// Build inputs section
+	inputs := "{FILE_PATHS}"
+	if len(meta.Inputs) > 0 {
+		var inputLines []string
+		for _, inp := range meta.Inputs {
+			inputLines = append(inputLines, fmt.Sprintf("- %s", inp))
+		}
+		inputs = strings.Join(inputLines, "\n")
+	}
+
+	// Build context section
+	context := meta.Context
+	if context == "" {
+		context = "{DESCRIPTION_OF_PROBLEM}"
+	}
+
+	doc := fmt.Sprintf(`# Handoff: %s
+
+**Date:** %s
+**Author:** %s
+**Task ID:** %s
+**Scope:** %s
+
+---
+
+## 1. Dependency & Integration Status (REVIEW THIS FIRST)
+
+**Mocking is permitted ONLY when ALL conditions are met:**
+1. Real behavior has been proven (spike ran against actual dependency)
+2. Mock faithfully reproduces proven behavior (not assumed behavior)
+3. Task exists in task system to return to full integration
+4. User-facing indicators show when mocked data is in use
+5. Integration tests against real dependency exist and pass
+
+### External Dependencies
+
+| Dependency | Real Behavior Proven? | Evidence | Mock Status |
+|------------|----------------------|----------|-------------|
+| {DEP_NAME} | {YES/NO} | {LINK_OR_DESCRIPTION} | {No mocks / Mock in use} |
+
+### Mock Registry
+
+**No mocks introduced.** (Update if mocks are added)
+
+**Reviewer MUST verify:**
+- [ ] Every mock has corresponding proof of real behavior
+- [ ] Every mock has a tracked task for removal/integration
+- [ ] No silent mocks—user always knows when data is fake
+- [ ] Integration tests exist and are not skipped in CI
+
+---
+
+## 2. Risk Spike Status
+
+| Risk Area | Spike Status | What Was Proven | What's Still Assumed |
+|-----------|--------------|-----------------|----------------------|
+| {AREA} | {Validated/Pending/Skipped} | {DESCRIPTION} | {ASSUMPTIONS} |
+
+**Unproven risks the reviewer should scrutinize:**
+- {TODO: List unproven assumptions}
+
+---
+
+## 3. UX Exploration Summary
+
+### What was shown to users (or user-proxy agents):
+- [ ] CLI input-output examples
+- [ ] Breadth-first options presented
+- [ ] Key decision points with user sign-off
+
+### User decisions captured:
+- **Decision:** {TODO: Document key decisions}
+- **Why:** {REASONING}
+- **Alternatives rejected:** {LIST}
+
+---
+
+## 4. What Changed (Summary)
+
+| File/Component | Before | After | Confidence |
+|----------------|--------|-------|------------|
+| {PATH} | {PREVIOUS_STATE} | {NEW_STATE} | {High/Medium/Low} |
+
+---
+
+## 5. Intent & Approach
+
+### Problem being solved:
+%s
+
+### Approach taken:
+{TODO: Describe approach}
+
+### Alternatives rejected:
+- {TODO: List alternatives and why rejected}
+
+### What's intentionally deferred:
+- {TODO: List deferred work}
+
+---
+
+## 6. Stub & Dummy Data Inventory
+
+**No stubs introduced.** (Update if stubs are added)
+
+---
+
+## 7. User Checkpoint Map
+
+### Requires user approval before proceeding:
+- [ ] {TODO: List checkpoints}
+
+### Can be delegated to specialized agent:
+- [ ] Code review
+- [ ] Test review
+
+### No checkpoint needed (routine/mechanical):
+- Running test suite
+- Building binary
+
+---
+
+## 8. Review Focus Areas
+
+### 1. **{TODO: Highest risk area}**
+   - Location: {FILE:LINE}
+   - What could go wrong: {RISK}
+   - How to verify: {COMMANDS}
+
+### Questions the reviewer must answer:
+- [ ] {TODO: Key review questions}
+
+---
+
+## 9. How to Validate
+
+### Run integration tests:
+`+"`"+`bash
+%s
+`+"`"+`
+
+### Manual verification:
+%s
+
+### Acceptance criteria:
+%s
+
+---
+
+## 10. Context & References
+
+### Files to review:
+%s
+
+### Related documentation:
+- {TODO: Add relevant docs}
+
+### Task metadata:
+- Role: %s
+- Template: %s
+- Artifact: %s
+`, iss.Title, now, author, iss.ID, scope, context, dodTests, dodManual, dodCriteria, inputs, meta.Role, meta.Template, meta.Artifact)
+
+	return doc
 }

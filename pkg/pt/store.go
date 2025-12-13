@@ -449,6 +449,45 @@ func (c *StoreClient) ListWorktrees(ctx context.Context) (map[string]WorktreeInf
 	return result, nil
 }
 
+// UpdateMeta updates the task description with new metadata.
+func (c *StoreClient) UpdateMeta(ctx context.Context, id string, meta TaskMeta) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	iss, ok := c.data.Issues[id]
+	if !ok {
+		return fmt.Errorf("issue %s not found", id)
+	}
+
+	// Rebuild description with updated meta
+	desc, err := rebuildDescriptionWithMeta(iss.Description, meta)
+	if err != nil {
+		return fmt.Errorf("rebuild description: %w", err)
+	}
+	iss.Description = desc
+	c.data.Issues[id] = iss
+
+	return c.saveLocked()
+}
+
+// rebuildDescriptionWithMeta replaces the pt-meta marker in a description with new metadata.
+func rebuildDescriptionWithMeta(oldDesc string, meta TaskMeta) (string, error) {
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		return "", err
+	}
+	newMarker := fmt.Sprintf("<!-- pt-meta: %s -->", metaJSON)
+
+	start := strings.Index(oldDesc, "<!-- pt-meta:")
+	end := strings.Index(oldDesc, "-->")
+	if start != -1 && end != -1 && end > start {
+		// Replace existing marker
+		return oldDesc[:start] + newMarker, nil
+	}
+	// No existing marker, append
+	return oldDesc + "\n" + newMarker, nil
+}
+
 // AddTask creates a single task ad-hoc.
 func (c *StoreClient) AddTask(ctx context.Context, task Task) (string, error) {
 	c.mu.Lock()

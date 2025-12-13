@@ -34,6 +34,8 @@ type Client interface {
 	ClearWorktree(ctx context.Context, taskID string, action string) error
 	GetWorktree(ctx context.Context, taskID string) (WorktreeInfo, bool, error)
 	ListWorktrees(ctx context.Context) (map[string]WorktreeInfo, error)
+	// Metadata updates
+	UpdateMeta(ctx context.Context, id string, meta TaskMeta) error
 }
 
 // NewClientFromEnv chooses backend based on PT_BACKEND env var.
