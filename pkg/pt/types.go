@@ -34,14 +34,20 @@ type TaskMeta struct {
 
 // UXState tracks the current state of UX exploration for a task.
 type UXState struct {
-	Status     string    `json:"status"`               // pending|cases|explore|selected|approved
-	UseCases   []UseCase `json:"use_cases,omitempty"`  // Confirmed use cases
-	Options    []string  `json:"options,omitempty"`    // Generated options (labels: A, B, C...)
-	Selection  string    `json:"selection,omitempty"`  // User's choice (e.g., "A+C")
-	Note       string    `json:"note,omitempty"`       // User's notes on selection
-	Iterations int       `json:"iterations"`           // Refinement count
-	ApprovedAt string    `json:"approved_at,omitempty"`
+	Status     string     `json:"status"`               // pending|cases|explore|selected|approved
+	UseCases   []UseCase  `json:"use_cases,omitempty"`  // Confirmed use cases
+	Options    []string   `json:"options,omitempty"`    // Generated options (labels: A, B, C...) - legacy
+	Mockups    []UXMockup `json:"mockups,omitempty"`    // File-based mockups with fidelity tracking
+	Coverage   UXCoverage `json:"coverage,omitempty"`   // Capability coverage per mockup
+	Selection  string     `json:"selection,omitempty"`  // User's choice (e.g., "A+C")
+	Note       string     `json:"note,omitempty"`       // User's notes on selection
+	Iterations int        `json:"iterations"`           // Refinement count
+	ApprovedAt string     `json:"approved_at,omitempty"`
 }
+
+// UXCoverage maps mockup label -> capability ID -> coverage status
+// Status values: "full" (✓), "partial" (~), "none" (✗), "" (unmarked)
+type UXCoverage map[string]map[string]string
 
 // UseCase describes a user scenario that the UX must satisfy.
 type UseCase struct {
@@ -49,6 +55,16 @@ type UseCase struct {
 	Actor   string `json:"actor"`             // Who is performing the action
 	Goal    string `json:"goal"`              // What they want to achieve
 	Context string `json:"context,omitempty"` // When/where this happens
+}
+
+// UXMockup represents a visual mockup for a UX option.
+type UXMockup struct {
+	Label       string `json:"label"`       // "A", "B", "C"
+	Description string `json:"description"` // Brief text description
+	Fidelity    string `json:"fidelity"`    // ascii|html|styled
+	Path        string `json:"path"`        // Relative to .pt/ux/{id}/
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
 }
 
 // HistoryEvent captures lifecycle events for a task.

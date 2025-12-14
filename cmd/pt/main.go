@@ -412,6 +412,18 @@ func run(args []string) error {
 		return cmdUXSelect(cmdArgs)
 	case "ux-status":
 		return cmdUXStatus(cmdArgs)
+	case "ux-mockup":
+		return cmdUXMockup(cmdArgs)
+	case "ux-compare":
+		return cmdUXCompare(cmdArgs)
+	case "ux-upgrade":
+		return cmdUXUpgrade(cmdArgs)
+	case "ux-drill":
+		return cmdUXDrill(cmdArgs)
+	case "ux-breakout":
+		return cmdUXBreakout(cmdArgs)
+	case "ux-cover":
+		return cmdUXCover(cmdArgs)
 	case "workflow":
 		return cmdWorkflow(cmdArgs)
 	// Shortcuts for common workflow commands
