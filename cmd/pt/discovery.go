@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,6 +89,10 @@ func cmdDiscovery(args []string) error {
 		return cmdDiscoveryHandoff(subArgs)
 	case "guidance":
 		return cmdDiscoveryGuidance(subArgs)
+	case "mockup":
+		return cmdDiscoveryMockup(subArgs)
+	case "component":
+		return cmdDiscoveryComponent(subArgs)
 	case "help":
 		return cmdDiscoveryHelp()
 	default:
@@ -1546,6 +1551,278 @@ EXAMPLE CODE:
 
       h.JSON(w, order, http.StatusCreated)
   }`)
+	}
+
+	return nil
+}
+
+// mockupDir returns the directory for discovery mockups
+func discoveryMockupDir(componentID string) string {
+	return filepath.Join(".pt", "discovery", componentID, "mockups")
+}
+
+// mockupFilePath returns the path to a mockup file
+func mockupFilePath(componentID, label string) string {
+	return filepath.Join(discoveryMockupDir(componentID), fmt.Sprintf("option-%s.txt", strings.ToLower(label)))
+}
+
+func cmdDiscoveryMockup(args []string) error {
+	fs := flag.NewFlagSet("discovery mockup", flag.ExitOnError)
+	fileFlag := fs.String("file", "", "Read mockup content from file")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt discovery mockup <component-id> [label] [--file FILE]")
+		fmt.Println("\nCreate, update, or view ASCII mockups with component IDs.")
+		fmt.Println("\nExamples:")
+		fmt.Println("  pt discovery mockup order              # List all mockups")
+		fmt.Println("  pt discovery mockup order A            # View mockup A")
+		fmt.Println("  pt discovery mockup order A --file x   # Create from file")
+		fmt.Println("  pt discovery mockup order A < mock.txt # Create from stdin")
+	}
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		fs.Usage()
+		return fmt.Errorf("missing component-id")
+	}
+
+	componentID := fs.Arg(0)
+	syn, err := loadSynthesis(componentID)
+	if err != nil {
+		return err
+	}
+	if syn == nil {
+		return fmt.Errorf("no discovery found for %s", componentID)
+	}
+
+	// No label = list mockups
+	if fs.NArg() < 2 {
+		return listDiscoveryMockups(componentID, syn)
+	}
+
+	label := strings.ToUpper(fs.Arg(1))
+
+	// Check if creating or viewing
+	hasInput := *fileFlag != "" || !isTerminal()
+
+	if hasInput {
+		return createDiscoveryMockup(componentID, label, *fileFlag, syn)
+	}
+
+	return viewDiscoveryMockup(componentID, label, syn)
+}
+
+func listDiscoveryMockups(componentID string, syn *pt.UXSynthesis) error {
+	fmt.Printf("Mockups: %s\n", componentID)
+	fmt.Println(strings.Repeat("─", 50))
+
+	dir := discoveryMockupDir(componentID)
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) == 0 {
+		fmt.Println("\nNo mockups yet. Create with:")
+		fmt.Printf("  pt discovery mockup %s A < mockup.txt\n", componentID)
+		fmt.Printf("  pt discovery mockup %s A --file design.txt\n", componentID)
+		return nil
+	}
+
+	fmt.Println()
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		label := strings.ToUpper(strings.TrimSuffix(strings.TrimPrefix(e.Name(), "option-"), ".txt"))
+		fmt.Printf("  [%s] %s\n", label, e.Name())
+	}
+
+	fmt.Printf("\nView: pt discovery mockup %s <label>\n", componentID)
+	return nil
+}
+
+func createDiscoveryMockup(componentID, label, filePath string, syn *pt.UXSynthesis) error {
+	// Ensure directory
+	dir := discoveryMockupDir(componentID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create mockup dir: %w", err)
+	}
+
+	// Read content
+	var content []byte
+	var err error
+	if filePath != "" {
+		content, err = os.ReadFile(filePath)
+	} else {
+		content, err = io.ReadAll(os.Stdin)
+	}
+	if err != nil {
+		return err
+	}
+
+	if len(content) == 0 {
+		return fmt.Errorf("empty mockup content")
+	}
+
+	// Write file
+	path := mockupFilePath(componentID, label)
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		return fmt.Errorf("write mockup: %w", err)
+	}
+
+	// Update option in synthesis
+	for i, o := range syn.Options {
+		if o.Label == label {
+			syn.Options[i].Mockup = path
+			if err := saveSynthesis(syn); err != nil {
+				return err
+			}
+			break
+		}
+	}
+
+	fmt.Printf("Created mockup [%s]: %s\n", label, path)
+	fmt.Printf("View: pt discovery mockup %s %s\n", componentID, label)
+	fmt.Printf("Add components: pt discovery component %s %s <id> --type <type> --content \"...\"\n", componentID, label)
+	return nil
+}
+
+func viewDiscoveryMockup(componentID, label string, syn *pt.UXSynthesis) error {
+	path := mockupFilePath(componentID, label)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("no mockup [%s] found; create with: pt discovery mockup %s %s < file.txt", label, componentID, label)
+	}
+
+	// Find option for components
+	var opt *pt.SynthesisOption
+	for i, o := range syn.Options {
+		if o.Label == label {
+			opt = &syn.Options[i]
+			break
+		}
+	}
+
+	fmt.Printf("Mockup [%s]:\n", label)
+	fmt.Println(strings.Repeat("─", 60))
+	fmt.Println(string(content))
+
+	if opt != nil && len(opt.Components) > 0 {
+		fmt.Println()
+		fmt.Println("Components:")
+		for _, c := range opt.Components {
+			impl := ""
+			if c.Implementation != "" {
+				impl = fmt.Sprintf(" → %s", c.Implementation)
+			}
+			fmt.Printf("  [%s] %s: %s%s\n", c.ID, c.Type, c.Content, impl)
+		}
+	}
+
+	return nil
+}
+
+func cmdDiscoveryComponent(args []string) error {
+	fs := flag.NewFlagSet("discovery component", flag.ExitOnError)
+	compType := fs.String("type", "", "Component type: header|input|button|list|table|output|error")
+	content := fs.String("content", "", "Component description")
+	impl := fs.String("impl", "", "Implementation hint (e.g., '<Select> from shadcn/ui')")
+	notes := fs.String("notes", "", "Design notes")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt discovery component <component-id> <option-label> <comp-id> [flags]")
+		fmt.Println("\nAdd or update component labels in a mockup.")
+		fmt.Println("\nFlags:")
+		fmt.Println("  --type      Component type (header|input|button|list|table|output|error)")
+		fmt.Println("  --content   What this component shows/does")
+		fmt.Println("  --impl      Implementation hint (library, pattern)")
+		fmt.Println("  --notes     Design rationale")
+		fmt.Println("\nExamples:")
+		fmt.Println("  pt discovery component order A A1 --type header --content \"Order Entry\"")
+		fmt.Println("  pt discovery component order A A2 --type input --content \"Symbol\" --impl \"<Input> + autocomplete\"")
+		fmt.Println("  pt discovery component order A A3 --type button --content \"Submit Order\"")
+	}
+	fs.Parse(args)
+
+	if fs.NArg() < 3 {
+		fs.Usage()
+		return fmt.Errorf("usage: pt discovery component <component-id> <option-label> <comp-id> --type <type> --content \"...\"")
+	}
+
+	componentID := fs.Arg(0)
+	optionLabel := strings.ToUpper(fs.Arg(1))
+	compID := fs.Arg(2)
+
+	syn, err := loadSynthesis(componentID)
+	if err != nil {
+		return err
+	}
+	if syn == nil {
+		return fmt.Errorf("no discovery found for %s", componentID)
+	}
+
+	// Find option
+	var optIdx int = -1
+	for i, o := range syn.Options {
+		if o.Label == optionLabel {
+			optIdx = i
+			break
+		}
+	}
+	if optIdx == -1 {
+		return fmt.Errorf("option [%s] not found", optionLabel)
+	}
+
+	// Find or create component
+	found := false
+	for i, c := range syn.Options[optIdx].Components {
+		if c.ID == compID {
+			// Update existing
+			if *compType != "" {
+				syn.Options[optIdx].Components[i].Type = *compType
+			}
+			if *content != "" {
+				syn.Options[optIdx].Components[i].Content = *content
+			}
+			if *impl != "" {
+				syn.Options[optIdx].Components[i].Implementation = *impl
+			}
+			if *notes != "" {
+				syn.Options[optIdx].Components[i].Notes = *notes
+			}
+			found = true
+			fmt.Printf("Updated component [%s] in option [%s]\n", compID, optionLabel)
+			break
+		}
+	}
+
+	if !found {
+		// Create new
+		if *compType == "" {
+			return fmt.Errorf("--type is required for new components")
+		}
+		if *content == "" {
+			return fmt.Errorf("--content is required for new components")
+		}
+
+		comp := pt.MockupComponent{
+			ID:             compID,
+			Type:           *compType,
+			Content:        *content,
+			Implementation: *impl,
+			Notes:          *notes,
+		}
+		syn.Options[optIdx].Components = append(syn.Options[optIdx].Components, comp)
+		fmt.Printf("Added component [%s] to option [%s]\n", compID, optionLabel)
+	}
+
+	if err := saveSynthesis(syn); err != nil {
+		return err
+	}
+
+	// Show all components
+	fmt.Printf("\nComponents in [%s]:\n", optionLabel)
+	for _, c := range syn.Options[optIdx].Components {
+		implHint := ""
+		if c.Implementation != "" {
+			implHint = fmt.Sprintf(" → %s", c.Implementation)
+		}
+		fmt.Printf("  [%s] %s: %s%s\n", c.ID, c.Type, c.Content, implHint)
 	}
 
 	return nil
