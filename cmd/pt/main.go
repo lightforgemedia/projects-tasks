@@ -424,6 +424,12 @@ func run(args []string) error {
 		return cmdUXBreakout(cmdArgs)
 	case "ux-cover":
 		return cmdUXCover(cmdArgs)
+	case "sysmap":
+		return cmdSysmap(cmdArgs)
+	case "journey":
+		return cmdJourney(cmdArgs)
+	case "scope":
+		return cmdScope(cmdArgs)
 	case "workflow":
 		return cmdWorkflow(cmdArgs)
 	// Shortcuts for common workflow commands

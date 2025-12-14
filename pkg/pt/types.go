@@ -67,6 +67,112 @@ type UXMockup struct {
 	UpdatedAt   string `json:"updated_at,omitempty"`
 }
 
+// ============================================================================
+// SYSTEM DISCOVERY TYPES - Project-level architecture before component UX
+// ============================================================================
+
+// SystemMap captures the complete enumeration of system components.
+// Stored at project level in .pt/sysmap.json
+type SystemMap struct {
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	Version     string      `json:"version"`
+	Components  []Component `json:"components"`
+	Edges       []Edge      `json:"edges"`
+	CreatedAt   string      `json:"created_at"`
+	UpdatedAt   string      `json:"updated_at,omitempty"`
+}
+
+// Component represents a discrete unit in the system.
+type Component struct {
+	ID          string   `json:"id"`                    // e.g., "chain", "order"
+	Name        string   `json:"name"`                  // Human-readable name
+	Type        string   `json:"type"`                  // screen|command|api|service|store
+	Category    string   `json:"category,omitempty"`    // view|action|data|util
+	Description string   `json:"description,omitempty"` // What this component does
+	Nouns       []string `json:"nouns,omitempty"`       // Domain objects involved
+	Verbs       []string `json:"verbs,omitempty"`       // Actions performed
+	Owner       string   `json:"owner,omitempty"`       // Role responsible
+}
+
+// Edge represents a dependency between components.
+type Edge struct {
+	From     string `json:"from"`              // Source component ID
+	To       string `json:"to"`                // Target component ID
+	Relation string `json:"relation"`          // calls|uses|triggers|provides|requires
+	Label    string `json:"label,omitempty"`   // Optional description (e.g., data passed)
+}
+
+// UserJourney describes a complete flow through the system.
+type UserJourney struct {
+	ID        string        `json:"id"`                  // e.g., "J1"
+	Name      string        `json:"name"`                // e.g., "Quick Trade Entry"
+	Persona   string        `json:"persona,omitempty"`   // Who takes this journey
+	Goal      string        `json:"goal"`                // What they want to achieve
+	Trigger   string        `json:"trigger,omitempty"`   // What initiates this journey
+	Steps     []JourneyStep `json:"steps"`
+	Outcome   string        `json:"outcome,omitempty"`   // Success state description
+	Frequency string        `json:"frequency,omitempty"` // daily|weekly|rare|error-case
+	Priority  int           `json:"priority,omitempty"`  // 1=critical, 3=nice-to-have
+}
+
+// JourneyStep represents one step in a user journey.
+type JourneyStep struct {
+	Order       int      `json:"order"`                 // Sequence number
+	Action      string   `json:"action"`                // What the user does
+	Component   string   `json:"component"`             // Component ID from SystemMap
+	Expectation string   `json:"expectation,omitempty"` // What user expects to see
+	Branches    []Branch `json:"branches,omitempty"`    // Alternative paths
+}
+
+// Branch represents an alternative path from a step.
+type Branch struct {
+	Condition string `json:"condition"`  // When this branch is taken
+	NextStep  int    `json:"next_step"`  // Step order to jump to
+	Component string `json:"component"`  // Component for this branch
+}
+
+// ComponentScope defines the boundaries for a single component.
+// Created per-task when claiming work on a component.
+type ComponentScope struct {
+	ComponentID   string      `json:"component_id"`           // From SystemMap
+	TaskID        string      `json:"task_id"`                // PT task this scope belongs to
+	Inputs        []ScopeIO   `json:"inputs,omitempty"`       // What this component receives
+	Outputs       []ScopeIO   `json:"outputs,omitempty"`      // What this component produces
+	Preconditions []Condition `json:"preconditions,omitempty"` // Must be true before use
+	OutOfScope    []Exclusion `json:"out_of_scope,omitempty"` // Explicitly handled elsewhere
+	Journeys      []string    `json:"journeys,omitempty"`     // Journey IDs this participates in
+	Upstream      []string    `json:"upstream,omitempty"`     // Components that call/trigger this
+	Downstream    []string    `json:"downstream,omitempty"`   // Components this calls/provides to
+	CreatedAt     string      `json:"created_at"`
+	ApprovedAt    string      `json:"approved_at,omitempty"`
+}
+
+// ScopeIO describes an input or output.
+type ScopeIO struct {
+	Name        string `json:"name"`                  // e.g., "symbol"
+	Type        string `json:"type"`                  // string|int|struct|list|event
+	Source      string `json:"source,omitempty"`      // Where it comes from
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+	Example     string `json:"example,omitempty"`     // Concrete example value
+}
+
+// Condition describes a precondition.
+type Condition struct {
+	Description string `json:"description"`
+	Verifiable  bool   `json:"verifiable,omitempty"`  // Can be checked programmatically?
+	CheckedBy   string `json:"checked_by,omitempty"`  // Component that validates this
+}
+
+// Exclusion explicitly states what is NOT in scope.
+type Exclusion struct {
+	Description string `json:"description"`          // What is excluded
+	HandledBy   string `json:"handled_by,omitempty"` // Which component handles this
+	Reason      string `json:"reason,omitempty"`     // Why it's excluded
+}
+
 // HistoryEvent captures lifecycle events for a task.
 type HistoryEvent struct {
 	At     time.Time `json:"at"`
