@@ -14,6 +14,49 @@ import (
 	"projects-tasks/pkg/pt"
 )
 
+// reorderDiscoveryArgs moves non-flag arguments to the end so flags can appear
+// anywhere in the command. This allows both:
+//   pt discovery init tradeview --type web
+//   pt discovery init --type web tradeview
+func reorderDiscoveryArgs(args []string) []string {
+	var flags, positional []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			flags = append(flags, arg)
+			// Check if this flag has a value (not a boolean flag)
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && strings.Contains(arg, "=") == false {
+				// Check if this looks like a flag value (next arg doesn't start with -)
+				// But we need to be careful - some flags like --confirm don't take values
+				// For safety, only consume next arg if current flag doesn't contain "="
+				// and the flag name suggests it takes a value
+				if !isBoolFlag(arg) {
+					i++
+					flags = append(flags, args[i])
+				}
+			}
+		} else {
+			positional = append(positional, arg)
+		}
+	}
+	return append(flags, positional...)
+}
+
+// isBoolFlag returns true if the flag is known to be a boolean (no value)
+func isBoolFlag(flag string) bool {
+	boolFlags := map[string]bool{
+		"-confirm": true, "--confirm": true,
+		"-force": true, "--force": true,
+		"-help": true, "--help": true,
+		"-h": true,
+	}
+	// Strip any = suffix
+	if idx := strings.Index(flag, "="); idx > 0 {
+		flag = flag[:idx]
+	}
+	return boolFlags[flag]
+}
+
 // synthesisDir returns the directory for synthesis files
 func synthesisDir() string {
 	return filepath.Join(".pt", "synthesis")
@@ -65,7 +108,7 @@ func cmdDiscovery(args []string) error {
 	switch subCmd {
 	case "init":
 		return cmdDiscoveryInit(subArgs)
-	case "status":
+	case "status", "show":
 		return cmdDiscoveryStatus(subArgs)
 	case "capabilities":
 		return cmdDiscoveryCapabilities(subArgs)
@@ -163,6 +206,7 @@ EXAMPLES:
 }
 
 func cmdDiscoveryInit(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery init", flag.ExitOnError)
 	uxType := fs.String("type", "", "UX type: cli|tui|web|api (required)")
 	taskID := fs.String("task", "", "Link to PT task ID")
@@ -296,6 +340,7 @@ func cmdDiscoveryInit(args []string) error {
 }
 
 func cmdDiscoveryStatus(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery status", flag.ExitOnError)
 	jsonOut := fs.Bool("json", false, "Output JSON")
 	fs.Parse(args)
@@ -450,6 +495,7 @@ func printNextStep(syn *pt.UXSynthesis) {
 }
 
 func cmdDiscoveryCapabilities(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery capabilities", flag.ExitOnError)
 	addCap := fs.String("add", "", "Add capability: 'category: description'")
 	confirm := fs.Bool("confirm", false, "Confirm capabilities and proceed to explore")
@@ -626,6 +672,7 @@ func cmdDiscoveryCapabilities(args []string) error {
 }
 
 func cmdDiscoveryExplore(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery explore", flag.ExitOnError)
 	approach := fs.String("approach", "", "Add approach tag")
 	fs.Parse(args)
@@ -752,6 +799,7 @@ func cmdDiscoveryExplore(args []string) error {
 }
 
 func cmdDiscoveryOption(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery option", flag.ExitOnError)
 	name := fs.String("name", "", "Option name (required)")
 	desc := fs.String("desc", "", "Option description")
@@ -914,6 +962,7 @@ func cmdDiscoveryCoverage(args []string) error {
 }
 
 func cmdDiscoverySynthesize(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery synthesize", flag.ExitOnError)
 	force := fs.Bool("force", false, "Skip gate validation")
 	fs.Parse(args)
@@ -1077,6 +1126,7 @@ func cmdDiscoverySynthesize(args []string) error {
 }
 
 func cmdDiscoveryReview(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery review", flag.ExitOnError)
 	fs.Parse(args)
 
@@ -1271,6 +1321,7 @@ func cmdDiscoveryReview(args []string) error {
 }
 
 func cmdDiscoveryFeedback(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery feedback", flag.ExitOnError)
 	componentID_flag := fs.String("component", "", "Target component ID (e.g., A3)")
 	optionLabel := fs.String("option", "", "Target option label (e.g., A)")
@@ -1408,6 +1459,7 @@ func cmdDiscoveryFeedback(args []string) error {
 }
 
 func cmdDiscoveryIterate(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery iterate", flag.ExitOnError)
 	address := fs.String("address", "", "Mark feedback ID as addressed")
 	fs.Parse(args)
@@ -1480,6 +1532,7 @@ func cmdDiscoveryIterate(args []string) error {
 }
 
 func cmdDiscoveryApprove(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery approve", flag.ExitOnError)
 	selection := fs.String("select", "", "Override recommendation (e.g., 'B' or 'A+C')")
 	fs.Parse(args)
@@ -1628,6 +1681,7 @@ func cmdDiscoveryApprove(args []string) error {
 }
 
 func cmdDiscoveryHandoff(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery handoff", flag.ExitOnError)
 	fs.Parse(args)
 
@@ -1757,6 +1811,7 @@ func printImplementationGuidance(uxType string, opt *pt.SynthesisOption) {
 }
 
 func cmdDiscoveryGuidance(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery guidance", flag.ExitOnError)
 	fs.Parse(args)
 
@@ -2090,6 +2145,7 @@ func mockupFilePath(componentID, label string) string {
 }
 
 func cmdDiscoveryMockup(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery mockup", flag.ExitOnError)
 	fileFlag := fs.String("file", "", "Read mockup content from file")
 	fs.Usage = func() {
@@ -2242,6 +2298,7 @@ func viewDiscoveryMockup(componentID, label string, syn *pt.UXSynthesis) error {
 }
 
 func cmdDiscoveryComponent(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery component", flag.ExitOnError)
 	compType := fs.String("type", "", "Component type: header|input|button|list|table|output|error")
 	content := fs.String("content", "", "Component description")
@@ -2356,6 +2413,7 @@ func cmdDiscoveryComponent(args []string) error {
 // ============================================================================
 
 func cmdDiscoveryPersona(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery persona", flag.ExitOnError)
 	add := fs.String("add", "", "Add persona by name")
 	goals := fs.String("goals", "", "Persona goals (comma-separated)")
@@ -2444,6 +2502,7 @@ func cmdDiscoveryPersona(args []string) error {
 }
 
 func cmdDiscoveryEdgeCase(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery edge-case", flag.ExitOnError)
 	cover := fs.String("cover", "", "Mark edge case as covered: empty|loading|error|overflow|offline")
 	inOption := fs.String("in", "", "Which option covers this (e.g., A)")
@@ -2525,6 +2584,7 @@ func cmdDiscoveryEdgeCase(args []string) error {
 }
 
 func cmdDiscoveryUsability(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery usability", flag.ExitOnError)
 	fs.Parse(args)
 
@@ -2759,6 +2819,7 @@ func getPersonaQuestions(p pt.Persona, uxType string) []string {
 }
 
 func cmdDiscoveryFriction(args []string) error {
+	args = reorderDiscoveryArgs(args)
 	fs := flag.NewFlagSet("discovery friction", flag.ExitOnError)
 	add := fs.String("add", "", "Add friction point description")
 	severity := fs.String("severity", "medium", "Severity: high|medium|low")
