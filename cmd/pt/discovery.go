@@ -213,10 +213,31 @@ func cmdDiscoveryInit(args []string) error {
 
 	fmt.Printf("✓ Discovery initialized for [%s] (type: %s)\n", componentID, *uxType)
 	fmt.Printf("  Edge cases to cover: empty, loading, error, overflow, offline\n")
-	fmt.Println("\nNext steps:")
-	fmt.Printf("  pt discovery persona %s --add \"User Type\" --goals \"what they need\"\n", componentID)
-	fmt.Printf("  pt discovery capabilities %s --add \"action: ...\"\n", componentID)
-	fmt.Printf("  pt discovery guidance %s exploration  # See patterns for %s\n", componentID, *uxType)
+
+	// Agent guidance for init → capabilities transition
+	fmt.Println()
+	fmt.Println("┌─ AGENT: GATHER USER CONTEXT ──────────────────────────────┐")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ Before exploring options, understand WHO uses this and    │")
+	fmt.Println("│ WHAT they need to accomplish.                             │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ ASK THE USER:                                             │")
+	fmt.Println("│  1. \"Who will use this component?\" (persona)              │")
+	fmt.Println("│     - Their role/context                                  │")
+	fmt.Println("│     - Primary goals                                       │")
+	fmt.Println("│     - Constraints (time pressure, expertise level)        │")
+	fmt.Println("│  2. \"What actions must this component support?\"           │")
+	fmt.Println("│     - Core functionality (actions)                        │")
+	fmt.Println("│     - What info needs to be displayed                     │")
+	fmt.Println("│     - Any validation requirements                         │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ Record responses with:                                    │")
+	fmt.Printf("│   pt discovery persona %s --add \"...\" --goals \"...\"\n", componentID)
+	fmt.Printf("│   pt discovery capabilities %s --add \"action: ...\"\n", componentID)
+	fmt.Println("│                                                           │")
+	fmt.Println("│ WHY: Personas drive usability review. Capabilities define │")
+	fmt.Println("│ what \"complete\" means. Both are gates for synthesis.      │")
+	fmt.Println("└───────────────────────────────────────────────────────────┘")
 	return nil
 }
 
@@ -431,8 +452,31 @@ func cmdDiscoveryCapabilities(args []string) error {
 			return err
 		}
 		fmt.Printf("✓ %d capabilities confirmed. Ready to explore.\n", len(syn.Capabilities))
-		fmt.Printf("\nNext: pt discovery guidance %s exploration\n", componentID)
-		fmt.Printf("      pt discovery option %s A --name \"Option Name\" --desc \"Description\"\n", componentID)
+
+		// Agent guidance for capabilities → exploring transition
+		fmt.Println()
+		fmt.Println("┌─ AGENT: EXPLORE UX OPTIONS ───────────────────────────────┐")
+		fmt.Println("│                                                           │")
+		fmt.Println("│ Now generate multiple UX approaches. The goal is BREADTH  │")
+		fmt.Println("│ - explore different patterns before narrowing down.       │")
+		fmt.Println("│                                                           │")
+		fmt.Println("│ REQUIREMENTS (gates for synthesis):                       │")
+		fmt.Println("│  • 5+ distinct options                                    │")
+		fmt.Println("│  • 2+ different approaches (e.g., wizard vs single-cmd)   │")
+		fmt.Println("│  • Cover edge cases: empty, loading, error states         │")
+		fmt.Println("│                                                           │")
+		fmt.Println("│ FOR EACH OPTION:                                          │")
+		fmt.Println("│  1. Create ASCII mockup showing the UX                    │")
+		fmt.Println("│  2. Label components with IDs for precise feedback        │")
+		fmt.Println("│  3. Note which capabilities it covers                     │")
+		fmt.Println("│  4. Consider: Does this fit the persona's constraints?    │")
+		fmt.Println("│                                                           │")
+		fmt.Printf("│ Run: pt discovery guidance %s exploration\n", componentID)
+		fmt.Println("│ This shows patterns and component IDs for your UX type.   │")
+		fmt.Println("│                                                           │")
+		fmt.Println("│ You can explore autonomously - user review comes after    │")
+		fmt.Println("│ synthesis when top 3 options are ready.                   │")
+		fmt.Println("└───────────────────────────────────────────────────────────┘")
 		return nil
 	}
 
@@ -835,9 +879,29 @@ func cmdDiscoverySynthesize(args []string) error {
 		fmt.Printf("\n%d options rejected.\n", len(syn.Rejected))
 	}
 
+	// Agent guidance for synthesis → review transition
 	fmt.Println()
-	fmt.Printf("Ready for USER review:\n")
-	fmt.Printf("  pt discovery review %s\n", componentID)
+	fmt.Println("┌─ AGENT: STOP AND PRESENT TO USER ─────────────────────────┐")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ Synthesis complete. Now bring in the USER for review.     │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ WHAT TO DO:                                               │")
+	fmt.Println("│  1. Present the top 3 options to the user                 │")
+	fmt.Println("│  2. For EACH option, explain:                             │")
+	fmt.Println("│     - What it does (from description)                     │")
+	fmt.Println("│     - Why it made the top 3 (coverage, fit)               │")
+	fmt.Println("│     - Trade-offs vs other options                         │")
+	fmt.Println("│  3. State which option is recommended and WHY             │")
+	fmt.Println("│  4. Ask user: \"Which option do you prefer, or do you      │")
+	fmt.Println("│     have feedback on any of these?\"                       │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ WAIT FOR USER RESPONSE before proceeding.                 │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ User commands:                                            │")
+	fmt.Printf("│   pt discovery review %s     # View full synthesis  │\n", componentID)
+	fmt.Printf("│   pt discovery feedback %s \"...\"  # Give feedback   │\n", componentID)
+	fmt.Printf("│   pt discovery approve %s    # Approve direction    │\n", componentID)
+	fmt.Println("└───────────────────────────────────────────────────────────┘")
 	return nil
 }
 
@@ -955,6 +1019,27 @@ func cmdDiscoveryReview(args []string) error {
 	fmt.Printf("│ pt discovery approve %s\n", componentID)
 	fmt.Println("└────────────────────────────────────────────────────────────┘")
 
+	// Agent guidance for reviewing phase
+	fmt.Println()
+	fmt.Println("┌─ AGENT: FACILITATE USER REVIEW ───────────────────────────┐")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ The synthesis is now in front of the user. Your role:     │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ 1. WAIT for user to review the options                    │")
+	fmt.Println("│ 2. ANSWER questions about any option or component         │")
+	fmt.Println("│ 3. RECORD feedback when user provides it:                 │")
+	fmt.Printf("│    pt discovery feedback %s \"user's feedback\"\n", componentID)
+	fmt.Println("│ 4. If user approves, run:                                 │")
+	fmt.Printf("│    pt discovery approve %s\n", componentID)
+	fmt.Println("│                                                           │")
+	fmt.Println("│ DO NOT proceed to implementation until user explicitly    │")
+	fmt.Println("│ approves. If they have concerns, record as feedback and   │")
+	fmt.Println("│ iterate.                                                  │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ PROMPT: \"Which option do you prefer? Any feedback on the  │")
+	fmt.Println("│ approaches or specific components?\"                       │")
+	fmt.Println("└───────────────────────────────────────────────────────────┘")
+
 	return nil
 }
 
@@ -1009,7 +1094,25 @@ func cmdDiscoveryFeedback(args []string) error {
 	}
 
 	fmt.Printf("✓ Feedback [%s] added%s: %s\n", fID, target, feedbackText)
-	fmt.Printf("\nAgent should iterate with: pt discovery iterate %s\n", componentID)
+
+	// Agent guidance for feedback → iterate transition
+	fmt.Println()
+	fmt.Println("┌─ AGENT: ADDRESS FEEDBACK ─────────────────────────────────┐")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ User has given feedback. Now address it:                  │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ 1. UNDERSTAND the feedback - ask clarifying questions     │")
+	fmt.Println("│    if the concern isn't clear                             │")
+	fmt.Println("│ 2. REVISE the affected option(s) or create new ones       │")
+	fmt.Println("│ 3. UPDATE mockups if needed                               │")
+	fmt.Println("│ 4. Mark feedback addressed:                               │")
+	fmt.Printf("│    pt discovery iterate %s --address %s\n", componentID, fID)
+	fmt.Println("│ 5. Re-synthesize if options changed significantly:        │")
+	fmt.Printf("│    pt discovery synthesize %s\n", componentID)
+	fmt.Println("│                                                           │")
+	fmt.Println("│ After addressing all feedback, present updated synthesis  │")
+	fmt.Println("│ to user for another review round.                         │")
+	fmt.Println("└───────────────────────────────────────────────────────────┘")
 	return nil
 }
 
@@ -1145,8 +1248,28 @@ func cmdDiscoveryApprove(args []string) error {
 	fmt.Printf("║  ✓ APPROVED: %-45s ║\n", componentID)
 	fmt.Println("╚════════════════════════════════════════════════════════════╝")
 	fmt.Printf("\nSelected: %s\n", syn.Recommendation)
-	fmt.Printf("\nGenerate implementation guidance:\n")
-	fmt.Printf("  pt discovery handoff %s\n", componentID)
+
+	// Agent guidance for approved → implementation transition
+	fmt.Println()
+	fmt.Println("┌─ AGENT: GENERATE HANDOFF & IMPLEMENT ─────────────────────┐")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ User has approved the UX direction. Next steps:           │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ 1. GENERATE implementation handoff:                       │")
+	fmt.Printf("│    pt discovery handoff %s\n", componentID)
+	fmt.Println("│    This creates detailed implementation guidance.         │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ 2. IMPLEMENT following the approved mockups and patterns  │")
+	fmt.Println("│    - Match the visual structure from mockups              │")
+	fmt.Println("│    - Implement all edge cases that were covered           │")
+	fmt.Println("│    - Honor persona constraints (speed, simplicity, etc.)  │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ 3. VALIDATE with user once implementation is complete     │")
+	fmt.Println("│    - Demo the working component                           │")
+	fmt.Println("│    - Compare to approved mockups                          │")
+	fmt.Println("│                                                           │")
+	fmt.Println("│ Discovery complete! You may now proceed with coding.      │")
+	fmt.Println("└───────────────────────────────────────────────────────────┘")
 	return nil
 }
 
