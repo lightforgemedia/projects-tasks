@@ -1291,8 +1291,13 @@ func cmdDiscoveryFeedback(args []string) error {
 		return fmt.Errorf("no discovery found for %s", componentID)
 	}
 
+	// Allow feedback in synthesized state (auto-transition to reviewing first)
+	if syn.Status == pt.StatusSynthesized {
+		syn.Status = pt.StatusReviewing
+	}
+
 	if syn.Status != pt.StatusReviewing && syn.Status != pt.StatusFeedback {
-		return fmt.Errorf("cannot add feedback in status %s", syn.Status)
+		return fmt.Errorf("cannot add feedback in status %s; must be synthesized, reviewing, or feedback", syn.Status)
 	}
 
 	// Create feedback item
