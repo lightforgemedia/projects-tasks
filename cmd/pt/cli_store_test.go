@@ -520,3 +520,98 @@ func TestPorcelainShowOutput(t *testing.T) {
 		t.Fatalf("expected title in JSON, got: %s", out)
 	}
 }
+
+func TestShellCdNoWorktree(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Task One", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	// Should fail - no worktree exists
+	err := cmdCd([]string{"pt-1"})
+	if err == nil {
+		t.Fatal("expected error when no worktree exists")
+	}
+	if !strings.Contains(err.Error(), "no worktree") {
+		t.Fatalf("expected 'no worktree' error, got: %v", err)
+	}
+}
+
+func TestShellCdWithWorktree(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Task One", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	// Manually set a worktree
+	wtPath := filepath.Join(t.TempDir(), "worktree-test")
+	if err := store.SetWorktree(t.Context(), "pt-1", pt.WorktreeInfo{
+		TaskID:    "pt-1",
+		Path:      wtPath,
+		Branch:    "test-branch",
+		CreatedAt: "2025-01-01T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("set worktree err: %v", err)
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdCd([]string{"pt-1"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("cd err: %v", err)
+	}
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := strings.TrimSpace(buf.String())
+
+	if out != wtPath {
+		t.Fatalf("expected path %q, got %q", wtPath, out)
+	}
+}
+
+func TestShellEnv(t *testing.T) {
+	setupStoreEnv(t)
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdEnv([]string{})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("env err: %v", err)
+	}
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := buf.String()
+
+	if !strings.Contains(out, "PT_DB=") {
+		t.Fatalf("expected PT_DB in output, got: %s", out)
+	}
+	if !strings.Contains(out, "export PT_DB") {
+		t.Fatalf("expected 'export PT_DB' in output, got: %s", out)
+	}
+}

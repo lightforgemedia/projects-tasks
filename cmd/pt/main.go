@@ -364,6 +364,10 @@ func run(args []string) error {
 		return cmdContext(cmdArgs)
 	case "worktree":
 		return cmdWorktree(cmdArgs)
+	case "cd":
+		return cmdCd(cmdArgs)
+	case "env":
+		return cmdEnv(cmdArgs)
 	case "doctor":
 		return cmdDoctor(cmdArgs)
 	case "export":
@@ -447,6 +451,8 @@ Commands (SDLC flow):
   feedback --desc=TEXT [--dry-run]   Create a feedback template under ~/.pt/feedback
   context init <id>|validate|prime    Manage agent context (prime outputs project summary)
   worktree start|done|status|abort    Manage git worktrees for task isolation
+  cd <task-id>                       Output worktree path (for shell: cd $(pt cd pt-5))
+  env                                Output PT environment (for shell: eval "$(pt env)")
   doctor [--fix]                     Check store integrity (--fix attempts repairs)
   export [--out=FILE]                Export store to portable JSON format
   import <file> [--mode=merge|replace] Import from exported file (merge or replace)
@@ -2960,4 +2966,61 @@ func buildHandoffDoc(iss pt.Issue, meta pt.TaskMeta) string {
 `, iss.Title, now, author, iss.ID, scope, context, dodTests, dodManual, dodCriteria, inputs, meta.Role, meta.Template, meta.Artifact)
 
 	return doc
+}
+
+// cmdCd outputs the worktree path for a task (for shell integration).
+// Usage: eval "$(pt cd pt-5)" or cd $(pt cd pt-5)
+func cmdCd(args []string) error {
+	fs := flag.NewFlagSet("cd", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt cd <task-id>")
+		fmt.Println("\nOutputs the worktree path for a task.")
+		fmt.Println("Use with: cd $(pt cd pt-5)")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("missing task-id argument")
+	}
+	taskID := fs.Arg(0)
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	wtInfo, hasWT, err := client.GetWorktree(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("get worktree: %w", err)
+	}
+	if !hasWT {
+		return fmt.Errorf("task %s has no worktree; run 'pt worktree start %s' first", taskID, taskID)
+	}
+	fmt.Println(wtInfo.Path)
+	return nil
+}
+
+// cmdEnv outputs PT environment info for shell integration.
+func cmdEnv(args []string) error {
+	fs := flag.NewFlagSet("env", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Println("Usage: pt env")
+		fmt.Println("\nOutputs PT environment variables for shell integration.")
+		fmt.Println("Use with: eval \"$(pt env)\"")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	// Get the store path
+	dbPath := pt.DiscoveredStorePath()
+	if dbPath == "" {
+		dbPath = ".pt.db.json"
+	}
+
+	fmt.Printf("PT_DB=%s\n", dbPath)
+	fmt.Printf("export PT_DB\n")
+	return nil
 }
