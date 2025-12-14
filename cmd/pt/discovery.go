@@ -93,6 +93,14 @@ func cmdDiscovery(args []string) error {
 		return cmdDiscoveryMockup(subArgs)
 	case "component":
 		return cmdDiscoveryComponent(subArgs)
+	case "persona":
+		return cmdDiscoveryPersona(subArgs)
+	case "edge-case":
+		return cmdDiscoveryEdgeCase(subArgs)
+	case "usability":
+		return cmdDiscoveryUsability(subArgs)
+	case "friction":
+		return cmdDiscoveryFriction(subArgs)
 	case "help":
 		return cmdDiscoveryHelp()
 	default:
@@ -104,45 +112,53 @@ func cmdDiscoveryHelp() error {
 	fmt.Println(`Discovery Workflow - Synthesis-Based UX Exploration
 
 PHASES:
-  1. INIT         → Create synthesis for component
+  1. INIT         → Create synthesis, define personas
   2. CAPABILITIES → Define what must be supported
-  3. EXPLORE      → Generate 5+ options, 2+ approaches
+  3. EXPLORE      → Generate 5+ options, 2+ approaches, cover edge cases
   4. SYNTHESIZE   → Narrow to top 3 with rationale
-  5. REVIEW       → User reviews comprehensive artifact
-  6. FEEDBACK     → User provides targeted feedback
+  5. USABILITY    → Run usability review (persona fit, friction, gaps)
+  6. REVIEW       → User reviews comprehensive artifact
   7. APPROVE      → Final approval, generate handoff
 
-AGENT COMMANDS (automated):
+CORE COMMANDS:
   pt discovery init <component> --type <cli|tui|web|api>
   pt discovery capabilities <component> --add "category: capability"
   pt discovery explore <component>
   pt discovery option <component> <label> --name "..." --desc "..."
-  pt discovery coverage <component> <label> <cap-id> <full|partial|none>
   pt discovery synthesize <component>
-  pt discovery iterate <component>
-  pt discovery handoff <component>
+  pt discovery review <component>
+  pt discovery approve <component>
 
-USER COMMANDS (gates):
-  pt discovery review <component>       # View synthesis artifact
-  pt discovery feedback <component>     # Add feedback
-  pt discovery approve <component>      # Final approval
+USABILITY COMMANDS:
+  pt discovery persona <component> --add "Day Trader" --goals "fast execution"
+  pt discovery edge-case <component> --cover <empty|loading|error|overflow> --in <option>
+  pt discovery usability <component>              # Run full usability review
+  pt discovery friction <component> --add "..." --severity high
+
+MOCKUP COMMANDS:
+  pt discovery mockup <component> <label>         # Create/view mockup
+  pt discovery component <component> <label> <id> # Label components
 
 EXAMPLES:
-  # Agent initializes and explores
-  pt discovery init order --type cli
+  # Initialize with persona
+  pt discovery init order --type web
+  pt discovery persona order --add "Day Trader" --goals "Execute trades in <3 clicks"
+  pt discovery persona order --add "New User" --goals "Understand options before commit"
+
+  # Explore with edge cases
   pt discovery capabilities order --add "action: Submit order"
-  pt discovery capabilities order --add "error: Handle rejection"
   pt discovery explore order
-  pt discovery option order A --name "Interactive" --desc "Step-by-step prompts"
+  pt discovery option order A --name "Quick Trade" --desc "Minimal steps"
+  pt discovery edge-case order --cover empty --in A
+  pt discovery edge-case order --cover error --in A
+
+  # Usability review before synthesis
+  pt discovery usability order    # Shows persona fit, friction, gaps
   pt discovery synthesize order
 
-  # User reviews
-  pt discovery review order             # Shows full synthesis
-  pt discovery feedback order --component A3 "Needs confirmation step"
-  pt discovery approve order
-
-  # Agent generates implementation guidance
-  pt discovery handoff order`)
+  # User reviews and approves
+  pt discovery review order
+  pt discovery approve order`)
 	return nil
 }
 
@@ -186,6 +202,8 @@ func cmdDiscoveryInit(args []string) error {
 		Exploration: pt.ExplorationLog{
 			Approaches: []string{},
 		},
+		Personas:  []pt.Persona{},
+		EdgeCases: pt.RequiredEdgeCases(), // Initialize with required edge cases
 		CreatedAt: time.Now().Format(time.RFC3339),
 	}
 
@@ -194,7 +212,9 @@ func cmdDiscoveryInit(args []string) error {
 	}
 
 	fmt.Printf("✓ Discovery initialized for [%s] (type: %s)\n", componentID, *uxType)
+	fmt.Printf("  Edge cases to cover: empty, loading, error, overflow, offline\n")
 	fmt.Println("\nNext steps:")
+	fmt.Printf("  pt discovery persona %s --add \"User Type\" --goals \"what they need\"\n", componentID)
 	fmt.Printf("  pt discovery capabilities %s --add \"action: ...\"\n", componentID)
 	fmt.Printf("  pt discovery guidance %s exploration  # See patterns for %s\n", componentID, *uxType)
 	return nil
@@ -521,6 +541,27 @@ func cmdDiscoveryExplore(args []string) error {
 		fmt.Printf("    Tried: %s\n", strings.Join(syn.Exploration.Approaches, ", "))
 	}
 
+	// Edge case coverage
+	coveredEdgeCases := 0
+	uncoveredEdgeCases := []string{}
+	for _, ec := range syn.EdgeCases {
+		if ec.Covered {
+			coveredEdgeCases++
+		} else {
+			uncoveredEdgeCases = append(uncoveredEdgeCases, ec.ID)
+		}
+	}
+	minEdgeCases := 3 // Require at least empty, loading, error
+	edgeCasesOK := coveredEdgeCases >= minEdgeCases
+	fmt.Printf("  %s Edge cases: %d/%d covered\n", checkMark(edgeCasesOK), coveredEdgeCases, len(syn.EdgeCases))
+	if len(uncoveredEdgeCases) > 0 {
+		fmt.Printf("    Missing: %s\n", strings.Join(uncoveredEdgeCases, ", "))
+	}
+
+	// Persona coverage
+	personasOK := len(syn.Personas) >= 1
+	fmt.Printf("  %s Personas:   %d defined\n", checkMark(personasOK), len(syn.Personas))
+
 	// Show existing options
 	if len(syn.Options) > 0 {
 		fmt.Println("\nCurrent Options:")
@@ -536,11 +577,16 @@ func cmdDiscoveryExplore(args []string) error {
 	fmt.Println("\nCommands:")
 	fmt.Printf("  pt discovery guidance %s exploration   # View patterns for %s\n", componentID, syn.UXType)
 	fmt.Printf("  pt discovery option %s <label> --name \"...\" --desc \"...\"  # Add option\n", componentID)
+	fmt.Printf("  pt discovery edge-case %s --cover empty --in A  # Mark edge case covered\n", componentID)
 	fmt.Printf("  pt discovery explore %s --approach \"tag\"  # Tag approach tried\n", componentID)
 
-	if optionsOK && approachesOK {
-		fmt.Printf("\n✓ Gate passed! Ready to synthesize:\n")
+	allGatesOK := optionsOK && approachesOK && edgeCasesOK && personasOK
+	if allGatesOK {
+		fmt.Printf("\n✓ All gates passed! Ready to synthesize:\n")
+		fmt.Printf("  pt discovery usability %s  # Run usability review first (recommended)\n", componentID)
 		fmt.Printf("  pt discovery synthesize %s\n", componentID)
+	} else {
+		fmt.Println("\n⚠ Address missing gates before synthesis.")
 	}
 
 	return nil
@@ -1824,6 +1870,543 @@ func cmdDiscoveryComponent(args []string) error {
 		}
 		fmt.Printf("  [%s] %s: %s%s\n", c.ID, c.Type, c.Content, implHint)
 	}
+
+	return nil
+}
+
+// ============================================================================
+// USABILITY COMMANDS - Persona, Edge Cases, Friction, Usability Review
+// ============================================================================
+
+func cmdDiscoveryPersona(args []string) error {
+	fs := flag.NewFlagSet("discovery persona", flag.ExitOnError)
+	add := fs.String("add", "", "Add persona by name")
+	goals := fs.String("goals", "", "Persona goals (comma-separated)")
+	constraints := fs.String("constraints", "", "Constraints (e.g., 'time pressure, low expertise')")
+	frequency := fs.String("frequency", "daily", "Usage frequency: daily|weekly|occasional")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt discovery persona <component-id> [--add 'name'] [--goals '...']")
+		fmt.Println("\nDefine who uses this component and their needs.")
+		fmt.Println("\nExamples:")
+		fmt.Println("  pt discovery persona order --add \"Day Trader\" --goals \"fast execution\" --constraints \"time pressure\"")
+		fmt.Println("  pt discovery persona order --add \"New User\" --goals \"understand before commit\" --frequency occasional")
+	}
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		fs.Usage()
+		return fmt.Errorf("missing component-id")
+	}
+
+	componentID := fs.Arg(0)
+	syn, err := loadSynthesis(componentID)
+	if err != nil {
+		return err
+	}
+	if syn == nil {
+		return fmt.Errorf("no discovery found for %s", componentID)
+	}
+
+	// Add new persona
+	if *add != "" {
+		id := fmt.Sprintf("P%d", len(syn.Personas)+1)
+		persona := pt.Persona{
+			ID:        id,
+			Name:      *add,
+			Frequency: *frequency,
+		}
+		if *goals != "" {
+			persona.Goals = strings.Split(*goals, ",")
+			for i := range persona.Goals {
+				persona.Goals[i] = strings.TrimSpace(persona.Goals[i])
+			}
+		}
+		if *constraints != "" {
+			persona.Constraints = strings.Split(*constraints, ",")
+			for i := range persona.Constraints {
+				persona.Constraints[i] = strings.TrimSpace(persona.Constraints[i])
+			}
+		}
+		syn.Personas = append(syn.Personas, persona)
+		if err := saveSynthesis(syn); err != nil {
+			return err
+		}
+		fmt.Printf("Added persona [%s]: %s\n", id, *add)
+		if len(persona.Goals) > 0 {
+			fmt.Printf("  Goals: %s\n", strings.Join(persona.Goals, ", "))
+		}
+		if len(persona.Constraints) > 0 {
+			fmt.Printf("  Constraints: %s\n", strings.Join(persona.Constraints, ", "))
+		}
+		return nil
+	}
+
+	// Show personas
+	fmt.Printf("Personas for %s:\n", componentID)
+	fmt.Println(strings.Repeat("─", 50))
+
+	if len(syn.Personas) == 0 {
+		fmt.Println("\nNo personas defined yet.")
+		fmt.Println("\nPersonas help evaluate if the UX fits real user needs.")
+		fmt.Println("Add one with:")
+		fmt.Printf("  pt discovery persona %s --add \"User Type\" --goals \"what they need\"\n", componentID)
+		return nil
+	}
+
+	for _, p := range syn.Personas {
+		fmt.Printf("\n[%s] %s (%s)\n", p.ID, p.Name, p.Frequency)
+		if len(p.Goals) > 0 {
+			fmt.Printf("  Goals: %s\n", strings.Join(p.Goals, ", "))
+		}
+		if len(p.Constraints) > 0 {
+			fmt.Printf("  Constraints: %s\n", strings.Join(p.Constraints, ", "))
+		}
+	}
+
+	return nil
+}
+
+func cmdDiscoveryEdgeCase(args []string) error {
+	fs := flag.NewFlagSet("discovery edge-case", flag.ExitOnError)
+	cover := fs.String("cover", "", "Mark edge case as covered: empty|loading|error|overflow|offline")
+	inOption := fs.String("in", "", "Which option covers this (e.g., A)")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt discovery edge-case <component-id> [--cover <case> --in <option>]")
+		fmt.Println("\nTrack edge case coverage in mockups.")
+		fmt.Println("\nRequired edge cases:")
+		fmt.Println("  empty    - No data to display")
+		fmt.Println("  loading  - Fetching data")
+		fmt.Println("  error    - Something went wrong")
+		fmt.Println("  overflow - Too many items (100+)")
+		fmt.Println("  offline  - Network unavailable")
+		fmt.Println("\nExamples:")
+		fmt.Println("  pt discovery edge-case order --cover empty --in A")
+		fmt.Println("  pt discovery edge-case order --cover error --in A")
+	}
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		fs.Usage()
+		return fmt.Errorf("missing component-id")
+	}
+
+	componentID := fs.Arg(0)
+	syn, err := loadSynthesis(componentID)
+	if err != nil {
+		return err
+	}
+	if syn == nil {
+		return fmt.Errorf("no discovery found for %s", componentID)
+	}
+
+	// Mark edge case as covered
+	if *cover != "" {
+		if *inOption == "" {
+			return fmt.Errorf("--in is required (which option covers this)")
+		}
+		found := false
+		for i, ec := range syn.EdgeCases {
+			if ec.ID == *cover {
+				syn.EdgeCases[i].Covered = true
+				syn.EdgeCases[i].CoveredIn = strings.ToUpper(*inOption)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("unknown edge case %q; use: empty, loading, error, overflow, offline", *cover)
+		}
+		if err := saveSynthesis(syn); err != nil {
+			return err
+		}
+		fmt.Printf("✓ Edge case [%s] marked as covered in option [%s]\n", *cover, strings.ToUpper(*inOption))
+		return nil
+	}
+
+	// Show edge cases
+	fmt.Printf("Edge Cases for %s:\n", componentID)
+	fmt.Println(strings.Repeat("─", 50))
+
+	covered := 0
+	for _, ec := range syn.EdgeCases {
+		status := "○"
+		coveredIn := ""
+		if ec.Covered {
+			status = "●"
+			covered++
+			coveredIn = fmt.Sprintf(" (in %s)", ec.CoveredIn)
+		}
+		fmt.Printf("  %s %-10s %s%s\n", status, ec.ID, ec.Description, coveredIn)
+	}
+
+	fmt.Printf("\nCoverage: %d/%d\n", covered, len(syn.EdgeCases))
+	if covered < 3 {
+		fmt.Println("\n⚠ Cover at least: empty, loading, error before synthesis")
+	}
+
+	return nil
+}
+
+func cmdDiscoveryUsability(args []string) error {
+	fs := flag.NewFlagSet("discovery usability", flag.ExitOnError)
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		return fmt.Errorf("usage: pt discovery usability <component-id>")
+	}
+
+	componentID := fs.Arg(0)
+	syn, err := loadSynthesis(componentID)
+	if err != nil {
+		return err
+	}
+	if syn == nil {
+		return fmt.Errorf("no discovery found for %s", componentID)
+	}
+
+	// Run usability review
+	fmt.Println("╔════════════════════════════════════════════════════════════╗")
+	fmt.Printf("║  USABILITY REVIEW: %-39s ║\n", componentID)
+	fmt.Println("╚════════════════════════════════════════════════════════════╝")
+
+	score := 0
+	maxScore := 0
+	gaps := []string{}
+
+	// 1. PERSONA FIT
+	fmt.Println("\n┌─ PERSONA FIT ──────────────────────────────────────────────┐")
+	if len(syn.Personas) == 0 {
+		fmt.Println("│ ⚠ No personas defined - cannot evaluate user fit")
+		gaps = append(gaps, "Define at least one persona")
+	} else {
+		for _, p := range syn.Personas {
+			maxScore += 10
+			fmt.Printf("│\n│ [%s] %s\n", p.ID, p.Name)
+			if len(p.Goals) > 0 {
+				fmt.Printf("│   Goals: %s\n", strings.Join(p.Goals, ", "))
+			}
+			if len(p.Constraints) > 0 {
+				fmt.Printf("│   Constraints: %s\n", strings.Join(p.Constraints, ", "))
+			}
+
+			// Generate persona-specific questions
+			fmt.Println("│")
+			fmt.Println("│   Questions to verify:")
+			questions := getPersonaQuestions(p, syn.UXType)
+			for _, q := range questions {
+				fmt.Printf("│     ○ %s\n", q)
+			}
+			score += 5 // Partial credit for having persona
+		}
+	}
+	fmt.Println("└────────────────────────────────────────────────────────────┘")
+
+	// 2. FUNCTIONAL COMPLETENESS (Capabilities)
+	fmt.Println("\n┌─ FUNCTIONAL COMPLETENESS ──────────────────────────────────┐")
+	maxScore += len(syn.Capabilities) * 5
+	for _, cap := range syn.Capabilities {
+		covered := false
+		for _, opt := range syn.Options {
+			if opt.Coverage > 0 {
+				covered = true
+				break
+			}
+		}
+		status := "○"
+		if covered {
+			status = "●"
+			score += 5
+		} else {
+			gaps = append(gaps, fmt.Sprintf("Capability %s may not be covered", cap.ID))
+		}
+		if cap.Actor != "" {
+			fmt.Printf("│ %s [%s] %s: %s\n", status, cap.ID, cap.Actor, cap.Goal)
+		} else {
+			fmt.Printf("│ %s [%s] %s\n", status, cap.ID, cap.Goal)
+		}
+	}
+	fmt.Println("└────────────────────────────────────────────────────────────┘")
+
+	// 3. EDGE CASE COVERAGE
+	fmt.Println("\n┌─ EDGE CASE COVERAGE ──────────────────────────────────────┐")
+	for _, ec := range syn.EdgeCases {
+		maxScore += 5
+		status := "○"
+		coveredIn := ""
+		if ec.Covered {
+			status = "●"
+			score += 5
+			coveredIn = fmt.Sprintf(" → %s", ec.CoveredIn)
+		} else {
+			gaps = append(gaps, fmt.Sprintf("Edge case '%s' not covered", ec.ID))
+		}
+		fmt.Printf("│ %s %-12s %s%s\n", status, ec.ID, ec.Description, coveredIn)
+	}
+	fmt.Println("└────────────────────────────────────────────────────────────┘")
+
+	// 4. FRICTION POINTS
+	fmt.Println("\n┌─ FRICTION ANALYSIS ────────────────────────────────────────┐")
+	if syn.Usability != nil && len(syn.Usability.FrictionPoints) > 0 {
+		for _, fp := range syn.Usability.FrictionPoints {
+			status := "○"
+			if fp.Addressed {
+				status = "●"
+			}
+			severityIcon := ""
+			switch fp.Severity {
+			case "high":
+				severityIcon = "🔴"
+			case "medium":
+				severityIcon = "🟡"
+			default:
+				severityIcon = "🟢"
+			}
+			fmt.Printf("│ %s %s [%s] %s\n", status, severityIcon, fp.ID, fp.Description)
+			if fp.Suggestion != "" {
+				fmt.Printf("│     → %s\n", fp.Suggestion)
+			}
+		}
+	} else {
+		fmt.Println("│ No friction points identified yet.")
+		fmt.Println("│")
+		fmt.Println("│ Consider:")
+		fmt.Println("│   • How many clicks/steps to complete primary action?")
+		fmt.Println("│   • Any unnecessary confirmations?")
+		fmt.Println("│   • Can user recover from mistakes easily?")
+		fmt.Println("│   • Is important info visible without scrolling?")
+	}
+	fmt.Println("│")
+	fmt.Printf("│ Add friction: pt discovery friction %s --add \"...\" --severity high\n", componentID)
+	fmt.Println("└────────────────────────────────────────────────────────────┘")
+
+	// 5. ENTRY POINTS (Cross-journey)
+	fmt.Println("\n┌─ ENTRY POINTS ─────────────────────────────────────────────┐")
+	fmt.Println("│ Where can users reach this component from?")
+	fmt.Println("│")
+	if syn.Usability != nil && len(syn.Usability.EntryPoints) > 0 {
+		for _, ep := range syn.Usability.EntryPoints {
+			status := "○"
+			if ep.Supported {
+				status = "●"
+				maxScore += 5
+				score += 5
+			} else {
+				maxScore += 5
+				gaps = append(gaps, fmt.Sprintf("Entry from '%s' not designed", ep.From))
+			}
+			fmt.Printf("│ %s From: %s\n", status, ep.From)
+		}
+	} else {
+		fmt.Println("│ ⚠ No entry points defined")
+		fmt.Println("│ Consider: Where else might users want to access this?")
+		gaps = append(gaps, "Define entry points")
+	}
+	fmt.Println("└────────────────────────────────────────────────────────────┘")
+
+	// SCORE
+	fmt.Println()
+	percentage := 0
+	if maxScore > 0 {
+		percentage = (score * 100) / maxScore
+	}
+	fmt.Printf("Usability Score: %d/%d (%d%%)\n", score, maxScore, percentage)
+
+	// GAPS
+	if len(gaps) > 0 {
+		fmt.Println("\n┌─ GAPS TO ADDRESS ──────────────────────────────────────────┐")
+		for _, g := range gaps {
+			fmt.Printf("│ ⚠ %s\n", g)
+		}
+		fmt.Println("└────────────────────────────────────────────────────────────┘")
+	}
+
+	// Update synthesis with review
+	if syn.Usability == nil {
+		syn.Usability = &pt.UsabilityReview{ComponentID: componentID}
+	}
+	syn.Usability.Score = percentage
+	syn.Usability.Gaps = gaps
+	syn.Usability.ReviewedAt = time.Now().Format(time.RFC3339)
+	if err := saveSynthesis(syn); err != nil {
+		return err
+	}
+
+	// Next steps
+	fmt.Println()
+	if percentage >= 70 {
+		fmt.Println("✓ Usability review complete. Ready to synthesize.")
+		fmt.Printf("  pt discovery synthesize %s\n", componentID)
+	} else {
+		fmt.Println("⚠ Address gaps above before synthesizing.")
+	}
+
+	return nil
+}
+
+func getPersonaQuestions(p pt.Persona, uxType string) []string {
+	questions := []string{}
+
+	// Goal-based questions
+	for _, goal := range p.Goals {
+		questions = append(questions, fmt.Sprintf("Can %s achieve: %s?", p.Name, goal))
+	}
+
+	// Constraint-based questions
+	for _, c := range p.Constraints {
+		switch strings.ToLower(c) {
+		case "time pressure":
+			questions = append(questions, "Can complete primary action in <3 steps?")
+		case "low expertise", "new user":
+			questions = append(questions, "Is terminology clear without jargon?")
+			questions = append(questions, "Is there help/guidance available?")
+		case "mobile", "on the go":
+			questions = append(questions, "Works well on small screens?")
+		}
+	}
+
+	// UX type specific
+	switch uxType {
+	case "web":
+		questions = append(questions, "Critical info visible without scrolling?")
+	case "cli":
+		questions = append(questions, "Has --help with examples?")
+	case "tui":
+		questions = append(questions, "Keyboard shortcuts for power users?")
+	}
+
+	if len(questions) == 0 {
+		questions = append(questions, "Does the UX fit this user's needs?")
+	}
+
+	return questions
+}
+
+func cmdDiscoveryFriction(args []string) error {
+	fs := flag.NewFlagSet("discovery friction", flag.ExitOnError)
+	add := fs.String("add", "", "Add friction point description")
+	severity := fs.String("severity", "medium", "Severity: high|medium|low")
+	location := fs.String("at", "", "Where in the flow")
+	suggestion := fs.String("fix", "", "Suggested fix")
+	address := fs.String("address", "", "Mark friction point as addressed")
+	fs.Usage = func() {
+		fmt.Println("Usage: pt discovery friction <component-id> [flags]")
+		fmt.Println("\nIdentify and track UX friction points.")
+		fmt.Println("\nFlags:")
+		fmt.Println("  --add         Friction description")
+		fmt.Println("  --severity    high|medium|low")
+		fmt.Println("  --at          Location in the flow")
+		fmt.Println("  --fix         Suggested fix")
+		fmt.Println("  --address     Mark friction point ID as addressed")
+		fmt.Println("\nExamples:")
+		fmt.Println("  pt discovery friction order --add \"3 clicks to submit\" --severity high --fix \"Single-click submit\"")
+		fmt.Println("  pt discovery friction order --address FP1")
+	}
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		fs.Usage()
+		return fmt.Errorf("missing component-id")
+	}
+
+	componentID := fs.Arg(0)
+	syn, err := loadSynthesis(componentID)
+	if err != nil {
+		return err
+	}
+	if syn == nil {
+		return fmt.Errorf("no discovery found for %s", componentID)
+	}
+
+	// Initialize usability if needed
+	if syn.Usability == nil {
+		syn.Usability = &pt.UsabilityReview{ComponentID: componentID}
+	}
+
+	// Mark as addressed
+	if *address != "" {
+		for i, fp := range syn.Usability.FrictionPoints {
+			if fp.ID == *address {
+				syn.Usability.FrictionPoints[i].Addressed = true
+				if err := saveSynthesis(syn); err != nil {
+					return err
+				}
+				fmt.Printf("✓ Friction point [%s] marked as addressed\n", *address)
+				return nil
+			}
+		}
+		return fmt.Errorf("friction point %s not found", *address)
+	}
+
+	// Add new friction point
+	if *add != "" {
+		id := fmt.Sprintf("FP%d", len(syn.Usability.FrictionPoints)+1)
+		fp := pt.FrictionPoint{
+			ID:          id,
+			Description: *add,
+			Severity:    *severity,
+			Location:    *location,
+			Suggestion:  *suggestion,
+			Addressed:   false,
+		}
+		syn.Usability.FrictionPoints = append(syn.Usability.FrictionPoints, fp)
+		if err := saveSynthesis(syn); err != nil {
+			return err
+		}
+
+		severityIcon := "🟡"
+		switch *severity {
+		case "high":
+			severityIcon = "🔴"
+		case "low":
+			severityIcon = "🟢"
+		}
+		fmt.Printf("Added friction [%s] %s: %s\n", id, severityIcon, *add)
+		if *suggestion != "" {
+			fmt.Printf("  Fix: %s\n", *suggestion)
+		}
+		return nil
+	}
+
+	// Show friction points
+	fmt.Printf("Friction Points for %s:\n", componentID)
+	fmt.Println(strings.Repeat("─", 50))
+
+	if len(syn.Usability.FrictionPoints) == 0 {
+		fmt.Println("\nNo friction points identified.")
+		fmt.Println("\nConsider common friction sources:")
+		fmt.Println("  • Too many steps to complete action")
+		fmt.Println("  • Unclear error messages")
+		fmt.Println("  • No way to undo/cancel")
+		fmt.Println("  • Required info not visible")
+		fmt.Println("  • Confusing terminology")
+		return nil
+	}
+
+	unaddressed := 0
+	for _, fp := range syn.Usability.FrictionPoints {
+		status := "○"
+		if fp.Addressed {
+			status = "●"
+		} else {
+			unaddressed++
+		}
+		severityIcon := "🟡"
+		switch fp.Severity {
+		case "high":
+			severityIcon = "🔴"
+		case "low":
+			severityIcon = "🟢"
+		}
+		fmt.Printf("\n%s %s [%s] %s\n", status, severityIcon, fp.ID, fp.Description)
+		if fp.Location != "" {
+			fmt.Printf("    At: %s\n", fp.Location)
+		}
+		if fp.Suggestion != "" {
+			fmt.Printf("    Fix: %s\n", fp.Suggestion)
+		}
+	}
+
+	fmt.Printf("\n%d friction points, %d unaddressed\n", len(syn.Usability.FrictionPoints), unaddressed)
 
 	return nil
 }

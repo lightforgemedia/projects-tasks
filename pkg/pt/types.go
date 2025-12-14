@@ -277,6 +277,10 @@ type UXSynthesis struct {
 	Exploration    ExplorationLog    `json:"exploration"`            // Full exploration history
 	Feedback       []FeedbackItem    `json:"feedback,omitempty"`     // User feedback
 	Iterations     int               `json:"iterations"`             // Refinement count
+	// Usability fields
+	Personas       []Persona         `json:"personas,omitempty"`     // Who uses this component
+	EdgeCases      []EdgeCaseState   `json:"edge_cases,omitempty"`   // Required UI states
+	Usability      *UsabilityReview  `json:"usability,omitempty"`    // Usability assessment
 	CreatedAt      string            `json:"created_at"`
 	SynthesizedAt  string            `json:"synthesized_at,omitempty"`
 	ApprovedAt     string            `json:"approved_at,omitempty"`
@@ -318,6 +322,71 @@ type ImplementationGuidance struct {
 	Patterns    map[string]string `json:"patterns"`     // Component -> pattern mapping
 	Examples    map[string]string `json:"examples"`     // Component -> code example
 	Constraints []string          `json:"constraints"`  // Must-follow rules
+}
+
+// ============================================================================
+// USABILITY TYPES - Persona-driven review and friction detection
+// ============================================================================
+
+// Persona represents a user type with specific needs and constraints.
+type Persona struct {
+	ID          string   `json:"id"`                    // e.g., "power-user", "casual"
+	Name        string   `json:"name"`                  // e.g., "Day Trader", "Casual Investor"
+	Description string   `json:"description,omitempty"` // Context about this user
+	Goals       []string `json:"goals,omitempty"`       // What they want to achieve
+	Constraints []string `json:"constraints,omitempty"` // Time pressure, expertise level, etc.
+	Frequency   string   `json:"frequency,omitempty"`   // daily|weekly|occasional
+}
+
+// EdgeCaseState represents a required UI state to consider.
+type EdgeCaseState struct {
+	ID          string `json:"id"`                    // e.g., "empty", "error", "loading"
+	Name        string `json:"name"`                  // Human-readable name
+	Description string `json:"description,omitempty"` // When this occurs
+	Covered     bool   `json:"covered"`               // Has mockup/design
+	CoveredIn   string `json:"covered_in,omitempty"`  // Which option covers it
+}
+
+// RequiredEdgeCases returns standard edge cases for UX completeness.
+func RequiredEdgeCases() []EdgeCaseState {
+	return []EdgeCaseState{
+		{ID: "empty", Name: "Empty State", Description: "No data to display"},
+		{ID: "loading", Name: "Loading State", Description: "Fetching data"},
+		{ID: "error", Name: "Error State", Description: "Something went wrong"},
+		{ID: "overflow", Name: "Overflow", Description: "Too many items (100+)"},
+		{ID: "offline", Name: "Offline/Timeout", Description: "Network unavailable"},
+	}
+}
+
+// FrictionPoint identifies UX friction in a flow.
+type FrictionPoint struct {
+	ID          string `json:"id"`                    // e.g., "F1"
+	Location    string `json:"location"`              // Where in the flow
+	Description string `json:"description"`           // What the friction is
+	Severity    string `json:"severity"`              // high|medium|low
+	Suggestion  string `json:"suggestion,omitempty"`  // How to fix
+	Addressed   bool   `json:"addressed"`             // Has it been fixed?
+}
+
+// EntryPoint tracks how users can reach this component.
+type EntryPoint struct {
+	From      string `json:"from"`                // Source component/screen
+	Supported bool   `json:"supported"`           // Is this entry point designed?
+	Notes     string `json:"notes,omitempty"`     // Implementation notes
+}
+
+// UsabilityReview captures the full usability assessment.
+type UsabilityReview struct {
+	ComponentID    string          `json:"component_id"`
+	ReviewedAt     string          `json:"reviewed_at,omitempty"`
+	Personas       []Persona       `json:"personas,omitempty"`        // Who uses this
+	PersonaFit     map[string]bool `json:"persona_fit,omitempty"`     // persona_id -> fits?
+	EdgeCases      []EdgeCaseState `json:"edge_cases,omitempty"`      // Required states
+	FrictionPoints []FrictionPoint `json:"friction_points,omitempty"` // Identified friction
+	EntryPoints    []EntryPoint    `json:"entry_points,omitempty"`    // How users arrive
+	ExitHandling   []string        `json:"exit_handling,omitempty"`   // Cancel, back, timeout
+	Score          int             `json:"score,omitempty"`           // 0-100 usability score
+	Gaps           []string        `json:"gaps,omitempty"`            // Unaddressed issues
 }
 
 // HistoryEvent captures lifecycle events for a task.
