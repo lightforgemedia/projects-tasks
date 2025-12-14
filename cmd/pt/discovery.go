@@ -216,28 +216,82 @@ func cmdDiscoveryInit(args []string) error {
 
 	// Agent guidance for init → capabilities transition
 	fmt.Println()
-	fmt.Println("┌─ AGENT: GATHER USER CONTEXT ──────────────────────────────┐")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ Before exploring options, understand WHO uses this and    │")
-	fmt.Println("│ WHAT they need to accomplish.                             │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ ASK THE USER:                                             │")
-	fmt.Println("│  1. \"Who will use this component?\" (persona)              │")
-	fmt.Println("│     - Their role/context                                  │")
-	fmt.Println("│     - Primary goals                                       │")
-	fmt.Println("│     - Constraints (time pressure, expertise level)        │")
-	fmt.Println("│  2. \"What actions must this component support?\"           │")
-	fmt.Println("│     - Core functionality (actions)                        │")
-	fmt.Println("│     - What info needs to be displayed                     │")
-	fmt.Println("│     - Any validation requirements                         │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ Record responses with:                                    │")
-	fmt.Printf("│   pt discovery persona %s --add \"...\" --goals \"...\"\n", componentID)
-	fmt.Printf("│   pt discovery capabilities %s --add \"action: ...\"\n", componentID)
-	fmt.Println("│                                                           │")
-	fmt.Println("│ WHY: Personas drive usability review. Capabilities define │")
-	fmt.Println("│ what \"complete\" means. Both are gates for synthesis.      │")
-	fmt.Println("└───────────────────────────────────────────────────────────┘")
+	fmt.Println(`┌─ AGENT SKILL: GATHER USER CONTEXT ────────────────────────────────────────────┐
+│                                                                              │
+│ GOAL: Understand WHO uses this component and WHAT they need before exploring │
+│ UX options. This context drives all downstream decisions.                    │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 1: DISCOVER PERSONAS                                                    │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Ask the user: "Who will use this component?"                                 │
+│                                                                              │
+│ Probe for:                                                                   │
+│   • Role/context - "What's their job? When do they use this?"                │
+│   • Expertise    - "Are they technical? Power user or novice?"               │
+│   • Goals        - "What are they trying to accomplish?"                     │
+│   • Constraints  - "Are they under time pressure? Any limitations?"          │
+│   • Frequency    - "How often will they use this? Daily? Weekly?"            │
+│                                                                              │
+│ GOOD PERSONA EXAMPLE:                                                        │
+│   Name: Day Trader                                                           │
+│   Goals: Execute trades in <3 clicks, see confirmation immediately           │
+│   Constraints: Time pressure, market moving fast, no patience for wizards    │
+│   Frequency: Daily, dozens of times per session                              │
+│                                                                              │
+│ BAD PERSONA (too vague):                                                     │
+│   Name: User                                                                 │
+│   Goals: Use the app                                                         │
+│                                                                              │
+│ Record with:`)
+	fmt.Printf("│   pt discovery persona %s --add \"Day Trader\" --goals \"fast execution\" \\\n", componentID)
+	fmt.Println(`│     --constraints "time pressure" --frequency daily                          │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 2: DISCOVER CAPABILITIES                                                │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Ask the user: "What must this component be able to do?"                      │
+│                                                                              │
+│ Probe for each category:                                                     │
+│   • Actions    - "What actions can the user take?"                           │
+│   • Display    - "What information needs to be shown?"                       │
+│   • Input      - "What data does the user provide?"                          │
+│   • Validation - "What rules must be enforced?"                              │
+│   • Errors     - "What can go wrong? How should errors appear?"              │
+│                                                                              │
+│ GOOD CAPABILITY FORMAT:                                                      │
+│   action: Submit limit order with price and quantity                         │
+│   display: Show current bid/ask spread                                       │
+│   input: Accept symbol, quantity, price, order type                          │
+│   validation: Reject orders exceeding buying power                           │
+│   error: Show rejection reason from broker                                   │
+│                                                                              │
+│ BAD CAPABILITY (too vague):                                                  │
+│   handle orders                                                              │
+│   show stuff                                                                 │
+│                                                                              │
+│ Record with:`)
+	fmt.Printf("│   pt discovery capabilities %s --add \"action: Submit order\"\n", componentID)
+	fmt.Printf("│   pt discovery capabilities %s --add \"display: Show confirmation\"\n", componentID)
+	fmt.Println(`│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ DONE WHEN:                                                                   │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│   ✓ At least 1 persona defined with specific goals and constraints           │
+│   ✓ At least 3 capabilities covering core actions                            │
+│   ✓ User confirms: "Yes, that covers what this needs to do"                  │
+│                                                                              │
+│ Then proceed:`)
+	fmt.Printf("│   pt discovery capabilities %s --confirm\n", componentID)
+	fmt.Println(`│                                                                              │
+│ WHY THIS MATTERS:                                                            │
+│   • Personas drive the usability review - you'll verify options fit them     │
+│   • Capabilities define "complete" - options are scored on coverage          │
+│   • Vague context = vague options = wasted iteration cycles                  │
+└──────────────────────────────────────────────────────────────────────────────┘`)
 	return nil
 }
 
@@ -455,28 +509,89 @@ func cmdDiscoveryCapabilities(args []string) error {
 
 		// Agent guidance for capabilities → exploring transition
 		fmt.Println()
-		fmt.Println("┌─ AGENT: EXPLORE UX OPTIONS ───────────────────────────────┐")
-		fmt.Println("│                                                           │")
-		fmt.Println("│ Now generate multiple UX approaches. The goal is BREADTH  │")
-		fmt.Println("│ - explore different patterns before narrowing down.       │")
-		fmt.Println("│                                                           │")
-		fmt.Println("│ REQUIREMENTS (gates for synthesis):                       │")
-		fmt.Println("│  • 5+ distinct options                                    │")
-		fmt.Println("│  • 2+ different approaches (e.g., wizard vs single-cmd)   │")
-		fmt.Println("│  • Cover edge cases: empty, loading, error states         │")
-		fmt.Println("│                                                           │")
-		fmt.Println("│ FOR EACH OPTION:                                          │")
-		fmt.Println("│  1. Create ASCII mockup showing the UX                    │")
-		fmt.Println("│  2. Label components with IDs for precise feedback        │")
-		fmt.Println("│  3. Note which capabilities it covers                     │")
-		fmt.Println("│  4. Consider: Does this fit the persona's constraints?    │")
-		fmt.Println("│                                                           │")
+		fmt.Printf(`┌─ AGENT SKILL: EXPLORE UX OPTIONS ─────────────────────────────────────────────┐
+│                                                                              │
+│ GOAL: Generate multiple distinct UX approaches. Explore BREADTH before       │
+│ narrowing down. You work autonomously here - user review comes after.        │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ GATES (must pass before synthesis):                                          │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│   • 5+ distinct options explored                                             │
+│   • 2+ different approaches tried (e.g., wizard vs single-command)           │
+│   • 3+ edge cases covered (empty, loading, error minimum)                    │
+│   • 1+ persona defined                                                       │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ HOW TO EXPLORE:                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ For EACH option you create:                                                  │
+│                                                                              │
+│ 1. CREATE ASCII MOCKUP - Show the actual UX, not just describe it            │
+│                                                                              │
+│    GOOD MOCKUP (CLI):                                                        │
+│    ┌──────────────────────────────────────────┐                              │
+│    │ $ sot order buy SPY 450C --qty 10        │  [A1] Command                │
+│    │                                          │                              │
+│    │ Order Preview:                           │  [A2] Preview section        │
+│    │   Symbol: SPY 450C 12/20                 │                              │
+│    │   Action: BUY 10 contracts               │                              │
+│    │   Price:  $2.45 (limit)                  │                              │
+│    │   Total:  $2,450.00                      │                              │
+│    │                                          │                              │
+│    │ Confirm? [Y/n]: _                        │  [A3] Confirmation           │
+│    └──────────────────────────────────────────┘                              │
+│                                                                              │
+│    BAD MOCKUP: "A command that takes parameters and shows a preview"         │
+│                                                                              │
+│ 2. LABEL COMPONENTS with IDs like [A1], [A2], [B3.1]                         │
+│    These enable precise feedback: "Make [A2] more compact"                   │
+│                                                                              │
+│ 3. NOTE COVERAGE - Which capabilities does this option handle?               │
+│    Record with: pt discovery coverage %s <label> <cap-id> full              │
+│                                                                              │
+│ 4. CONSIDER PERSONA FIT                                                      │
+│    Ask yourself: "Would [persona] be happy with this?"                       │
+│    If persona wants speed, don't propose a 5-step wizard.                    │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ APPROACHES TO TRY (pick at least 2):                                         │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+`, componentID)
 		fmt.Printf("│ Run: pt discovery guidance %s exploration\n", componentID)
-		fmt.Println("│ This shows patterns and component IDs for your UX type.   │")
-		fmt.Println("│                                                           │")
-		fmt.Println("│ You can explore autonomously - user review comes after    │")
-		fmt.Println("│ synthesis when top 3 options are ready.                   │")
-		fmt.Println("└───────────────────────────────────────────────────────────┘")
+		fmt.Println(`│ This shows approach patterns specific to your UX type (cli/tui/web/api).     │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ EDGE CASES TO COVER:                                                         │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│   empty   - What shows when there's no data?                                 │
+│   loading - What shows while fetching?                                       │
+│   error   - What shows when something fails?                                 │
+│   overflow- What happens with 100+ items?                                    │
+│   offline - What happens with no network?                                    │
+│                                                                              │
+│ For each, sketch the state in at least one option, then mark covered:`)
+		fmt.Printf("│   pt discovery edge-case %s --cover empty --in A\n", componentID)
+		fmt.Println(`│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ DONE WHEN:                                                                   │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│   ✓ 5+ options with mockups                                                  │
+│   ✓ 2+ different approaches tagged                                           │
+│   ✓ empty, loading, error edge cases covered                                 │
+│   ✓ Coverage marked for capabilities                                         │
+│                                                                              │
+│ Then synthesize to pick top 3:`)
+		fmt.Printf("│   pt discovery synthesize %s\n", componentID)
+		fmt.Println(`│                                                                              │
+│ AUTONOMY NOTE: You can explore without user input. The user reviews          │
+│ the synthesized top 3, not every option you explore.                         │
+└──────────────────────────────────────────────────────────────────────────────┘`)
 		return nil
 	}
 
@@ -881,27 +996,83 @@ func cmdDiscoverySynthesize(args []string) error {
 
 	// Agent guidance for synthesis → review transition
 	fmt.Println()
-	fmt.Println("┌─ AGENT: STOP AND PRESENT TO USER ─────────────────────────┐")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ Synthesis complete. Now bring in the USER for review.     │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ WHAT TO DO:                                               │")
-	fmt.Println("│  1. Present the top 3 options to the user                 │")
-	fmt.Println("│  2. For EACH option, explain:                             │")
-	fmt.Println("│     - What it does (from description)                     │")
-	fmt.Println("│     - Why it made the top 3 (coverage, fit)               │")
-	fmt.Println("│     - Trade-offs vs other options                         │")
-	fmt.Println("│  3. State which option is recommended and WHY             │")
-	fmt.Println("│  4. Ask user: \"Which option do you prefer, or do you      │")
-	fmt.Println("│     have feedback on any of these?\"                       │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ WAIT FOR USER RESPONSE before proceeding.                 │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ User commands:                                            │")
-	fmt.Printf("│   pt discovery review %s     # View full synthesis  │\n", componentID)
-	fmt.Printf("│   pt discovery feedback %s \"...\"  # Give feedback   │\n", componentID)
-	fmt.Printf("│   pt discovery approve %s    # Approve direction    │\n", componentID)
-	fmt.Println("└───────────────────────────────────────────────────────────┘")
+	fmt.Printf(`┌─ AGENT SKILL: PRESENT OPTIONS TO USER ────────────────────────────────────────┐
+│                                                                              │
+│ ⚠️  STOP: This is a USER DECISION POINT. Do not proceed autonomously.        │
+│                                                                              │
+│ GOAL: Present the synthesized options clearly so the user can make an        │
+│ informed decision. Your job is to facilitate their review, not decide.       │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ HOW TO PRESENT OPTIONS:                                                      │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Use this format for EACH of the top 3 options:                               │
+│                                                                              │
+│   ## Option [A]: <Name>                                                      │
+│                                                                              │
+│   **What it does:** <1-2 sentence description>                               │
+│                                                                              │
+│   **Mockup:**                                                                │
+│   <Show the ASCII mockup with component labels>                              │
+│                                                                              │
+│   **Strengths:**                                                             │
+│   - <Why this option is good>                                                │
+│   - <What capabilities it covers well>                                       │
+│                                                                              │
+│   **Trade-offs:**                                                            │
+│   - <What it sacrifices compared to other options>                           │
+│   - <Who might NOT like this approach>                                       │
+│                                                                              │
+│   **Persona fit:** <Does this match the persona's goals and constraints?>    │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ AFTER PRESENTING ALL OPTIONS:                                                │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ State your recommendation:                                                   │
+│   "I recommend Option [X] because <reason tied to persona goals>"            │
+│                                                                              │
+│ Then ask the user:                                                           │
+│   "Which option do you prefer? Or do you have feedback on any of these       │
+│   approaches? You can also point to specific components like [A2] if         │
+│   you want changes to part of an option."                                    │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ HANDLING USER RESPONSES:                                                     │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ If user says "Option A" or "I like A":                                       │
+│   → Record approval: pt discovery approve %s --select A               │
+│                                                                              │
+│ If user has concerns or wants changes:                                       │
+│   → Record feedback: pt discovery feedback %s "user's concern"        │
+│   → Then address it (iterate)                                                │
+│                                                                              │
+│ If user asks questions:                                                      │
+│   → Answer them, reference specific components [A1], [B2], etc.              │
+│   → Don't proceed until they give explicit direction                         │
+│                                                                              │
+│ If user wants to see more detail:                                            │
+│   → Run: pt discovery review %s                                       │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ CRITICAL: WAIT FOR USER                                                      │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Do NOT:                                                                      │
+│   ✗ Pick an option yourself                                                  │
+│   ✗ Start implementing before approval                                       │
+│   ✗ Assume silence means approval                                            │
+│   ✗ Skip showing mockups to save space                                       │
+│                                                                              │
+│ DO:                                                                          │
+│   ✓ Wait for explicit user response                                          │
+│   ✓ Ask clarifying questions if their preference is unclear                  │
+│   ✓ Record ALL feedback, even small concerns                                 │
+│   ✓ Be prepared for multiple review rounds                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+`, componentID, componentID, componentID)
 	return nil
 }
 
@@ -1021,24 +1192,80 @@ func cmdDiscoveryReview(args []string) error {
 
 	// Agent guidance for reviewing phase
 	fmt.Println()
-	fmt.Println("┌─ AGENT: FACILITATE USER REVIEW ───────────────────────────┐")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ The synthesis is now in front of the user. Your role:     │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ 1. WAIT for user to review the options                    │")
-	fmt.Println("│ 2. ANSWER questions about any option or component         │")
-	fmt.Println("│ 3. RECORD feedback when user provides it:                 │")
-	fmt.Printf("│    pt discovery feedback %s \"user's feedback\"\n", componentID)
-	fmt.Println("│ 4. If user approves, run:                                 │")
-	fmt.Printf("│    pt discovery approve %s\n", componentID)
-	fmt.Println("│                                                           │")
-	fmt.Println("│ DO NOT proceed to implementation until user explicitly    │")
-	fmt.Println("│ approves. If they have concerns, record as feedback and   │")
-	fmt.Println("│ iterate.                                                  │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ PROMPT: \"Which option do you prefer? Any feedback on the  │")
-	fmt.Println("│ approaches or specific components?\"                       │")
-	fmt.Println("└───────────────────────────────────────────────────────────┘")
+	fmt.Printf(`┌─ AGENT SKILL: FACILITATE USER REVIEW ─────────────────────────────────────────┐
+│                                                                              │
+│ ⚠️  USER IS REVIEWING: Your role is facilitator, not decision-maker.         │
+│                                                                              │
+│ GOAL: Help the user understand the options and reach a decision. Answer      │
+│ questions, clarify trade-offs, and record their feedback accurately.         │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ RESPONDING TO USER QUESTIONS:                                                │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ "What's the difference between A and B?"                                     │
+│   → Compare specific aspects: speed, complexity, capability coverage         │
+│   → Reference component IDs: "[A2] uses a table, [B2] uses a list"           │
+│   → Tie back to persona: "For a [persona], A is faster because..."           │
+│                                                                              │
+│ "Can we combine parts of A and B?"                                           │
+│   → Yes! Record as: pt discovery feedback %s "Combine [A2] with [B3]" │
+│   → You'll address this in the iterate phase                                 │
+│                                                                              │
+│ "I don't like [A3]"                                                          │
+│   → Ask: "What specifically bothers you about it?"                           │
+│   → Record specific concern, not just "doesn't like it"                      │
+│   → pt discovery feedback %s --component A3 "specific issue"          │
+│                                                                              │
+│ "What do you recommend?"                                                     │
+│   → Give your recommendation WITH reasoning                                  │
+│   → "I recommend [X] because it best fits [persona]'s goal of [goal]"        │
+│   → But always ask: "Does that match your thinking?"                         │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ RECORDING FEEDBACK:                                                          │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ General feedback:                                                            │
+│   pt discovery feedback %s "The preview section needs more info"      │
+│                                                                              │
+│ On specific component:                                                       │
+│   pt discovery feedback %s --component A2 "Too cluttered"             │
+│                                                                              │
+│ On entire option:                                                            │
+│   pt discovery feedback %s --option B "Too many steps"                │
+│                                                                              │
+│ GOOD FEEDBACK (specific, actionable):                                        │
+│   "The confirmation step [A3] should show the total cost prominently"        │
+│                                                                              │
+│ BAD FEEDBACK (vague):                                                        │
+│   "I don't like it" → Probe: "What specifically?"                            │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ MOVING FORWARD:                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ When user indicates approval:                                                │
+│   "I like A" / "Let's go with B" / "Option A looks good"                     │
+│   → Confirm: "Great, I'll approve Option [X]. Ready to proceed?"             │
+│   → Then: pt discovery approve %s --select A                          │
+│                                                                              │
+│ When user has concerns but no clear direction:                               │
+│   → Summarize the concerns you've recorded                                   │
+│   → Ask: "Should I iterate on these and present updated options?"            │
+│   → If yes: pt discovery iterate %s (then re-synthesize)              │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ NEVER:                                                                       │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│   ✗ Approve without explicit user confirmation                               │
+│   ✗ Dismiss user concerns as unimportant                                     │
+│   ✗ Rush the review ("just pick one")                                        │
+│   ✗ Start implementing before approval                                       │
+│   ✗ Assume user knows the component ID system - explain if needed            │
+└──────────────────────────────────────────────────────────────────────────────┘
+`, componentID, componentID, componentID, componentID, componentID, componentID, componentID)
 
 	return nil
 }
@@ -1097,22 +1324,81 @@ func cmdDiscoveryFeedback(args []string) error {
 
 	// Agent guidance for feedback → iterate transition
 	fmt.Println()
-	fmt.Println("┌─ AGENT: ADDRESS FEEDBACK ─────────────────────────────────┐")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ User has given feedback. Now address it:                  │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ 1. UNDERSTAND the feedback - ask clarifying questions     │")
-	fmt.Println("│    if the concern isn't clear                             │")
-	fmt.Println("│ 2. REVISE the affected option(s) or create new ones       │")
-	fmt.Println("│ 3. UPDATE mockups if needed                               │")
-	fmt.Println("│ 4. Mark feedback addressed:                               │")
-	fmt.Printf("│    pt discovery iterate %s --address %s\n", componentID, fID)
-	fmt.Println("│ 5. Re-synthesize if options changed significantly:        │")
-	fmt.Printf("│    pt discovery synthesize %s\n", componentID)
-	fmt.Println("│                                                           │")
-	fmt.Println("│ After addressing all feedback, present updated synthesis  │")
-	fmt.Println("│ to user for another review round.                         │")
-	fmt.Println("└───────────────────────────────────────────────────────────┘")
+	fmt.Printf(`┌─ AGENT SKILL: ADDRESS USER FEEDBACK ──────────────────────────────────────────┐
+│                                                                              │
+│ GOAL: Address the user's feedback thoughtfully, then return to review.       │
+│ Each feedback item represents a user concern that must be resolved.          │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 1: UNDERSTAND THE FEEDBACK                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Before making changes, ensure you understand the concern:                    │
+│                                                                              │
+│ If feedback is VAGUE ("I don't like it", "feels wrong"):                     │
+│   → Ask: "Can you tell me more about what bothers you?"                      │
+│   → Ask: "Is it the layout, the information shown, or the interaction?"      │
+│   → Don't guess - get clarity first                                          │
+│                                                                              │
+│ If feedback is SPECIFIC ("[A3] should show the total"):                      │
+│   → Confirm: "So you want the total cost displayed in the confirmation?"     │
+│   → Then proceed to address it                                               │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 2: REVISE OPTIONS                                                       │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Options for addressing feedback:                                             │
+│                                                                              │
+│ A) MODIFY EXISTING OPTION                                                    │
+│    - Update the mockup to address the concern                                │
+│    - Keep the same option label, just revise the content                     │
+│    - Show the user the before/after                                          │
+│                                                                              │
+│ B) CREATE NEW OPTION                                                         │
+│    - If the feedback suggests a fundamentally different approach             │
+│    - Add as a new option: pt discovery option %s F --name "..." --desc "..." │
+│                                                                              │
+│ C) COMBINE OPTIONS                                                           │
+│    - If user wants parts of A and B                                          │
+│    - Create new option that merges the best parts                            │
+│    - Explain what was combined                                               │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 3: MARK ADDRESSED                                                       │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ After making changes:                                                        │
+│   pt discovery iterate %s --address %s
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 4: RE-SYNTHESIZE AND PRESENT                                            │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ If you created/modified options:                                             │
+│   pt discovery synthesize %s
+│                                                                              │
+│ Then present the updated options to the user:                                │
+│   "I've updated Option [X] to address your feedback about [concern].         │
+│   Here's the revised version: [show mockup]                                  │
+│   Does this address your concern?"                                           │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ ITERATION LOOP:                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│   User feedback → Address → Re-synthesize → Present → User feedback → ...    │
+│                                                                              │
+│ This loop continues until user approves. Each iteration should:              │
+│   • Address ALL outstanding feedback                                         │
+│   • Show what changed                                                        │
+│   • Ask if concerns are resolved                                             │
+│                                                                              │
+│ Track iteration count - if >3 iterations, consider:                          │
+│   "We've iterated a few times. Would it help to step back and               │
+│   reconsider the core approach, or are we close to what you need?"           │
+└──────────────────────────────────────────────────────────────────────────────┘
+`, componentID, componentID, fID, componentID)
 	return nil
 }
 
@@ -1251,25 +1537,88 @@ func cmdDiscoveryApprove(args []string) error {
 
 	// Agent guidance for approved → implementation transition
 	fmt.Println()
-	fmt.Println("┌─ AGENT: GENERATE HANDOFF & IMPLEMENT ─────────────────────┐")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ User has approved the UX direction. Next steps:           │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ 1. GENERATE implementation handoff:                       │")
-	fmt.Printf("│    pt discovery handoff %s\n", componentID)
-	fmt.Println("│    This creates detailed implementation guidance.         │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ 2. IMPLEMENT following the approved mockups and patterns  │")
-	fmt.Println("│    - Match the visual structure from mockups              │")
-	fmt.Println("│    - Implement all edge cases that were covered           │")
-	fmt.Println("│    - Honor persona constraints (speed, simplicity, etc.)  │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ 3. VALIDATE with user once implementation is complete     │")
-	fmt.Println("│    - Demo the working component                           │")
-	fmt.Println("│    - Compare to approved mockups                          │")
-	fmt.Println("│                                                           │")
-	fmt.Println("│ Discovery complete! You may now proceed with coding.      │")
-	fmt.Println("└───────────────────────────────────────────────────────────┘")
+	fmt.Printf(`┌─ AGENT SKILL: IMPLEMENT APPROVED UX ──────────────────────────────────────────┐
+│                                                                              │
+│ ✅ DISCOVERY COMPLETE: User has approved the UX direction.                    │
+│                                                                              │
+│ You now have a clear mandate to implement. The discovery process has         │
+│ validated the approach - now execute it faithfully.                          │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 1: GENERATE HANDOFF                                                     │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│   pt discovery handoff %s
+│                                                                              │
+│ This generates implementation guidance including:                            │
+│   • Selected option's mockup and component breakdown                         │
+│   • Edge cases to implement (empty, loading, error, etc.)                    │
+│   • Persona constraints to honor                                             │
+│   • Type-specific patterns (CLI flags, TUI keys, etc.)                       │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 2: IMPLEMENT                                                            │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Follow the approved mockup closely:                                          │
+│                                                                              │
+│   MATCH THE STRUCTURE                                                        │
+│   If mockup shows:                                                           │
+│     [A1] Command header                                                      │
+│     [A2] Preview table                                                       │
+│     [A3] Confirmation prompt                                                 │
+│   Then implement in that order with those elements.                          │
+│                                                                              │
+│   IMPLEMENT ALL EDGE CASES                                                   │
+│   For each edge case marked as covered:                                      │
+│     • empty   → Show appropriate empty state message                         │
+│     • loading → Show progress indicator                                      │
+│     • error   → Show error with recovery guidance                            │
+│     • overflow→ Paginate or truncate gracefully                              │
+│     • offline → Handle gracefully with clear message                         │
+│                                                                              │
+│   HONOR PERSONA CONSTRAINTS                                                  │
+│   If persona wants "fast execution":                                         │
+│     • Minimize required inputs                                               │
+│     • Use smart defaults                                                     │
+│     • Avoid unnecessary confirmations                                        │
+│   If persona is "novice":                                                    │
+│     • Include help text                                                      │
+│     • Validate inputs with clear errors                                      │
+│     • Guide through the process                                              │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 3: VALIDATE WITH USER                                                   │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Once implemented, demo to the user:                                          │
+│                                                                              │
+│   "Here's the implemented [component]. Let me walk you through it:           │
+│   [Show working demo or output]                                              │
+│                                                                              │
+│   Compare to approved mockup:                                                │
+│   ✓ [A1] Command header - matches                                            │
+│   ✓ [A2] Preview table - matches                                             │
+│   ✓ [A3] Confirmation - matches                                              │
+│                                                                              │
+│   Edge cases implemented:                                                    │
+│   ✓ Empty state shows [message]                                              │
+│   ✓ Error state shows [message]                                              │
+│                                                                              │
+│   Does this match what you approved?"                                        │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│ IF IMPLEMENTATION DIVERGES:                                                  │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ If you find you need to deviate from the approved mockup:                    │
+│   • STOP and explain why to the user                                         │
+│   • Get approval for the change before proceeding                            │
+│   • Don't assume small changes are okay - they add up                        │
+│                                                                              │
+│ The user approved a specific UX. Respect that approval.                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+`, componentID)
 	return nil
 }
 
