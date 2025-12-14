@@ -72,8 +72,10 @@ func cmdScope(args []string) error {
 		return cmdScopeShow(subArgs)
 	case "approve":
 		return cmdScopeApprove(subArgs)
+	case "ready":
+		return cmdScopeReady(subArgs)
 	default:
-		return fmt.Errorf("unknown scope subcommand: %s\nUsage: pt scope [init|input|output|exclude|show|approve]", subCmd)
+		return fmt.Errorf("unknown scope subcommand: %s\nUsage: pt scope [init|input|output|exclude|show|approve|ready]", subCmd)
 	}
 }
 
@@ -81,10 +83,11 @@ func cmdScope(args []string) error {
 func cmdScopeInit(args []string) error {
 	fs := flag.NewFlagSet("scope init", flag.ExitOnError)
 	componentID := fs.String("component", "", "Component ID from system map")
+	lite := fs.Bool("lite", false, "Lite mode: skip full discovery, auto-approve")
 	fs.Parse(args)
 
 	if fs.NArg() < 1 {
-		return fmt.Errorf("usage: pt scope init <task-id> [--component <id>]")
+		return fmt.Errorf("usage: pt scope init <task-id> [--component <id>] [--lite]")
 	}
 
 	taskID := fs.Arg(0)
@@ -129,34 +132,47 @@ func cmdScopeInit(args []string) error {
 	scope := &pt.ComponentScope{
 		ComponentID: compID,
 		TaskID:      taskID,
+		LiteMode:    *lite,
 		Upstream:    upstream,
 		Downstream:  downstream,
 		Journeys:    journeyIDs,
 		CreatedAt:   time.Now().Format(time.RFC3339),
 	}
 
+	// Auto-approve in lite mode
+	if *lite {
+		scope.ApprovedAt = time.Now().Format(time.RFC3339)
+	}
+
 	if err := saveScope(scope); err != nil {
 		return err
 	}
 
-	fmt.Printf("✓ Scope initialized for %s\n", taskID)
-	if compID != "" {
-		fmt.Printf("  Component: %s\n", compID)
-		if len(upstream) > 0 {
-			fmt.Printf("  Upstream: %s\n", strings.Join(upstream, ", "))
+	if *lite {
+		fmt.Printf("✓ Scope initialized (LITE MODE) for %s\n", taskID)
+		fmt.Printf("  Auto-approved - skipping full discovery\n")
+		fmt.Printf("\nProceed directly to UX:\n")
+		fmt.Printf("  pt ux-cases %s\n", taskID)
+	} else {
+		fmt.Printf("✓ Scope initialized for %s\n", taskID)
+		if compID != "" {
+			fmt.Printf("  Component: %s\n", compID)
+			if len(upstream) > 0 {
+				fmt.Printf("  Upstream: %s\n", strings.Join(upstream, ", "))
+			}
+			if len(downstream) > 0 {
+				fmt.Printf("  Downstream: %s\n", strings.Join(downstream, ", "))
+			}
+			if len(journeyIDs) > 0 {
+				fmt.Printf("  Journeys: %s\n", strings.Join(journeyIDs, ", "))
+			}
 		}
-		if len(downstream) > 0 {
-			fmt.Printf("  Downstream: %s\n", strings.Join(downstream, ", "))
-		}
-		if len(journeyIDs) > 0 {
-			fmt.Printf("  Journeys: %s\n", strings.Join(journeyIDs, ", "))
-		}
-	}
 
-	fmt.Println("\nDefine boundaries:")
-	fmt.Printf("  pt scope input --name 'symbol' --type string --required %s\n", taskID)
-	fmt.Printf("  pt scope output --name 'order_id' --type string %s\n", taskID)
-	fmt.Printf("  pt scope exclude --desc 'Chain fetching' --handled-by chain %s\n", taskID)
+		fmt.Println("\nDefine boundaries:")
+		fmt.Printf("  pt scope input --name 'symbol' --type string --required %s\n", taskID)
+		fmt.Printf("  pt scope output --name 'order_id' --type string %s\n", taskID)
+		fmt.Printf("  pt scope exclude --desc 'Chain fetching' --handled-by chain %s\n", taskID)
+	}
 	return nil
 }
 
@@ -306,7 +322,11 @@ func cmdScopeShow(args []string) error {
 		return fmt.Errorf("scope not found for %s", taskID)
 	}
 
-	fmt.Printf("Component Scope: %s\n", taskID)
+	modeStr := ""
+	if scope.LiteMode {
+		modeStr = " (LITE)"
+	}
+	fmt.Printf("Component Scope: %s%s\n", taskID, modeStr)
 	if scope.ComponentID != "" {
 		fmt.Printf("Component: %s\n", scope.ComponentID)
 	}
@@ -429,5 +449,99 @@ func cmdScopeApprove(args []string) error {
 	fmt.Printf("✓ Scope approved for %s\n", taskID)
 	fmt.Println("You can now proceed to UX discovery:")
 	fmt.Printf("  pt ux-cases %s\n", taskID)
+	return nil
+}
+
+// cmdScopeReady checks if a scope meets exit criteria for proceeding to UX
+func cmdScopeReady(args []string) error {
+	fs := flag.NewFlagSet("scope ready", flag.ExitOnError)
+	strict := fs.Bool("strict", false, "Exit with error code 1 if not ready (for CI)")
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		return fmt.Errorf("usage: pt scope ready <task-id> [--strict]")
+	}
+
+	taskID := fs.Arg(0)
+
+	scope, err := loadScope(taskID)
+	if err != nil || scope == nil {
+		if *strict {
+			fmt.Printf("✗ Scope not found for %s\n", taskID)
+			os.Exit(1)
+		}
+		return fmt.Errorf("scope not found for %s", taskID)
+	}
+
+	// Lite mode has relaxed criteria
+	if scope.LiteMode {
+		fmt.Printf("Scope Exit Criteria (%s) [LITE MODE]:\n", taskID)
+		fmt.Println(strings.Repeat("─", 50))
+		fmt.Println("  ✓ Lite mode - full discovery skipped")
+		fmt.Println("  ✓ Auto-approved")
+		fmt.Println()
+		fmt.Println("✓ READY: Lite scope approved. Proceed to UX capabilities.")
+		fmt.Printf("  Next: pt ux-cases %s\n", taskID)
+		return nil
+	}
+
+	// Exit criteria for SCOPE phase (full mode)
+	type scopeCriteria struct {
+		name   string
+		met    bool
+		detail string
+	}
+
+	criteria := []scopeCriteria{
+		{
+			name:   "At least 1 input defined",
+			met:    len(scope.Inputs) >= 1,
+			detail: fmt.Sprintf("found %d", len(scope.Inputs)),
+		},
+		{
+			name:   "At least 1 output defined",
+			met:    len(scope.Outputs) >= 1,
+			detail: fmt.Sprintf("found %d", len(scope.Outputs)),
+		},
+		{
+			name:   "Linked to component in system map",
+			met:    scope.ComponentID != "",
+			detail: scope.ComponentID,
+		},
+		{
+			name:   "Scope is approved",
+			met:    scope.ApprovedAt != "",
+			detail: "",
+		},
+	}
+
+	// Report
+	allMet := true
+	fmt.Printf("Scope Exit Criteria (%s):\n", taskID)
+	fmt.Println(strings.Repeat("─", 50))
+	for _, c := range criteria {
+		status := "✓"
+		if !c.met {
+			status = "✗"
+			allMet = false
+		}
+		fmt.Printf("  %s %s", status, c.name)
+		if c.detail != "" && c.met {
+			fmt.Printf(" (%s)", c.detail)
+		}
+		fmt.Println()
+	}
+
+	fmt.Println()
+	if allMet {
+		fmt.Println("✓ READY: Scope complete. Proceed to UX capabilities.")
+		fmt.Printf("  Next: pt ux-cases %s\n", taskID)
+	} else {
+		fmt.Println("✗ NOT READY: Address issues above before proceeding.")
+		if *strict {
+			os.Exit(1)
+		}
+	}
+
 	return nil
 }

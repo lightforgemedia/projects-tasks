@@ -68,8 +68,12 @@ func cmdSysmap(args []string) error {
 		return cmdSysmapShow(subArgs)
 	case "verify":
 		return cmdSysmapVerify(subArgs)
+	case "ready":
+		return cmdSysmapReady(subArgs)
+	case "task":
+		return cmdSysmapTask(subArgs)
 	default:
-		return fmt.Errorf("unknown sysmap subcommand: %s\nUsage: pt sysmap [init|add|link|show|verify]", subCmd)
+		return fmt.Errorf("unknown sysmap subcommand: %s\nUsage: pt sysmap [init|add|link|show|verify|ready|task]", subCmd)
 	}
 }
 
@@ -283,10 +287,14 @@ func cmdSysmapShow(args []string) error {
 			if desc == "" {
 				desc = c.Name
 			}
-			if len(desc) > 45 {
-				desc = desc[:42] + "..."
+			if len(desc) > 40 {
+				desc = desc[:37] + "..."
 			}
-			fmt.Printf("  [%s] %s\n", c.ID, desc)
+			taskRef := ""
+			if c.TaskID != "" {
+				taskRef = fmt.Sprintf(" → %s", c.TaskID)
+			}
+			fmt.Printf("  [%s] %s%s\n", c.ID, desc, taskRef)
 		}
 	}
 
@@ -403,4 +411,180 @@ func promptLine(prompt string) string {
 		return strings.TrimSpace(scanner.Text())
 	}
 	return ""
+}
+
+// cmdSysmapReady checks if system map meets exit criteria
+func cmdSysmapReady(args []string) error {
+	fs := flag.NewFlagSet("sysmap ready", flag.ExitOnError)
+	strict := fs.Bool("strict", false, "Exit with error code 1 if not ready (for CI)")
+	fs.Parse(args)
+
+	sm, err := loadSystemMap()
+	if err != nil {
+		return err
+	}
+	if sm == nil {
+		if *strict {
+			fmt.Println("✗ No system map found")
+			os.Exit(1)
+		}
+		return fmt.Errorf("no system map found")
+	}
+
+	// Exit criteria for SYSTEM MAP phase
+	criteria := []struct {
+		name   string
+		met    bool
+		detail string
+	}{
+		{
+			name:   "At least 2 components",
+			met:    len(sm.Components) >= 2,
+			detail: fmt.Sprintf("found %d", len(sm.Components)),
+		},
+		{
+			name:   "No orphan components",
+			met:    true, // Will be checked below
+			detail: "",
+		},
+		{
+			name:   "No cycles in DAG",
+			met:    true, // Will be checked below
+			detail: "",
+		},
+		{
+			name:   "Components have descriptions",
+			met:    true, // Will be checked below
+			detail: "",
+		},
+	}
+
+	// Check orphans
+	hasEdge := make(map[string]bool)
+	for _, e := range sm.Edges {
+		hasEdge[e.From] = true
+		hasEdge[e.To] = true
+	}
+	orphans := []string{}
+	for _, c := range sm.Components {
+		if !hasEdge[c.ID] {
+			orphans = append(orphans, c.ID)
+		}
+	}
+	if len(orphans) > 0 {
+		criteria[1].met = false
+		criteria[1].detail = strings.Join(orphans, ", ")
+	}
+
+	// Check cycles
+	adj := make(map[string][]string)
+	for _, e := range sm.Edges {
+		adj[e.From] = append(adj[e.From], e.To)
+	}
+	visited := make(map[string]bool)
+	recStack := make(map[string]bool)
+	var hasCycle func(node string) bool
+	hasCycle = func(node string) bool {
+		visited[node] = true
+		recStack[node] = true
+		for _, neighbor := range adj[node] {
+			if !visited[neighbor] {
+				if hasCycle(neighbor) {
+					return true
+				}
+			} else if recStack[neighbor] {
+				return true
+			}
+		}
+		recStack[node] = false
+		return false
+	}
+	for _, c := range sm.Components {
+		if !visited[c.ID] && hasCycle(c.ID) {
+			criteria[2].met = false
+			criteria[2].detail = "cycle detected"
+			break
+		}
+	}
+
+	// Check descriptions
+	noDesc := []string{}
+	for _, c := range sm.Components {
+		if c.Description == "" {
+			noDesc = append(noDesc, c.ID)
+		}
+	}
+	if len(noDesc) > 0 {
+		criteria[3].met = false
+		criteria[3].detail = strings.Join(noDesc, ", ")
+	}
+
+	// Report
+	allMet := true
+	fmt.Println("System Map Exit Criteria:")
+	fmt.Println(strings.Repeat("─", 50))
+	for _, c := range criteria {
+		status := "✓"
+		if !c.met {
+			status = "✗"
+			allMet = false
+		}
+		fmt.Printf("  %s %s", status, c.name)
+		if c.detail != "" {
+			fmt.Printf(" (%s)", c.detail)
+		}
+		fmt.Println()
+	}
+
+	fmt.Println()
+	if allMet {
+		fmt.Println("✓ READY: System map complete. Proceed to journeys.")
+		fmt.Println("  Next: pt journey add <name> --goal 'what user achieves'")
+	} else {
+		fmt.Println("✗ NOT READY: Address issues above before proceeding.")
+		if *strict {
+			os.Exit(1)
+		}
+	}
+
+	return nil
+}
+
+// cmdSysmapTask links a component to a PT task
+func cmdSysmapTask(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: pt sysmap task <component-id> <task-id>")
+	}
+
+	componentID := args[0]
+	taskID := args[1]
+
+	sm, err := loadSystemMap()
+	if err != nil {
+		return err
+	}
+	if sm == nil {
+		return fmt.Errorf("no system map found")
+	}
+
+	// Find and update component
+	found := false
+	for i, c := range sm.Components {
+		if c.ID == componentID {
+			sm.Components[i].TaskID = taskID
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("component %q not found", componentID)
+	}
+
+	if err := saveSystemMap(sm); err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Linked component [%s] → task [%s]\n", componentID, taskID)
+	return nil
 }

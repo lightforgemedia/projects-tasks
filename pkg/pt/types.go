@@ -94,6 +94,7 @@ type Component struct {
 	Nouns       []string `json:"nouns,omitempty"`       // Domain objects involved
 	Verbs       []string `json:"verbs,omitempty"`       // Actions performed
 	Owner       string   `json:"owner,omitempty"`       // Role responsible
+	TaskID      string   `json:"task_id,omitempty"`     // PT task ID for implementation
 }
 
 // Edge represents a dependency between components.
@@ -136,15 +137,16 @@ type Branch struct {
 // ComponentScope defines the boundaries for a single component.
 // Created per-task when claiming work on a component.
 type ComponentScope struct {
-	ComponentID   string      `json:"component_id"`           // From SystemMap
-	TaskID        string      `json:"task_id"`                // PT task this scope belongs to
-	Inputs        []ScopeIO   `json:"inputs,omitempty"`       // What this component receives
-	Outputs       []ScopeIO   `json:"outputs,omitempty"`      // What this component produces
+	ComponentID   string      `json:"component_id"`            // From SystemMap
+	TaskID        string      `json:"task_id"`                 // PT task this scope belongs to
+	LiteMode      bool        `json:"lite_mode,omitempty"`     // Skip full discovery for simple tasks
+	Inputs        []ScopeIO   `json:"inputs,omitempty"`        // What this component receives
+	Outputs       []ScopeIO   `json:"outputs,omitempty"`       // What this component produces
 	Preconditions []Condition `json:"preconditions,omitempty"` // Must be true before use
-	OutOfScope    []Exclusion `json:"out_of_scope,omitempty"` // Explicitly handled elsewhere
-	Journeys      []string    `json:"journeys,omitempty"`     // Journey IDs this participates in
-	Upstream      []string    `json:"upstream,omitempty"`     // Components that call/trigger this
-	Downstream    []string    `json:"downstream,omitempty"`   // Components this calls/provides to
+	OutOfScope    []Exclusion `json:"out_of_scope,omitempty"`  // Explicitly handled elsewhere
+	Journeys      []string    `json:"journeys,omitempty"`      // Journey IDs this participates in
+	Upstream      []string    `json:"upstream,omitempty"`      // Components that call/trigger this
+	Downstream    []string    `json:"downstream,omitempty"`    // Components this calls/provides to
 	CreatedAt     string      `json:"created_at"`
 	ApprovedAt    string      `json:"approved_at,omitempty"`
 }

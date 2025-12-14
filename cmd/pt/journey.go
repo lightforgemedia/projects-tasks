@@ -11,6 +11,13 @@ import (
 	"projects-tasks/pkg/pt"
 )
 
+// Exit criteria status for journey phase
+type journeyExitCriteria struct {
+	name   string
+	met    bool
+	detail string
+}
+
 // journeysDir returns the path to the journeys directory
 func journeysDir() string {
 	return filepath.Join(".pt", "journeys")
@@ -95,8 +102,10 @@ func cmdJourney(args []string) error {
 		return cmdJourneyTrace(subArgs)
 	case "coverage":
 		return cmdJourneyCoverage(subArgs)
+	case "ready":
+		return cmdJourneyReady(subArgs)
 	default:
-		return fmt.Errorf("unknown journey subcommand: %s\nUsage: pt journey [list|add|step|trace|coverage]", subCmd)
+		return fmt.Errorf("unknown journey subcommand: %s\nUsage: pt journey [list|add|step|trace|coverage|ready]", subCmd)
 	}
 }
 
@@ -267,6 +276,10 @@ func cmdJourneyTrace(args []string) error {
 
 // cmdJourneyCoverage shows which components are covered by journeys
 func cmdJourneyCoverage(args []string) error {
+	fs := flag.NewFlagSet("journey coverage", flag.ExitOnError)
+	failOnGap := fs.Bool("fail-on-gap", false, "Exit with error code 1 if gaps exist (for CI)")
+	fs.Parse(args)
+
 	sm, _ := loadSystemMap()
 	if sm == nil {
 		return fmt.Errorf("no system map found; create with 'pt sysmap init'")
@@ -326,6 +339,9 @@ func cmdJourneyCoverage(args []string) error {
 	if len(uncovered) > 0 {
 		fmt.Printf("\n⚠ Components with NO journeys: %s\n", strings.Join(uncovered, ", "))
 		fmt.Println("  Consider: Are these necessary? Add journeys or remove components.")
+		if *failOnGap {
+			os.Exit(1)
+		}
 	} else {
 		fmt.Println("\n✓ All components have journey coverage")
 	}
@@ -337,4 +353,110 @@ func cmdJourneyCoverage(args []string) error {
 func nextJourneyID() string {
 	journeys, _ := loadJourneys()
 	return fmt.Sprintf("J%d", len(journeys)+1)
+}
+
+// cmdJourneyReady checks if journeys meet exit criteria
+func cmdJourneyReady(args []string) error {
+	fs := flag.NewFlagSet("journey ready", flag.ExitOnError)
+	strict := fs.Bool("strict", false, "Exit with error code 1 if not ready (for CI)")
+	fs.Parse(args)
+
+	sm, _ := loadSystemMap()
+	if sm == nil {
+		if *strict {
+			fmt.Println("✗ No system map found")
+			os.Exit(1)
+		}
+		return fmt.Errorf("no system map found; complete sysmap phase first")
+	}
+
+	journeys, _ := loadJourneys()
+
+	// Build coverage map
+	coverage := make(map[string]bool)
+	for _, j := range journeys {
+		for _, step := range j.Steps {
+			if step.Component != "" {
+				coverage[step.Component] = true
+			}
+		}
+	}
+
+	// Check which components lack coverage
+	uncovered := []string{}
+	for _, c := range sm.Components {
+		if !coverage[c.ID] {
+			uncovered = append(uncovered, c.ID)
+		}
+	}
+
+	// Check journeys have sufficient steps
+	shortJourneys := []string{}
+	for _, j := range journeys {
+		if len(j.Steps) < 2 {
+			shortJourneys = append(shortJourneys, j.ID)
+		}
+	}
+
+	// Check journeys have goals
+	noGoal := []string{}
+	for _, j := range journeys {
+		if j.Goal == "" {
+			noGoal = append(noGoal, j.ID)
+		}
+	}
+
+	// Exit criteria
+	criteria := []journeyExitCriteria{
+		{
+			name:   "At least 1 journey defined",
+			met:    len(journeys) >= 1,
+			detail: fmt.Sprintf("found %d", len(journeys)),
+		},
+		{
+			name:   "All components have journey coverage",
+			met:    len(uncovered) == 0,
+			detail: strings.Join(uncovered, ", "),
+		},
+		{
+			name:   "Each journey has at least 2 steps",
+			met:    len(shortJourneys) == 0,
+			detail: strings.Join(shortJourneys, ", "),
+		},
+		{
+			name:   "Each journey has a goal",
+			met:    len(noGoal) == 0,
+			detail: strings.Join(noGoal, ", "),
+		},
+	}
+
+	// Report
+	allMet := true
+	fmt.Println("Journey Exit Criteria:")
+	fmt.Println(strings.Repeat("─", 50))
+	for _, c := range criteria {
+		status := "✓"
+		if !c.met {
+			status = "✗"
+			allMet = false
+		}
+		fmt.Printf("  %s %s", status, c.name)
+		if c.detail != "" && !c.met {
+			fmt.Printf(" (%s)", c.detail)
+		}
+		fmt.Println()
+	}
+
+	fmt.Println()
+	if allMet {
+		fmt.Println("✓ READY: Journeys complete. Proceed to component scopes.")
+		fmt.Println("  Next: pt scope init --component <id> <task-id>")
+	} else {
+		fmt.Println("✗ NOT READY: Address issues above before proceeding.")
+		if *strict {
+			os.Exit(1)
+		}
+	}
+
+	return nil
 }
