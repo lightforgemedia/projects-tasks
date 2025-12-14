@@ -364,6 +364,8 @@ func run(args []string) error {
 		return cmdContext(cmdArgs)
 	case "worktree":
 		return cmdWorktree(cmdArgs)
+	case "mock":
+		return cmdMock(cmdArgs)
 	case "cd":
 		return cmdCd(cmdArgs)
 	case "env":
@@ -426,59 +428,62 @@ func run(args []string) error {
 }
 
 func usage() {
-	fmt.Print(`pt CLI (store-backed)
+	fmt.Print(`pt - Task management for humans and agents
 
-Commands (SDLC flow):
-  sync <manifest>                    Apply manifest (create/update tasks, deps)
-  ready [--role=ROLE] [--limit=N]    List unblocked work (status=open)
-  list  [--status=...]               List tasks by status (open|in_progress|needs_review|closed)
-  show  <id> [--json]                Show task details (DoD, deps, comments)
-  claim <id> [--as=USER] [--draft]   Mark in_progress and assign (--draft skips DoD check)
-  release <id>                       Return to open and clear assignee
-  validate <id> [--yes]              Run DoD hooks; on success -> needs_review
-  approve <id>                       Mark done
-  reject <id> --reason="text"        Send back to in_progress with a comment
-  reopen <id> [--as=USER]            Reopen a closed task (done -> in_progress)
-  blocked [<id> <reason>]            Mark task as blocked, or list all blocked
-  unblock <id>                       Clear blocked status from task
-  add "Title" [flags]                Create ad-hoc task (role/template required)
-  update <id> [flags]                Update task fields (title/assignee/priority/next-hint)
-  comment <id> "text"                Append a comment to a task
-  snapshot [--out=...]               Copy the store to a timestamped file
-  propose <manifest> [--db=PATH]     Show proposed adds/updates without writing
-  multi-ready --dbs=a.json,b.json    Read-only ready aggregation across stores
-  search --query="text"              Search titles/labels/description (read-only)
-  feedback --desc=TEXT [--dry-run]   Create a feedback template under ~/.pt/feedback
-  context init <id>|validate|prime    Manage agent context (prime outputs project summary)
-  worktree start|done|status|abort    Manage git worktrees for task isolation
-  cd <task-id>                       Output worktree path (for shell: cd $(pt cd pt-5))
-  env                                Output PT environment (for shell: eval "$(pt env)")
-  doctor [--fix]                     Check store integrity (--fix attempts repairs)
-  export [--out=FILE]                Export store to portable JSON format
-  import <file> [--mode=merge|replace] Import from exported file (merge or replace)
-  graph <manifest>                   Visualize manifest dependencies (cycles shown)
-  hooks                              Print merged hook configuration (global + local)
-  history <id>                       Show task history (created/claimed/validated/approved)
-  handoff <id> [--out=PATH]          Generate handoff document from task data
-  ux-cases <id>                      Show/confirm use cases for UX-enabled task
-  ux-explore <id>                    Generate and display UX options
-  ux-select <id> <choice>            Record UX selection, unlock building
-  ux-status <id>                     Show current UX exploration state
-  workflow status|next|check         Workflow guidance (phases, gates, suggested actions)
+QUICK START
+  pt sync phases/my-project.toml     Import tasks from manifest
+  pt ready                           See what's ready to work on
+  pt claim <id>                      Start working on a task
+  pt validate <id>                   Submit for review (runs tests)
+  pt approve <id>                    Complete the task
 
-Shortcuts:
-  status                             Alias for: pt workflow status
-  next                               Alias for: pt workflow next
+COMMON WORKFLOW
+  ready   [--role=ROLE] [--verbose]  List unblocked tasks
+  claim   <id> [--as=USER]           Assign and start task
+  release <id>                       Unassign (if stuck)
+  validate <id> [--yes]              Run tests, move to review
+  approve <id>                       Mark complete
+  reject  <id> --reason="..."        Send back for fixes
 
-Happy-path primer:
-  1) pt sync phases/<file>.toml
-  2) pt ready --role=<role> --verbose
-  3) pt claim <id> [--as=you]
-  4) do work; pt validate <id> [--yes]
-  5) pt approve <id>  |  pt reject <id> --reason="..."
-  6) pt release <id> (if you're stuck)
+VIEW & SEARCH
+  list    [--status=...] [--phase=PHASE]  Filter by status/phase
+  show    <id> [--json]              Task details, DoD, deps
+  search  --query="text"             Search across all tasks
+  history <id>                       View task timeline
 
-For guidance on writing good tasks: pt help task-authoring
+CREATE & UPDATE
+  sync    <manifest>                 Import/update from TOML
+  add     "Title" [flags]            Create single task
+  update  <id> [flags]               Modify task fields
+  comment <id> "text"                Add note to task
+  blocked <id> "reason"              Mark task blocked
+  unblock <id>                       Clear blocked status
+
+WORKFLOW GUIDANCE
+  status                             Current phase and progress
+  next                               Suggested next action
+  workflow check                     Validate phase gates
+
+WORKTREES (task isolation)
+  worktree start <id>                Create branch + worktree
+  worktree done <id>                 Merge and cleanup
+  worktree status                    List active worktrees
+  cd <id>                            Output worktree path
+  env                                Output PT_DB for shell
+
+UX DISCOVERY (for user-facing tasks)
+  ux-cases   <id>                    Define use cases
+  ux-explore <id>                    Generate design options
+  ux-select  <id> <choice>           Choose approach
+
+ADVANCED
+  context prime [--json]             Project summary for agents
+  handoff <id>                       Generate handoff document
+  doctor [--fix]                     Check/repair store
+  export/import                      Backup and restore
+  graph <manifest>                   Visualize dependencies
+
+More: pt help task-authoring
 `)
 }
 
@@ -791,8 +796,17 @@ func cmdReady(args []string) error {
 			if strings.TrimSpace(assignee) == "" {
 				assignee = "(unassigned)"
 			}
-			fmt.Printf("### %s: %s\n", iss.ID, iss.Title)
+			// Show spike tasks with time-box indicator
+			title := iss.Title
+			if meta, err := pt.ParseTaskMeta(iss.Description); err == nil && meta.Template == "spike" {
+				title = fmt.Sprintf("⏱️  %s", title) // spike indicator
+			}
+			fmt.Printf("### %s: %s\n", iss.ID, title)
 			fmt.Printf("  Role: %s  Assignee: %s\n", issueRole(iss), assignee)
+			// Show time-box for spikes
+			if meta, err := pt.ParseTaskMeta(iss.Description); err == nil && meta.MaxHours > 0 {
+				fmt.Printf("  Time-box: %dh\n", meta.MaxHours)
+			}
 
 			if art := issueArtifact(iss); art != "" {
 				fmt.Printf("  Artifact: %s\n", art)
@@ -2966,6 +2980,201 @@ func buildHandoffDoc(iss pt.Issue, meta pt.TaskMeta) string {
 `, iss.Title, now, author, iss.ID, scope, context, dodTests, dodManual, dodCriteria, inputs, meta.Role, meta.Template, meta.Artifact)
 
 	return doc
+}
+
+// cmdMock manages mock/stub implementations that need to be replaced.
+func cmdMock(args []string) error {
+	if len(args) == 0 {
+		fmt.Println("Usage: pt mock <subcommand>")
+		fmt.Println("\nSubcommands:")
+		fmt.Println("  register   Register a new mock/stub")
+		fmt.Println("  list       List active mocks")
+		fmt.Println("  check      Check for orphaned mocks")
+		fmt.Println("  retire     Mark a mock as replaced")
+		return nil
+	}
+
+	subcmd := args[0]
+	subArgs := args[1:]
+
+	switch subcmd {
+	case "register":
+		return cmdMockRegister(subArgs)
+	case "list":
+		return cmdMockList(subArgs)
+	case "check":
+		return cmdMockCheck(subArgs)
+	case "retire":
+		return cmdMockRetire(subArgs)
+	default:
+		return fmt.Errorf("unknown mock subcommand: %s", subcmd)
+	}
+}
+
+func cmdMockRegister(args []string) error {
+	fs := flag.NewFlagSet("mock register", flag.ContinueOnError)
+	desc := fs.String("desc", "", "description of the mock")
+	location := fs.String("loc", "", "file:line or path where mock is implemented")
+	spikeID := fs.String("spike", "", "originating spike task ID (required)")
+	integrationID := fs.String("integration", "", "integration task that will replace this mock (required)")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+
+	fs.Usage = func() {
+		fmt.Println("Usage: pt mock register --desc=\"...\" --loc=\"...\" --spike=<id> --integration=<id>")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *spikeID == "" {
+		return errors.New("--spike is required (mocks must originate from a spike)")
+	}
+	if *integrationID == "" {
+		return errors.New("--integration is required (mocks must have a replacement task)")
+	}
+
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 0)
+	defer cancel()
+
+	// Verify spike task exists and is a spike
+	_, spikeMeta, err := client.GetTask(ctx, *spikeID)
+	if err != nil {
+		return fmt.Errorf("spike task %s not found", *spikeID)
+	}
+	if spikeMeta.Template != "spike" {
+		return fmt.Errorf("task %s is not a spike (template=%s)", *spikeID, spikeMeta.Template)
+	}
+
+	// Verify integration task exists
+	_, _, err = client.GetTask(ctx, *integrationID)
+	if err != nil {
+		return fmt.Errorf("integration task %s not found", *integrationID)
+	}
+
+	storeClient, ok := client.(*pt.StoreClient)
+	if !ok {
+		return errors.New("mock commands require store backend")
+	}
+
+	mock, err := storeClient.RegisterMock(ctx, *desc, *location, *spikeID, *integrationID)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Registered %s: %s\n", mock.ID, mock.Description)
+	fmt.Printf("  Location: %s\n", mock.Location)
+	fmt.Printf("  Spike: %s → Integration: %s\n", *spikeID, *integrationID)
+	return nil
+}
+
+func cmdMockList(args []string) error {
+	fs := flag.NewFlagSet("mock list", flag.ContinueOnError)
+	includeRetired := fs.Bool("all", false, "include retired mocks")
+	jsonOut := fs.Bool("json", false, "output as JSON")
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 0)
+	defer cancel()
+
+	storeClient, ok := client.(*pt.StoreClient)
+	if !ok {
+		return errors.New("mock commands require store backend")
+	}
+
+	mocks := storeClient.ListMocks(ctx, *includeRetired)
+
+	if *jsonOut {
+		return printJSON(mocks)
+	}
+
+	if len(mocks) == 0 {
+		fmt.Println("No active mocks registered.")
+		return nil
+	}
+
+	for _, m := range mocks {
+		status := "active"
+		if m.RetiredAt != "" {
+			status = "retired"
+		}
+		fmt.Printf("%s [%s] %s\n", m.ID, status, m.Description)
+		fmt.Printf("  Location: %s\n", m.Location)
+		fmt.Printf("  Spike: %s → Integration: %s\n", m.SpikeTaskID, m.IntegrationTask)
+	}
+	return nil
+}
+
+func cmdMockCheck(args []string) error {
+	fs := flag.NewFlagSet("mock check", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 0)
+	defer cancel()
+
+	storeClient, ok := client.(*pt.StoreClient)
+	if !ok {
+		return errors.New("mock commands require store backend")
+	}
+
+	orphans := storeClient.CheckMocks(ctx)
+
+	if len(orphans) == 0 {
+		fmt.Println("No orphaned mocks. All mocks are either retired or have closed integration tasks.")
+		return nil
+	}
+
+	fmt.Printf("⚠️  %d orphaned mock(s) found:\n", len(orphans))
+	for _, m := range orphans {
+		fmt.Printf("  %s: %s\n", m.ID, m.Description)
+		fmt.Printf("    Location: %s\n", m.Location)
+		fmt.Printf("    Integration task: %s (not closed)\n", m.IntegrationTask)
+	}
+	return fmt.Errorf("%d orphaned mocks need attention", len(orphans))
+}
+
+func cmdMockRetire(args []string) error {
+	fs := flag.NewFlagSet("mock retire", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "override store path")
+	prefix := fs.String("prefix", "", "override issue prefix")
+
+	fs.Usage = func() {
+		fmt.Println("Usage: pt mock retire <mock-id>")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("missing mock-id argument")
+	}
+	mockID := fs.Arg(0)
+
+	client := newClientWith(*dbPath, *prefix)
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), 0)
+	defer cancel()
+
+	storeClient, ok := client.(*pt.StoreClient)
+	if !ok {
+		return errors.New("mock commands require store backend")
+	}
+
+	if err := storeClient.RetireMock(ctx, mockID); err != nil {
+		return err
+	}
+	fmt.Printf("Retired %s\n", mockID)
+	return nil
 }
 
 // cmdCd outputs the worktree path for a task (for shell integration).

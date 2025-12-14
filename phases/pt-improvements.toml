@@ -18,6 +18,7 @@ template = "spike"
 title = "Spike: Audit all path and cwd dependencies"
 role = "backend-dev"
 artifact = "doc:outputs/spike-cwd-audit/findings.md"
+max_hours = 4
 [tasks.dod]
 tests = ["go test ./cmd/pt/... -run TestPath"]
 manual = "Audit git helpers, os.Chdir sites, store paths, worktree detection. Reproduce bugs from repo root, subdir, worktree root, worktree subdir."
@@ -88,6 +89,7 @@ title = "Spike: Evaluate store split architecture"
 role = "architect"
 deps = ["Add integration tests for path scenarios"]
 artifact = "doc:outputs/spike-store-split/findings.md"
+max_hours = 4
 [tasks.dod]
 tests = ["go test ./pkg/pt/..."]
 manual = "Evaluate splitting store: tasks/status shared vs worktrees local. Consider git worktree list alternative. Document team sync, CI access, migration."

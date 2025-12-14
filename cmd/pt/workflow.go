@@ -243,6 +243,29 @@ func printWorkflowStatus(status pt.WorkflowStatus) {
 	fmt.Println("└─────────────────────────────────────────────────────────────┘")
 	fmt.Println()
 
+	// Collect pending checkpoints
+	var pendingCheckpoints []pt.Issue
+	for _, ps := range status.Phases {
+		for _, t := range ps.Tasks {
+			if hasCheckpointLabel(t) && t.Status != "closed" && t.Status != "done" {
+				pendingCheckpoints = append(pendingCheckpoints, t)
+			}
+		}
+	}
+
+	// Show pending checkpoints banner if any
+	if len(pendingCheckpoints) > 0 {
+		fmt.Println("⚠️  PENDING CHECKPOINTS (require user approval):")
+		for _, t := range pendingCheckpoints {
+			statusIcon := "⏸️"
+			if t.Status == "needs_review" {
+				statusIcon = "🔍"
+			}
+			fmt.Printf("   %s %s: %s [%s]\n", statusIcon, t.ID, t.Title, t.Status)
+		}
+		fmt.Println()
+	}
+
 	// Phases
 	for _, ps := range status.Phases {
 		// Progress bar
@@ -282,6 +305,10 @@ func printWorkflowStatus(status pt.WorkflowStatus) {
 			if t.Status == "open" && !ps.IsBlocked {
 				extra = " ← READY"
 			}
+			// Mark checkpoint tasks
+			if hasCheckpointLabel(t) {
+				extra = extra + " [checkpoint]"
+			}
 			fmt.Printf("  %s %-6s %s%s\n", marker, t.ID, t.Title, extra)
 		}
 		if ps.TotalTasks == 0 {
@@ -300,6 +327,16 @@ func printWorkflowStatus(status pt.WorkflowStatus) {
 	} else {
 		fmt.Println("Suggested next:  (no ready tasks)")
 	}
+}
+
+// hasCheckpointLabel returns true if the issue has a checkpoint:required label.
+func hasCheckpointLabel(iss pt.Issue) bool {
+	for _, label := range iss.Labels {
+		if label == "checkpoint:required" || label == "checkpoint" {
+			return true
+		}
+	}
+	return false
 }
 
 func progressBar(pct, width int) string {

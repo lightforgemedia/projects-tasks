@@ -45,6 +45,9 @@ type Task struct {
 
 	// UX discovery - optional exploration loop for user-facing tasks
 	UX *UXConfig `json:"ux,omitempty"`
+
+	// Spike-specific fields - time-boxed investigation tasks
+	MaxHours int `json:"max_hours,omitempty"` // time-box for spike tasks (required for template=spike)
 }
 
 // UXConfig defines UX exploration requirements for a task.
@@ -340,6 +343,13 @@ func assignTaskKV(task *Task, key string, val value) error {
 		task.Scope = val.asString()
 	case "reference":
 		task.Reference = val.asString()
+	// Spike-specific fields
+	case "max_hours":
+		var n int
+		if _, err := fmt.Sscanf(val.asString(), "%d", &n); err != nil {
+			return fmt.Errorf("max_hours must be integer: %w", err)
+		}
+		task.MaxHours = n
 	default:
 		// Treat unknown keys in task context as params for forward compatibility.
 		if task.Params == nil {
@@ -444,6 +454,18 @@ func validateTask(task Task) error {
 	if len(task.DoD.Criteria) == 0 {
 		return errors.New("definition of done requires acceptance criteria")
 	}
+
+	// Spike-specific validation
+	if task.Template == "spike" {
+		if task.MaxHours <= 0 {
+			return errors.New("spike tasks require max_hours (time-box)")
+		}
+		// Spikes should produce an artifact (findings document)
+		if !strings.HasPrefix(task.Artifact, "doc:") {
+			return errors.New("spike artifacts should be documents (doc:path/to/findings.md)")
+		}
+	}
+
 	return nil
 }
 

@@ -39,6 +39,18 @@ type storeData struct {
 	History   map[string][]HistoryEvent      `json:"history"`   // issue -> events
 	Blocked   map[string]BlockedInfo         `json:"blocked"`   // issue -> blocked info
 	Worktrees map[string]WorktreeInfo        `json:"worktrees"` // task_id -> worktree info
+	Mocks     map[string]MockInfo            `json:"mocks"`     // mock_id -> mock info
+}
+
+// MockInfo tracks a mock/stub implementation that needs to be replaced.
+type MockInfo struct {
+	ID              string `json:"id"`
+	Description     string `json:"description"`
+	Location        string `json:"location"`         // file:line or path
+	SpikeTaskID     string `json:"spike_task_id"`    // originating spike (required)
+	IntegrationTask string `json:"integration_task"` // task that will replace this mock
+	CreatedAt       string `json:"created_at"`
+	RetiredAt       string `json:"retired_at,omitempty"`
 }
 
 // NewStoreClient creates or opens a store at path. If path empty, defaults to ".pt.db.json".
@@ -829,4 +841,87 @@ func replaceValue(list []string, from, to string) []string {
 		}
 	}
 	return out
+}
+
+// RegisterMock registers a new mock/stub that needs to be replaced with real implementation.
+func (c *StoreClient) RegisterMock(ctx context.Context, description, location, spikeTaskID, integrationTaskID string) (MockInfo, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.data.Mocks == nil {
+		c.data.Mocks = make(map[string]MockInfo)
+	}
+
+	// Generate mock ID
+	mockID := fmt.Sprintf("mock-%d", len(c.data.Mocks)+1)
+
+	mock := MockInfo{
+		ID:              mockID,
+		Description:     description,
+		Location:        location,
+		SpikeTaskID:     spikeTaskID,
+		IntegrationTask: integrationTaskID,
+		CreatedAt:       time.Now().UTC().Format(time.RFC3339),
+	}
+
+	c.data.Mocks[mockID] = mock
+	if err := c.saveLocked(); err != nil {
+		return MockInfo{}, err
+	}
+	return mock, nil
+}
+
+// ListMocks returns all registered mocks.
+func (c *StoreClient) ListMocks(ctx context.Context, includeRetired bool) []MockInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var mocks []MockInfo
+	for _, m := range c.data.Mocks {
+		if !includeRetired && m.RetiredAt != "" {
+			continue
+		}
+		mocks = append(mocks, m)
+	}
+	return mocks
+}
+
+// RetireMock marks a mock as retired (replaced with real implementation).
+func (c *StoreClient) RetireMock(ctx context.Context, mockID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	mock, ok := c.data.Mocks[mockID]
+	if !ok {
+		return fmt.Errorf("mock %s not found", mockID)
+	}
+	if mock.RetiredAt != "" {
+		return fmt.Errorf("mock %s already retired", mockID)
+	}
+	mock.RetiredAt = time.Now().UTC().Format(time.RFC3339)
+	c.data.Mocks[mockID] = mock
+	return c.saveLocked()
+}
+
+// CheckMocks returns orphaned mocks (mocks without a closed integration task).
+func (c *StoreClient) CheckMocks(ctx context.Context) []MockInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var orphans []MockInfo
+	for _, m := range c.data.Mocks {
+		if m.RetiredAt != "" {
+			continue // already retired
+		}
+		// Check if integration task is closed
+		if m.IntegrationTask != "" {
+			if iss, ok := c.data.Issues[m.IntegrationTask]; ok {
+				if iss.Status == "closed" || iss.Status == "done" {
+					continue // integration task is done
+				}
+			}
+		}
+		orphans = append(orphans, m)
+	}
+	return orphans
 }

@@ -27,6 +27,9 @@ type TaskMeta struct {
 	// UX discovery - optional exploration loop
 	UX      *UXConfig `json:"ux,omitempty"`       // UX requirements from manifest
 	UXState *UXState  `json:"ux_state,omitempty"` // Runtime UX exploration state
+
+	// Spike-specific fields
+	MaxHours int `json:"max_hours,omitempty"` // time-box for spike tasks
 }
 
 // UXState tracks the current state of UX exploration for a task.
@@ -165,6 +168,7 @@ func buildDescription(task Task) (string, error) {
 		Scope:     task.Scope,
 		Reference: task.Reference,
 		UX:        task.UX,
+		MaxHours:  task.MaxHours,
 	}
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {

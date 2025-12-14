@@ -615,3 +615,160 @@ func TestShellEnv(t *testing.T) {
 		t.Fatalf("expected 'export PT_DB' in output, got: %s", out)
 	}
 }
+
+func TestHelpOutput(t *testing.T) {
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	usage()
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := buf.String()
+
+	// UC1: New user can quickly see available commands
+	// Check that QUICK START section exists and comes first
+	if !strings.Contains(out, "QUICK START") {
+		t.Error("help should have QUICK START section")
+	}
+	quickStartIdx := strings.Index(out, "QUICK START")
+	commonWorkflowIdx := strings.Index(out, "COMMON WORKFLOW")
+	if quickStartIdx > commonWorkflowIdx {
+		t.Error("QUICK START should come before COMMON WORKFLOW")
+	}
+
+	// Check essential commands are visible
+	essentialCmds := []string{"sync", "ready", "claim", "validate", "approve"}
+	for _, cmd := range essentialCmds {
+		if !strings.Contains(out, cmd) {
+			t.Errorf("help should mention %q command", cmd)
+		}
+	}
+
+	// UC2: Power user can find specific command details
+	// Check that sections are organized logically
+	sections := []string{"VIEW & SEARCH", "CREATE & UPDATE", "WORKFLOW GUIDANCE", "WORKTREES", "ADVANCED"}
+	for _, section := range sections {
+		if !strings.Contains(out, section) {
+			t.Errorf("help should have %q section", section)
+		}
+	}
+}
+
+func TestCheckpointLabelDetection(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels []string
+		want   bool
+	}{
+		{"no labels", []string{}, false},
+		{"other labels", []string{"role:dev", "template:bug_fix"}, false},
+		{"checkpoint required", []string{"role:dev", "checkpoint:required"}, true},
+		{"checkpoint shorthand", []string{"checkpoint"}, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			iss := pt.Issue{Labels: tc.labels}
+			got := hasCheckpointLabel(iss)
+			if got != tc.want {
+				t.Errorf("hasCheckpointLabel(%v) = %v, want %v", tc.labels, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMockCommands(t *testing.T) {
+	path, store := setupStoreEnv(t)
+	ctx := t.Context()
+
+	// Create a spike task
+	spikeManifest := pt.Manifest{
+		Tasks: []pt.Task{{
+			Title:    "Spike: API Options",
+			Template: "spike",
+			Role:     "dev",
+			Artifact: "doc:findings.md",
+			MaxHours: 2,
+			DoD:      pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"done"}},
+		}},
+	}
+	if _, err := store.Sync(ctx, spikeManifest); err != nil {
+		t.Fatalf("sync spike: %v", err)
+	}
+
+	// Create an integration task
+	integrationManifest := pt.Manifest{
+		Tasks: []pt.Task{{
+			Title:    "Implement real API",
+			Template: "backend_endpoint",
+			Role:     "dev",
+			Artifact: "code:api.go",
+			DoD:      pt.DefinitionOfDone{Manual: "check", Tests: []string{"go test"}, Criteria: []string{"api works"}},
+		}},
+	}
+	if _, err := store.Sync(ctx, integrationManifest); err != nil {
+		t.Fatalf("sync integration: %v", err)
+	}
+
+	// Register a mock
+	mock, err := store.RegisterMock(ctx, "Fake API client", "pkg/api/client.go:42", "pt-1", "pt-2")
+	if err != nil {
+		t.Fatalf("register mock: %v", err)
+	}
+	if mock.ID == "" {
+		t.Error("mock ID should not be empty")
+	}
+
+	// List mocks
+	mocks := store.ListMocks(ctx, false)
+	if len(mocks) != 1 {
+		t.Errorf("expected 1 mock, got %d", len(mocks))
+	}
+
+	// Check for orphans (integration task is not closed)
+	orphans := store.CheckMocks(ctx)
+	if len(orphans) != 1 {
+		t.Errorf("expected 1 orphan, got %d", len(orphans))
+	}
+
+	// Close the integration task
+	store = pt.NewStoreClient(path, "pt")
+	if err := store.UpdateIssue(ctx, "pt-2", "in_progress", "tester"); err != nil {
+		t.Fatalf("claim integration: %v", err)
+	}
+	if err := store.UpdateIssue(ctx, "pt-2", "needs_review", "tester"); err != nil {
+		t.Fatalf("transition to review: %v", err)
+	}
+	if err := store.UpdateIssue(ctx, "pt-2", "closed", "tester"); err != nil {
+		t.Fatalf("transition to closed: %v", err)
+	}
+
+	// Check again - should have no orphans now
+	orphans = store.CheckMocks(ctx)
+	if len(orphans) != 0 {
+		t.Errorf("expected 0 orphans after closing integration, got %d", len(orphans))
+	}
+
+	// Retire the mock
+	if err := store.RetireMock(ctx, mock.ID); err != nil {
+		t.Fatalf("retire mock: %v", err)
+	}
+
+	// List should be empty (without --all)
+	mocks = store.ListMocks(ctx, false)
+	if len(mocks) != 0 {
+		t.Errorf("expected 0 active mocks after retire, got %d", len(mocks))
+	}
+
+	// List with --all should show retired
+	mocks = store.ListMocks(ctx, true)
+	if len(mocks) != 1 {
+		t.Errorf("expected 1 mock with --all, got %d", len(mocks))
+	}
+}

@@ -408,3 +408,97 @@ criteria = ["works"]
 		}
 	})
 }
+
+func TestSpikeTaskValidation(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("Valid spike task", func(t *testing.T) {
+		manifest := `
+title = "Investigation"
+
+[[tasks]]
+template = "spike"
+title = "Investigate caching options"
+role = "backend-dev"
+artifact = "doc:outputs/spike-caching/findings.md"
+max_hours = 4
+[tasks.dod]
+tests = ["test -f outputs/spike-caching/findings.md"]
+manual = "Document findings with recommendation"
+criteria = ["Options documented", "Recommendation provided"]
+`
+		path := writeTemp(t, dir, "spike.toml", manifest)
+		got, err := ParseManifest(path)
+		if err != nil {
+			t.Fatalf("ParseManifest() error: %v", err)
+		}
+		if len(got.Tasks) != 1 {
+			t.Fatalf("expected 1 task, got %d", len(got.Tasks))
+		}
+		if got.Tasks[0].MaxHours != 4 {
+			t.Errorf("expected max_hours=4, got %d", got.Tasks[0].MaxHours)
+		}
+	})
+
+	t.Run("Spike without max_hours fails", func(t *testing.T) {
+		manifest := `
+title = "Investigation"
+
+[[tasks]]
+template = "spike"
+title = "Missing time-box"
+role = "backend-dev"
+artifact = "doc:findings.md"
+[tasks.dod]
+tests = ["echo ok"]
+manual = "verify"
+criteria = ["done"]
+`
+		path := writeTemp(t, dir, "spike_no_hours.toml", manifest)
+		_, err := ParseManifest(path)
+		if err == nil {
+			t.Fatal("expected error for spike without max_hours")
+		}
+		if !contains(err.Error(), "max_hours") {
+			t.Errorf("expected error about max_hours, got: %v", err)
+		}
+	})
+
+	t.Run("Spike with non-doc artifact fails", func(t *testing.T) {
+		manifest := `
+title = "Investigation"
+
+[[tasks]]
+template = "spike"
+title = "Wrong artifact"
+role = "backend-dev"
+artifact = "code:impl.go"
+max_hours = 2
+[tasks.dod]
+tests = ["echo ok"]
+manual = "verify"
+criteria = ["done"]
+`
+		path := writeTemp(t, dir, "spike_bad_artifact.toml", manifest)
+		_, err := ParseManifest(path)
+		if err == nil {
+			t.Fatal("expected error for spike with non-doc artifact")
+		}
+		if !contains(err.Error(), "doc:") {
+			t.Errorf("expected error about doc artifact, got: %v", err)
+		}
+	})
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr, 0))
+}
+
+func containsAt(s, substr string, start int) bool {
+	for i := start; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
