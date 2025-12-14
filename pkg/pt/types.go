@@ -175,6 +175,151 @@ type Exclusion struct {
 	Reason      string `json:"reason,omitempty"`     // Why it's excluded
 }
 
+// ============================================================================
+// DISCOVERY WORKFLOW TYPES - State machine for UX exploration
+// ============================================================================
+
+// DiscoveryStatus represents phases in the discovery workflow.
+// State machine: init → discovery → capabilities → exploring → synthesized → reviewing → approved
+type DiscoveryStatus string
+
+const (
+	StatusInit         DiscoveryStatus = "init"         // Project initialized
+	StatusDiscovery    DiscoveryStatus = "discovery"    // System/journey mapping
+	StatusCapabilities DiscoveryStatus = "capabilities" // Use cases identified
+	StatusExploring    DiscoveryStatus = "exploring"    // Options being generated
+	StatusSynthesized  DiscoveryStatus = "synthesized"  // Top 3 ready for review
+	StatusReviewing    DiscoveryStatus = "reviewing"    // User reviewing
+	StatusFeedback     DiscoveryStatus = "feedback"     // User gave feedback, agent iterating
+	StatusApproved     DiscoveryStatus = "approved"     // Ready for implementation
+)
+
+// ValidTransitions defines allowed state transitions in the discovery workflow.
+var ValidTransitions = map[DiscoveryStatus][]DiscoveryStatus{
+	StatusInit:         {StatusDiscovery},
+	StatusDiscovery:    {StatusCapabilities},
+	StatusCapabilities: {StatusExploring},
+	StatusExploring:    {StatusSynthesized},
+	StatusSynthesized:  {StatusReviewing},
+	StatusReviewing:    {StatusFeedback, StatusApproved},
+	StatusFeedback:     {StatusExploring, StatusSynthesized}, // iterate or re-synthesize
+	StatusApproved:     {},                                    // terminal state
+}
+
+// CanTransition checks if a status transition is valid.
+func (s DiscoveryStatus) CanTransition(to DiscoveryStatus) bool {
+	allowed, ok := ValidTransitions[s]
+	if !ok {
+		return false
+	}
+	for _, a := range allowed {
+		if a == to {
+			return true
+		}
+	}
+	return false
+}
+
+// MockupComponent represents a labeled element in a mockup for precise feedback.
+type MockupComponent struct {
+	ID             string `json:"id"`                        // e.g., "A1", "B3.2"
+	Type           string `json:"type"`                      // header, input, button, list, table, etc.
+	Content        string `json:"content"`                   // Display text/description
+	Implementation string `json:"implementation,omitempty"`  // e.g., "<Select> from shadcn/ui"
+	Notes          string `json:"notes,omitempty"`           // Design rationale
+}
+
+// SynthesisOption represents one of the top 3 recommended options.
+type SynthesisOption struct {
+	Label       string            `json:"label"`       // "A", "B", "C"
+	Name        string            `json:"name"`        // Short descriptive name
+	Description string            `json:"description"` // What this option does
+	Mockup      string            `json:"mockup"`      // Path to mockup file
+	Components  []MockupComponent `json:"components"`  // Labeled components
+	Coverage    int               `json:"coverage"`    // Capabilities covered
+	Total       int               `json:"total"`       // Total capabilities
+	Rationale   string            `json:"rationale"`   // Why this option
+	Gaps        []string          `json:"gaps"`        // Uncovered capabilities
+	Strengths   []string          `json:"strengths"`   // Key advantages
+	Tradeoffs   []string          `json:"tradeoffs"`   // Known limitations
+}
+
+// RejectedOption documents an option that was considered but not recommended.
+type RejectedOption struct {
+	Name        string   `json:"name"`                  // What was considered
+	Description string   `json:"description,omitempty"` // Brief description
+	Reason      string   `json:"reason"`                // Why it was rejected
+	Patterns    []string `json:"patterns,omitempty"`    // Patterns/approaches tried
+}
+
+// FeedbackItem tracks user feedback on specific components.
+type FeedbackItem struct {
+	ID          string `json:"id"`                     // Feedback ID (e.g., "F1")
+	ComponentID string `json:"component_id,omitempty"` // Target component (e.g., "A7")
+	OptionLabel string `json:"option_label,omitempty"` // Which option (e.g., "A")
+	Feedback    string `json:"feedback"`               // User's comment
+	Addressed   bool   `json:"addressed"`              // Has it been addressed?
+	AddressedIn string `json:"addressed_in,omitempty"` // Which iteration addressed it
+	CreatedAt   string `json:"created_at"`
+}
+
+// UXSynthesis is the comprehensive artifact for user review.
+// Stored at .pt/synthesis/{component_id}.json
+type UXSynthesis struct {
+	ComponentID    string            `json:"component_id"`           // From SystemMap
+	TaskID         string            `json:"task_id,omitempty"`      // PT task if linked
+	UXType         string            `json:"ux_type"`                // cli|tui|web|api
+	Status         DiscoveryStatus   `json:"status"`                 // Current phase
+	Capabilities   []UseCase         `json:"capabilities"`           // What must be supported
+	Recommendation string            `json:"recommendation"`         // Which option is recommended
+	Options        []SynthesisOption `json:"options"`                // Top 3 options
+	Rejected       []RejectedOption  `json:"rejected"`               // What was considered/rejected
+	Exploration    ExplorationLog    `json:"exploration"`            // Full exploration history
+	Feedback       []FeedbackItem    `json:"feedback,omitempty"`     // User feedback
+	Iterations     int               `json:"iterations"`             // Refinement count
+	CreatedAt      string            `json:"created_at"`
+	SynthesizedAt  string            `json:"synthesized_at,omitempty"`
+	ApprovedAt     string            `json:"approved_at,omitempty"`
+}
+
+// ExplorationLog tracks everything explored before synthesis.
+type ExplorationLog struct {
+	TotalOptions   int      `json:"total_options"`           // How many were explored
+	Approaches     []string `json:"approaches"`              // Different approaches tried
+	PatternsUsed   []string `json:"patterns_used,omitempty"` // Patterns from guidance
+	TimeSpent      string   `json:"time_spent,omitempty"`    // Human-readable duration
+	GuidanceUsed   string   `json:"guidance_used,omitempty"` // Which guidance file
+}
+
+// ExplorationGate defines minimum requirements before synthesis.
+type ExplorationGate struct {
+	MinOptions       int  `json:"min_options"`        // Default: 5
+	MinApproaches    int  `json:"min_approaches"`     // Default: 2
+	RequireIDs       bool `json:"require_ids"`        // Components must have IDs
+	RequireCoverage  bool `json:"require_coverage"`   // Must track capability coverage
+	RequireErrorCase bool `json:"require_error_case"` // Must show error handling
+}
+
+// DefaultExplorationGate returns standard exploration requirements.
+func DefaultExplorationGate() ExplorationGate {
+	return ExplorationGate{
+		MinOptions:       5,
+		MinApproaches:    2,
+		RequireIDs:       true,
+		RequireCoverage:  true,
+		RequireErrorCase: true,
+	}
+}
+
+// ImplementationGuidance provides type-specific implementation advice.
+type ImplementationGuidance struct {
+	UXType      string            `json:"ux_type"`      // cli|tui|web|api
+	Libraries   []string          `json:"libraries"`    // Recommended libraries
+	Patterns    map[string]string `json:"patterns"`     // Component -> pattern mapping
+	Examples    map[string]string `json:"examples"`     // Component -> code example
+	Constraints []string          `json:"constraints"`  // Must-follow rules
+}
+
 // HistoryEvent captures lifecycle events for a task.
 type HistoryEvent struct {
 	At     time.Time `json:"at"`

@@ -430,6 +430,8 @@ func run(args []string) error {
 		return cmdJourney(cmdArgs)
 	case "scope":
 		return cmdScope(cmdArgs)
+	case "discovery":
+		return cmdDiscovery(cmdArgs)
 	case "workflow":
 		return cmdWorkflow(cmdArgs)
 	// Shortcuts for common workflow commands
