@@ -37,3 +37,6 @@ context_*.json
 .pt.db*
 .beads/
 /pt
+
+# PT runtime state
+.pt/

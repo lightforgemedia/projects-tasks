@@ -1151,14 +1151,47 @@ func cmdClaim(args []string) error {
 		fmt.Printf("   Worktrees require git for branch isolation.\n")
 	}
 
-	// Check if task requires UX exploration
-	if meta.UX != nil {
+	// Check if task requires UX exploration (only if not using discovery template)
+	if meta.UX != nil && meta.Template != "discovery" {
 		fmt.Printf("\n🎨 This task requires UX exploration before building.\n")
 		fmt.Printf("   Run: pt ux-cases %s\n", id)
 		fmt.Printf("\n   UX Discovery Flow:\n")
 		fmt.Printf("   1. pt ux-cases %s    - Define use cases\n", id)
 		fmt.Printf("   2. pt ux-explore %s  - Generate options\n", id)
 		fmt.Printf("   3. pt ux-select %s   - Select approach\n", id)
+	}
+
+	// Check if task uses discovery template
+	if meta.Template == "discovery" {
+		// Derive component ID from artifact or task ID
+		componentID := id
+		if meta.Artifact != "" {
+			// Extract component name from artifact (e.g., "code:cmd/sot/order.go" -> "sot-order")
+			parts := strings.Split(meta.Artifact, "/")
+			if len(parts) >= 2 {
+				// Use last two path components (e.g., "sot/order.go" -> "sot-order")
+				dir := parts[len(parts)-2]
+				file := strings.TrimSuffix(parts[len(parts)-1], filepath.Ext(parts[len(parts)-1]))
+				componentID = dir + "-" + file
+			}
+		}
+		// Derive UX type from artifact path
+		uxType := "cli" // default
+		if strings.Contains(meta.Artifact, "web") || strings.Contains(meta.Artifact, "frontend") || strings.Contains(meta.Artifact, "ui") {
+			uxType = "web"
+		}
+
+		fmt.Printf("\n🔍 This task uses the discovery workflow.\n")
+		fmt.Printf("   Design UX before implementation using iterative exploration.\n")
+		fmt.Printf("\n   Suggested component: %s (type: %s)\n", componentID, uxType)
+		fmt.Printf("\n   Discovery Flow:\n")
+		fmt.Printf("   1. pt discovery init %s --type %s\n", componentID, uxType)
+		fmt.Printf("   2. pt discovery capabilities %s <cap1> <cap2> ...\n", componentID)
+		fmt.Printf("   3. pt discovery explore %s <approach-name> <description>\n", componentID)
+		fmt.Printf("   4. pt discovery synthesize %s\n", componentID)
+		fmt.Printf("   5. pt discovery feedback %s <feedback>\n", componentID)
+		fmt.Printf("   6. pt discovery approve %s\n", componentID)
+		fmt.Printf("\n   The workflow ensures 2+ options explored before synthesis.\n")
 	}
 
 	return nil

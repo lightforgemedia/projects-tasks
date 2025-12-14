@@ -1,0 +1,17 @@
+# SOT Order Entry Design
+title = "SOT Order Entry"
+owner = "tawawhite"
+
+[[tasks]]
+template = "discovery"
+title = "Design order entry UX"
+role = "dev"
+artifact = "code:cmd/sot/order.go"
+[tasks.dod]
+tests = ["echo 'test order'"]
+manual = "Test order submission flow"
+criteria = ["Order preview works", "Submit order works"]
+[tasks.ux]
+type = "cli"
+options_min = 2
+iteration_max = 3
