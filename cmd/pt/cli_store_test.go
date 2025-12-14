@@ -430,3 +430,93 @@ func TestContextPrimeReportsOverriddenDBPath(t *testing.T) {
 		t.Fatalf("expected store_path to include overridden db path %q, got:\n%s", dbPath, out)
 	}
 }
+
+func TestPorcelainListOutput(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Task One", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+			{Title: "Task Two", Template: "backend_endpoint", Role: "dev", Artifact: "spec:b", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdList([]string{"--porcelain"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("list --porcelain err: %v", err)
+	}
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := buf.String()
+
+	// Should be TSV format: id\tstatus\tassignee\ttitle
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %s", len(lines), out)
+	}
+
+	// Check first line has correct TSV format
+	parts := strings.Split(lines[0], "\t")
+	if len(parts) != 4 {
+		t.Fatalf("expected 4 TSV columns, got %d: %s", len(parts), lines[0])
+	}
+	if parts[1] != "open" {
+		t.Fatalf("expected status 'open', got %s", parts[1])
+	}
+	if parts[2] != "-" {
+		t.Fatalf("expected unassigned '-', got %s", parts[2])
+	}
+}
+
+func TestPorcelainShowOutput(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Task One", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdShow([]string{"--porcelain", "pt-1"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("show --porcelain err: %v", err)
+	}
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := buf.String()
+
+	// Should be JSON
+	if !strings.HasPrefix(strings.TrimSpace(out), "{") {
+		t.Fatalf("expected JSON output starting with '{', got: %s", out)
+	}
+	if !strings.Contains(out, `"id":`) {
+		t.Fatalf("expected 'id' field in JSON, got: %s", out)
+	}
+	if !strings.Contains(out, `"Task One"`) {
+		t.Fatalf("expected title in JSON, got: %s", out)
+	}
+}

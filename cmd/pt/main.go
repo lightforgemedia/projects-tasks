@@ -850,10 +850,11 @@ func cmdList(args []string) error {
 	limit := fs.Int("limit", 50, "max issues")
 	sortKey := fs.String("sort", "priority", "sort by priority|title")
 	jsonOut := fs.Bool("json", false, "output JSON")
+	porcelain := fs.Bool("porcelain", false, "output stable TSV format (id, status, assignee, title)")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt list [--status=...] [--role=ROLE] [--phase=PHASE] [--limit=N] [--json]")
+		fmt.Println("Usage: pt list [--status=...] [--role=ROLE] [--phase=PHASE] [--limit=N] [--json] [--porcelain]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -898,6 +899,17 @@ func cmdList(args []string) error {
 	if *jsonOut {
 		return printJSON(issues)
 	}
+	if *porcelain {
+		// TSV format: id<TAB>status<TAB>assignee<TAB>title
+		for _, iss := range issues {
+			assignee := iss.Assignee
+			if assignee == "" {
+				assignee = "-"
+			}
+			fmt.Printf("%s\t%s\t%s\t%s\n", iss.ID, iss.Status, assignee, iss.Title)
+		}
+		return nil
+	}
 	for _, iss := range issues {
 		line := fmt.Sprintf("%s [%s] %s status=%s", iss.ID, iss.IssueType, iss.Title, iss.Status)
 		if strings.TrimSpace(iss.Assignee) == "" {
@@ -916,9 +928,10 @@ func cmdList(args []string) error {
 func cmdShow(args []string) error {
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	jsonOut := fs.Bool("json", false, "output JSON")
+	porcelain := fs.Bool("porcelain", false, "output JSON (alias for --json)")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt show <id> [--json]") }
+	fs.Usage = func() { fmt.Println("Usage: pt show <id> [--json] [--porcelain]") }
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -936,7 +949,7 @@ func cmdShow(args []string) error {
 	}
 	deps, _ := client.Dependencies(ctx, id)
 	comments, _ := client.Comments(ctx, id)
-	if *jsonOut {
+	if *jsonOut || *porcelain {
 		return printJSON(map[string]interface{}{
 			"id":          iss.ID,
 			"title":       iss.Title,
