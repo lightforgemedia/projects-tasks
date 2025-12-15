@@ -1603,6 +1603,18 @@ func cmdDiscoveryApprove(args []string) error {
 │ validated the approach - now execute it faithfully.                          │
 │                                                                              │
 │ ═══════════════════════════════════════════════════════════════════════════  │
+│ STEP 0: SAVE WIREFRAME (REQUIRED)                                            │
+│ ═══════════════════════════════════════════════════════════════════════════  │
+│                                                                              │
+│ Before implementation, save the approved wireframe/mockup to a file:         │
+│                                                                              │
+│   pt discovery mockup %s <selected-label> < wireframe.txt                    │
+│                                                                              │
+│ The wireframe serves as the source of truth during implementation.           │
+│ Implementation MUST match the approved wireframe - any deviation requires    │
+│ going back to the user for re-approval.                                      │
+│                                                                              │
+│ ═══════════════════════════════════════════════════════════════════════════  │
 │ STEP 1: GENERATE HANDOFF                                                     │
 │ ═══════════════════════════════════════════════════════════════════════════  │
 │                                                                              │
@@ -1676,7 +1688,7 @@ func cmdDiscoveryApprove(args []string) error {
 │                                                                              │
 │ The user approved a specific UX. Respect that approval.                      │
 └──────────────────────────────────────────────────────────────────────────────┘
-`, componentID)
+`, componentID, componentID)
 	return nil
 }
 
@@ -1713,6 +1725,27 @@ func cmdDiscoveryHandoff(args []string) error {
 
 	if selected == nil {
 		return fmt.Errorf("selected option %s not found", syn.Recommendation)
+	}
+
+	// Check for wireframe/mockup - required for UI/UX implementations
+	if syn.UXType == "web" || syn.UXType == "tui" || syn.UXType == "cli" {
+		mockupPath := mockupFilePath(componentID, selected.Label)
+		if _, err := os.Stat(mockupPath); os.IsNotExist(err) {
+			fmt.Println("⚠️  WIREFRAME REQUIRED")
+			fmt.Println("")
+			fmt.Println("No wireframe found for selected option. Before implementation,")
+			fmt.Println("you must create and save a wireframe/mockup for the approved design.")
+			fmt.Println("")
+			fmt.Println("Create wireframe with:")
+			fmt.Printf("  pt discovery mockup %s %s < wireframe.txt\n", componentID, selected.Label)
+			fmt.Println("")
+			fmt.Println("Or save from stdin:")
+			fmt.Printf("  cat <<EOF | pt discovery mockup %s %s\n", componentID, selected.Label)
+			fmt.Println("  [Your ASCII wireframe here]")
+			fmt.Println("  EOF")
+			fmt.Println("")
+			return fmt.Errorf("wireframe required before handoff; implementation must follow approved design")
+		}
 	}
 
 	// Generate handoff document
