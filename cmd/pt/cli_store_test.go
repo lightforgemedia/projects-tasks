@@ -28,6 +28,69 @@ func TestCmdSyncStore(t *testing.T) {
 	}
 }
 
+func TestCmdSyncAssignsPhaseLabelsWhenWorkflowExists(t *testing.T) {
+	path, store := setupStoreEnv(t)
+
+	wfPath := filepath.Join(t.TempDir(), "wf.toml")
+	wf := `
+name = "wf"
+
+[phase_assignment]
+label_prefix = "phase:"
+
+[phase_assignment.by_template]
+backend_endpoint = "build"
+
+[[phases]]
+id = "build"
+name = "Build"
+order = 1
+`
+	if err := os.WriteFile(wfPath, []byte(wf), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+	t.Setenv("PT_WORKFLOW", wfPath)
+
+	manifestPath := filepath.Join(t.TempDir(), "manifest.toml")
+	manifest := `
+title = "T"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "A"
+role = "dev"
+artifact = "spec:a"
+[tasks.dod]
+tests = ["echo ok"]
+manual = "check"
+criteria = ["ok"]
+`
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	if err := cmdSync([]string{manifestPath}); err != nil {
+		t.Fatalf("cmdSync err: %v", err)
+	}
+
+	store = pt.NewStoreClient(path, "pt")
+	iss, _, err := store.GetTask(t.Context(), "pt-1")
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+
+	found := false
+	for _, l := range iss.Labels {
+		if l == "phase:build" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected phase:build label, got: %v", iss.Labels)
+	}
+}
+
 func TestCmdClaimAndReleaseStore(t *testing.T) {
 	path, store := setupStoreEnv(t)
 	manifest := pt.Manifest{

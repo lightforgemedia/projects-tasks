@@ -647,6 +647,26 @@ func cmdSync(args []string) error {
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
+	// Workflow-aware sync: if a workflow exists and uses a label_prefix, assign phase labels
+	// based on template mapping/defaults to make phase ordering stable for agents.
+	if wfPath, err := findWorkflowFile(); err == nil {
+		if wf, err := pt.ParseWorkflow(wfPath); err == nil {
+			if strings.TrimSpace(wf.PhaseAssignment.LabelPrefix) != "" {
+				for _, id := range idMap {
+					iss, meta, err := client.GetTask(ctx, id)
+					if err != nil {
+						continue
+					}
+					phaseID := wf.GetTaskPhase(iss, meta)
+					if phaseID == "" || phaseID == "unassigned" {
+						continue
+					}
+					_ = client.AddLabels(ctx, id, wf.PhaseAssignment.LabelPrefix+phaseID)
+				}
+			}
+		}
+	}
+
 	// Generate review tasks if requested
 	var reviewIDs map[string]string
 	if *generateReviews {

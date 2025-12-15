@@ -25,6 +25,7 @@ Stateless logic package.
 
 ### CLI (`cmd/pt`)
 - `pt sync <manifest.toml>`: Applies a plan.
+- When a workflow exists, `pt sync` also assigns `phase:*` labels based on template mapping to keep phase ordering stable.
 - `pt ready [--role=ROLE] [--phase=PHASE|--all-phases]`: Lists open work; when a workflow exists, defaults to the current (earliest unfinished) phase to reduce skipping ahead.
 - `pt claim <id> [--override-soft=REASON]`: Marks as `in_progress` and enforces workflow gates (hard blocks; soft requires an explicit override).
 - `pt next [--json]`: Conductor-style “what now?” command (review → work → unblock → plan → done).
