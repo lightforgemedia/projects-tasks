@@ -1192,6 +1192,11 @@ func cmdClaim(args []string) error {
 		fmt.Printf("   5. pt discovery feedback %s <feedback>\n", componentID)
 		fmt.Printf("   6. pt discovery approve %s\n", componentID)
 		fmt.Printf("\n   The workflow ensures 2+ options explored before synthesis.\n")
+		fmt.Println("")
+		fmt.Println("   ⚠️  ORCHESTRATION NOTE:")
+		fmt.Println("      Run 'pt discovery' commands yourself to see guidance prompts.")
+		fmt.Println("      Delegate the WORK (research, wireframes, analysis) to agents,")
+		fmt.Println("      not the PT commands themselves.")
 	}
 
 	return nil

@@ -263,6 +263,8 @@ func cmdDiscoveryInit(args []string) error {
 	fmt.Println()
 	fmt.Println(`┌─ AGENT SKILL: GATHER USER CONTEXT ────────────────────────────────────────────┐
 │                                                                              │
+│ ⚠️  ORCHESTRATION: Run PT commands directly. Delegate WORK to agents.        │
+│                                                                              │
 │ GOAL: Understand WHO uses this component and WHAT they need before exploring │
 │ UX options. This context drives all downstream decisions.                    │
 │                                                                              │
@@ -557,6 +559,8 @@ func cmdDiscoveryCapabilities(args []string) error {
 		// Agent guidance for capabilities → exploring transition
 		fmt.Println()
 		fmt.Printf(`┌─ AGENT SKILL: EXPLORE UX OPTIONS ─────────────────────────────────────────────┐
+│                                                                              │
+│ ⚠️  ORCHESTRATION: Run PT commands directly. Delegate WORK to agents.        │
 │                                                                              │
 │ GOAL: Generate multiple distinct UX approaches. Explore BREADTH before       │
 │ narrowing down. You work autonomously here - user review comes after.        │
@@ -1048,6 +1052,8 @@ func cmdDiscoverySynthesize(args []string) error {
 	fmt.Println()
 	fmt.Printf(`┌─ AGENT SKILL: PRESENT OPTIONS TO USER ────────────────────────────────────────┐
 │                                                                              │
+│ ⚠️  ORCHESTRATION: Run PT commands directly. Delegate WORK to agents.        │
+│                                                                              │
 │ ⚠️  STOP: This is a USER DECISION POINT. Do not proceed autonomously.        │
 │                                                                              │
 │ GOAL: Present the synthesized options clearly so the user can make an        │
@@ -1245,6 +1251,8 @@ func cmdDiscoveryReview(args []string) error {
 	fmt.Println()
 	fmt.Printf(`┌─ AGENT SKILL: FACILITATE USER REVIEW ─────────────────────────────────────────┐
 │                                                                              │
+│ ⚠️  ORCHESTRATION: Run PT commands directly. Delegate WORK to agents.        │
+│                                                                              │
 │ ⚠️  USER IS REVIEWING: Your role is facilitator, not decision-maker.         │
 │                                                                              │
 │ GOAL: Help the user understand the options and reach a decision. Answer      │
@@ -1382,6 +1390,8 @@ func cmdDiscoveryFeedback(args []string) error {
 	// Agent guidance for feedback → iterate transition
 	fmt.Println()
 	fmt.Printf(`┌─ AGENT SKILL: ADDRESS USER FEEDBACK ──────────────────────────────────────────┐
+│                                                                              │
+│ ⚠️  ORCHESTRATION: Run PT commands directly. Delegate WORK to agents.        │
 │                                                                              │
 │ GOAL: Address the user's feedback thoughtfully, then return to review.       │
 │ Each feedback item represents a user concern that must be resolved.          │
@@ -1609,6 +1619,8 @@ func cmdDiscoveryApprove(args []string) error {
 	// Agent guidance for approved → implementation transition
 	fmt.Println()
 	fmt.Printf(`┌─ AGENT SKILL: IMPLEMENT APPROVED UX ──────────────────────────────────────────┐
+│                                                                              │
+│ ⚠️  ORCHESTRATION: Run PT commands directly. Delegate WORK to agents.        │
 │                                                                              │
 │ ✅ DISCOVERY COMPLETE: User has approved the UX direction.                    │
 │                                                                              │
