@@ -78,6 +78,11 @@ func NewStoreClient(path, prefix string) *StoreClient {
 func (c *StoreClient) Sync(ctx context.Context, manifest Manifest) (map[string]string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Detect dependency cycles by title before writing anything.
+	// This prevents creating a corrupted plan that can never be made ready.
+	if err := detectManifestCycles(manifest); err != nil {
+		return nil, err
+	}
 	idByTitle := make(map[string]string, len(manifest.Tasks))
 	for _, task := range manifest.Tasks {
 		if ctx.Err() != nil {
@@ -101,6 +106,66 @@ func (c *StoreClient) Sync(ctx context.Context, manifest Manifest) (map[string]s
 		return nil, err
 	}
 	return idByTitle, nil
+}
+
+func detectManifestCycles(manifest Manifest) error {
+	// Build adjacency by title.
+	adj := make(map[string][]string, len(manifest.Tasks))
+	for _, t := range manifest.Tasks {
+		adj[t.Title] = append([]string{}, t.Deps...)
+	}
+
+	const (
+		unseen  = 0
+		visiting = 1
+		done    = 2
+	)
+	state := make(map[string]int, len(adj))
+
+	var stack []string
+	indexInStack := make(map[string]int, len(adj))
+
+	var visit func(string) error
+	visit = func(n string) error {
+		switch state[n] {
+		case visiting:
+			// Cycle found: report path from first occurrence.
+			start := indexInStack[n]
+			cycle := append([]string{}, stack[start:]...)
+			cycle = append(cycle, n)
+			return fmt.Errorf("dependency cycle detected: %s", strings.Join(cycle, " -> "))
+		case done:
+			return nil
+		}
+		state[n] = visiting
+		indexInStack[n] = len(stack)
+		stack = append(stack, n)
+
+		for _, dep := range adj[n] {
+			// Unknown deps are already validated elsewhere; ignore here.
+			if _, ok := adj[dep]; !ok {
+				continue
+			}
+			if err := visit(dep); err != nil {
+				return err
+			}
+		}
+
+		// Pop
+		stack = stack[:len(stack)-1]
+		delete(indexInStack, n)
+		state[n] = done
+		return nil
+	}
+
+	for title := range adj {
+		if state[title] == unseen {
+			if err := visit(title); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (c *StoreClient) Ready(ctx context.Context, role string, limit int) ([]Issue, error) {
