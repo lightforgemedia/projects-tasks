@@ -93,6 +93,21 @@ func TestValidateDoDQuotedCommand(t *testing.T) {
 	}
 }
 
+func TestValidateDoDStripsOuterQuotes(t *testing.T) {
+	r := &stubRunner{}
+	vr := ValidationRunner{Runner: r}
+	dod := DefinitionOfDone{
+		Tests: []string{`"echo ok"`},
+	}
+	res, err := vr.ValidateDoD(context.Background(), dod, true)
+	if err != nil || !res.Passed {
+		t.Fatalf("expected pass, got err=%v res=%+v", err, res)
+	}
+	if got := r.log; len(got) != 1 || got[0] != `sh -c echo ok` {
+		t.Fatalf("unexpected command log: %v", got)
+	}
+}
+
 func TestValidateDoDWorkDirWired(t *testing.T) {
 	// When Runner is nil, WorkDir should be passed to the default ExecRunner
 	tmpDir := t.TempDir()

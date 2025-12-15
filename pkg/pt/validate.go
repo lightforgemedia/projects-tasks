@@ -30,6 +30,7 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 	var outputs []string
 
 	runCmd := func(cmdStr string) error {
+		cmdStr = normalizeDoDCmd(cmdStr)
 		if strings.TrimSpace(cmdStr) == "" {
 			return nil
 		}
@@ -54,6 +55,20 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 		return ValidationResult{Passed: false, Output: strings.Join(outputs, "\n")}, errors.New("manual check not confirmed")
 	}
 	return ValidationResult{Passed: true, Output: strings.Join(outputs, "\n")}, nil
+}
+
+func normalizeDoDCmd(cmd string) string {
+	s := strings.TrimSpace(cmd)
+	if len(s) < 2 {
+		return s
+	}
+
+	// Some tasks/manifests store commands as a fully-quoted string (e.g. `"echo ok"`).
+	// When we pass that through `sh -c`, the extra wrapper quotes can cause parse errors.
+	if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+		return strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
 }
 
 // WithTimeout returns a context with default timeout if none provided.
