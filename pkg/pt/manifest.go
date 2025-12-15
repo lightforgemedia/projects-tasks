@@ -287,7 +287,38 @@ func parseStringArray(raw string) ([]string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return []string{}, nil
 	}
-	parts := strings.Split(raw, ",")
+	var parts []string
+	var buf strings.Builder
+	inQuotes := false
+	escape := false
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
+		if escape {
+			buf.WriteByte(ch)
+			escape = false
+			continue
+		}
+		if ch == '\\' && inQuotes {
+			escape = true
+			buf.WriteByte(ch)
+			continue
+		}
+		if ch == '"' {
+			inQuotes = !inQuotes
+			buf.WriteByte(ch)
+			continue
+		}
+		if ch == ',' && !inQuotes {
+			parts = append(parts, buf.String())
+			buf.Reset()
+			continue
+		}
+		buf.WriteByte(ch)
+	}
+	if buf.Len() > 0 {
+		parts = append(parts, buf.String())
+	}
+
 	var out []string
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
