@@ -474,8 +474,10 @@ func (w *Workflow) CheckGate(taskID string, issue Issue, meta TaskMeta, allIssue
 		}
 	}
 
-	// Also check the current phase's own gate (e.g., "has_comment:user-approved")
-	if phase.Gate.Condition != "" {
+	// Also check the current phase's own gate as an entry gate (e.g., "phase:frontend has_comment:user-approved").
+	// IMPORTANT: For the first phase (index 0), the phase gate is treated as an *exit gate* that blocks later phases,
+	// not as an entry gate that blocks work within the phase itself.
+	if phaseIdx > 0 && phase.Gate.Condition != "" {
 		// Collect tasks in current phase
 		var currentPhaseTasks []Issue
 		for _, iss := range allIssues {

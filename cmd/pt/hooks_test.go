@@ -139,6 +139,8 @@ on_fail = "warn"
 
 func TestGlobalAndLocalHooksMerge(t *testing.T) {
 	td := t.TempDir()
+	origDir, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	globalDir := filepath.Join(td, ".config", "pt")
 	if err := os.MkdirAll(globalDir, 0755); err != nil {
 		t.Fatalf("mkdir global: %v", err)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -161,5 +162,30 @@ block_message = "Need approval"
 
 	if strings.Contains(out, "BLOCKED") {
 		t.Fatalf("did not expect a completed phase to be marked BLOCKED, got:\n%s", out)
+	}
+}
+
+func TestFindWorkflowFileResolvesPTWORKFLOWRelativeToRepoRoot(t *testing.T) {
+	// Simulate running from a subdirectory (like cmd/pt) while PT_WORKFLOW is set to a repo-relative path.
+	// This matches how hooks run go test ./... and how users may invoke pt from different dirs.
+	root, err := gitRepoRoot("")
+	if err != nil || root == "" {
+		t.Fatalf("expected git repo root, err=%v root=%q", err, root)
+	}
+
+	oldWd, _ := os.Getwd()
+	subdir := filepath.Join(root, "cmd", "pt")
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	t.Setenv("PT_WORKFLOW", "workflows/risk-first.toml")
+	got, err := findWorkflowFile()
+	if err != nil {
+		t.Fatalf("findWorkflowFile: %v", err)
+	}
+	if !strings.HasSuffix(got, filepath.Join("workflows", "risk-first.toml")) {
+		t.Fatalf("unexpected workflow path: %q", got)
 	}
 }

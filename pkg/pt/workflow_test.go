@@ -334,6 +334,23 @@ func TestCheckGate(t *testing.T) {
 		}
 	})
 
+	t.Run("first phase ignores its own gate for entry", func(t *testing.T) {
+		// Even if the first phase declares a gate (used to block later phases),
+		// tasks in that phase must remain claimable.
+		allIssues := []Issue{
+			{ID: "pt-1", Status: "open", Labels: []string{"phase:risk"}},
+		}
+		issue := allIssues[0]
+		meta := TaskMeta{}
+		canProceed, isHard, blockingPhase, msg := wf.CheckGate("pt-1", issue, meta, allIssues, nil)
+		if !canProceed {
+			t.Fatalf("expected first phase task claimable; blockingPhase=%q msg=%q", blockingPhase, msg)
+		}
+		if isHard {
+			t.Fatalf("expected no hard block")
+		}
+	})
+
 	t.Run("second phase blocked by first (soft)", func(t *testing.T) {
 		allIssues := []Issue{
 			{ID: "pt-1", Status: "open", Labels: []string{"phase:risk"}},

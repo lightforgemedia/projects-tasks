@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"projects-tasks/pkg/pt"
@@ -68,27 +69,89 @@ Hook Integration:
 func findWorkflowFile() (string, error) {
 	// Check env var first
 	if env := os.Getenv("PT_WORKFLOW"); env != "" {
-		return env, nil
+		if resolved, ok := resolveWorkflowPath(env); ok {
+			return resolved, nil
+		}
+		return "", fmt.Errorf("workflow file not found: %s", env)
 	}
 
 	// Look for workflows/*.toml
-	matches, err := filepath.Glob("workflows/*.toml")
-	if err != nil {
-		return "", err
-	}
+	matches := findWorkflowGlobMatches("workflows/*.toml")
 	if len(matches) == 1 {
 		return matches[0], nil
 	}
 	if len(matches) > 1 {
-		return "", fmt.Errorf("multiple workflow files found in workflows/; specify --workflow=PATH")
+		return "", fmt.Errorf("multiple workflow files found (%s); specify --workflow=PATH", strings.Join(matches, ", "))
 	}
 
 	// Look for .pt/workflow.toml
-	if _, err := os.Stat(".pt/workflow.toml"); err == nil {
-		return ".pt/workflow.toml", nil
+	if resolved, ok := resolveWorkflowPath(".pt/workflow.toml"); ok {
+		return resolved, nil
 	}
 
 	return "", errors.New("no workflow file found; create workflows/<name>.toml or use --workflow=PATH")
+}
+
+func resolveWorkflowPath(path string) (string, bool) {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return "", false
+	}
+
+	// 1) As provided (relative to current working dir, or absolute).
+	if _, err := os.Stat(p); err == nil {
+		return p, true
+	}
+
+	// 2) If relative, attempt to resolve relative to the git repo root.
+	if !filepath.IsAbs(p) {
+		if root, err := gitRepoRoot(""); err == nil && root != "" {
+			candidate := filepath.Join(root, p)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+func findWorkflowGlobMatches(glob string) []string {
+	var out []string
+
+	// 1) CWD
+	if matches, err := filepath.Glob(glob); err == nil {
+		for _, m := range matches {
+			if resolved, ok := resolveWorkflowPath(m); ok {
+				out = append(out, resolved)
+			}
+		}
+	}
+
+	// 2) Repo root
+	if root, err := gitRepoRoot(""); err == nil && root != "" {
+		candidate := filepath.Join(root, glob)
+		if matches, err := filepath.Glob(candidate); err == nil {
+			for _, m := range matches {
+				if resolved, ok := resolveWorkflowPath(m); ok {
+					out = append(out, resolved)
+				}
+			}
+		}
+	}
+
+	// De-dup + stable ordering.
+	seen := make(map[string]struct{}, len(out))
+	uniq := make([]string, 0, len(out))
+	for _, p := range out {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		uniq = append(uniq, p)
+	}
+	sort.Strings(uniq)
+	return uniq
 }
 
 func cmdWorkflowStatus(args []string) error {
@@ -196,6 +259,20 @@ func buildWorkflowStatus(workflow pt.Workflow, allIssues []pt.Issue, comments ma
 						ps.BlockReason = fmt.Sprintf("⚠️  Soft gate (phase:%s): %s", prior.ID, reason)
 					}
 					break
+				}
+			}
+
+			// Also check this phase's own entry gate for phases after the first.
+			// This keeps `pt workflow status` consistent with `pt claim` enforcement.
+			if !ps.IsBlocked && i > 0 && strings.TrimSpace(phase.Gate.Condition) != "" {
+				satisfied, reason := workflow.EvaluateGate(phase, tasks, allIssues, comments)
+				if !satisfied {
+					ps.IsBlocked = true
+					if phase.Gate.Type == "hard" {
+						ps.BlockReason = fmt.Sprintf("🚫 Hard gate (phase:%s): %s", phase.ID, reason)
+					} else {
+						ps.BlockReason = fmt.Sprintf("⚠️  Soft gate (phase:%s): %s", phase.ID, reason)
+					}
 				}
 			}
 		}
