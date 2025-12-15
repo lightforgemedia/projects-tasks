@@ -1,0 +1,85 @@
+title = "TradingView Clone with Tradier Backend"
+owner = "team-trading"
+
+# Note: This manifest is intended to be used from the Tradeview project repo/worktree.
+# Run `pt sync phases/tradeview.toml` from that repo so DoD commands execute in the correct working directory.
+
+[[tasks]]
+template = "discovery"
+title = "Design TradingView clone UX and architecture"
+role = "planner"
+artifact = "spec:tradeview-design"
+context = "Create a trading dashboard similar to TradingView, powered by Tradier API for real-time data and order execution"
+scope = "IN: wireframes, component breakdown, Tradier API integration plan. OUT: implementation details"
+[tasks.dod]
+tests = ["echo 'Design task - no automated tests'"]
+manual = "Wireframe approved with component IDs, Tradier API endpoints documented"
+criteria = ["Wireframe created with component IDs", "Tradier API integration points identified", "Tech stack confirmed (React, TypeScript, Vite, Tailwind, Lightweight Charts)"]
+
+[[tasks]]
+template = "frontend_component"
+title = "Implement real-time chart component"
+role = "frontend-dev"
+deps = ["Design TradingView clone UX and architecture"]
+artifact = "code:src/components/Chart.tsx"
+context = "Core charting component using TradingView Lightweight Charts library with real-time data from Tradier API"
+inputs = ["src/components/Chart.tsx", "src/services/tradier.ts"]
+scope = "IN: chart rendering, real-time updates, basic indicators. OUT: advanced indicators, backtesting"
+[tasks.dod]
+tests = ["bun test src/components/Chart.test.tsx"]
+manual = "Chart displays real-time data and updates smoothly"
+criteria = ["Chart renders with Lightweight Charts", "Real-time data updates from Tradier", "Basic timeframe switching works"]
+
+[[tasks]]
+template = "frontend_component"
+title = "Implement watchlist component"
+role = "frontend-dev"
+deps = ["Design TradingView clone UX and architecture"]
+artifact = "code:src/components/Watchlist.tsx"
+context = "Symbol watchlist with real-time quotes from Tradier API"
+inputs = ["src/components/Watchlist.tsx", "src/services/tradier.ts"]
+scope = "IN: display symbols, real-time quotes, add/remove symbols. OUT: custom alerts, news integration"
+[tasks.dod]
+tests = ["bun test src/components/Watchlist.test.tsx"]
+manual = "Watchlist displays and updates quotes in real-time"
+criteria = ["Displays symbol list with quotes", "Real-time quote updates", "Add/remove symbols works"]
+
+[[tasks]]
+template = "frontend_component"
+title = "Implement order entry component"
+role = "frontend-dev"
+deps = ["Design TradingView clone UX and architecture"]
+artifact = "code:src/components/OrderEntry.tsx"
+context = "Order entry form integrated with Tradier API for order submission"
+inputs = ["src/components/OrderEntry.tsx", "src/services/tradier.ts"]
+scope = "IN: market/limit orders, quantity/price inputs, order submission. OUT: advanced order types, algorithmic trading"
+[tasks.dod]
+tests = ["bun test src/components/OrderEntry.test.tsx"]
+manual = "Order submission works with Tradier API (sandbox mode)"
+criteria = ["Order form validates inputs", "Submits orders to Tradier API", "Displays confirmation/errors"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Implement Tradier API service layer"
+role = "backend-dev"
+deps = ["Design TradingView clone UX and architecture"]
+artifact = "code:src/services/tradier.ts"
+context = "Service layer for Tradier API: quotes, market data, order execution"
+inputs = ["src/services/tradier.ts"]
+scope = "IN: quotes, market data, order submission. OUT: account management, options chains"
+[tasks.dod]
+tests = ["bun test src/services/tradier.test.ts"]
+manual = "API calls return data in sandbox mode"
+criteria = ["Fetches real-time quotes", "Fetches market data", "Submits orders to sandbox"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Integration test and build verification"
+role = "backend-dev"
+deps = ["Implement real-time chart component", "Implement watchlist component", "Implement order entry component", "Implement Tradier API service layer"]
+artifact = "doc:tradeview-integration"
+context = "Verify all components work together and build passes"
+[tasks.dod]
+tests = ["bun run build", "bun test"]
+manual = "Manual smoke test of all features"
+criteria = ["Build passes", "All tests pass", "Components display real Tradier data"]
