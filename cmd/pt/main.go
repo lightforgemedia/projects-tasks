@@ -439,7 +439,7 @@ func run(args []string) error {
 	case "status":
 		return cmdWorkflow([]string{"status"})
 	case "next":
-		return cmdWorkflow([]string{"next"})
+		return cmdNext(cmdArgs)
 	case "-h", "--help", "help":
 		return cmdHelp(cmdArgs)
 	default:
