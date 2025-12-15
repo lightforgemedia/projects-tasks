@@ -206,6 +206,73 @@ func TestNextDoesNotEmbedUsername(t *testing.T) {
 	}
 }
 
+func TestCmdNextSkipsBlocked(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Blocked Task", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+			{Title: "Ready Task", Template: "backend_endpoint", Role: "dev", Artifact: "spec:b", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if err := store.SetBlocked(t.Context(), "pt-1", "blocked for test", "tester"); err != nil {
+		t.Fatalf("set blocked: %v", err)
+	}
+
+	out := runCmdNextJSON(t, []string{"--json"})
+	if out["mode"] != "WORK" {
+		t.Fatalf("mode=%v, want WORK", out["mode"])
+	}
+	recs, ok := out["recommended"].([]any)
+	if !ok || len(recs) == 0 {
+		t.Fatalf("expected recommendations, got: %v", out["recommended"])
+	}
+	for _, r := range recs {
+		m, _ := r.(map[string]any)
+		cmd, _ := m["cmd"].(string)
+		if strings.Contains(cmd, "pt-1") {
+			t.Fatalf("expected pt next to skip blocked pt-1, got recommendation: %q", cmd)
+		}
+	}
+}
+
+func TestCmdNextBlockedOnlySuggestsBlockedCommand(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Only Task", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if err := store.SetBlocked(t.Context(), "pt-1", "blocked for test", "tester"); err != nil {
+		t.Fatalf("set blocked: %v", err)
+	}
+
+	out := runCmdNextJSON(t, []string{"--json"})
+	if out["mode"] != "BLOCKED" {
+		t.Fatalf("mode=%v, want BLOCKED", out["mode"])
+	}
+	recs, ok := out["recommended"].([]any)
+	if !ok || len(recs) == 0 {
+		t.Fatalf("expected recommendations, got: %v", out["recommended"])
+	}
+	found := false
+	for _, r := range recs {
+		m, _ := r.(map[string]any)
+		cmd, _ := m["cmd"].(string)
+		if cmd == "pt blocked" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected pt blocked recommendation, got: %v", recs)
+	}
+}
+
 func runCmdNextJSON(t *testing.T, args []string) map[string]any {
 	t.Helper()
 	old := os.Stdout

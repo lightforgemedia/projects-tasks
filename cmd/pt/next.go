@@ -87,6 +87,7 @@ func cmdNext(args []string) error {
 		comms, _ := client.Comments(ctx, iss.ID)
 		comments[iss.ID] = comms
 	}
+	blocked, _ := client.ListBlocked(ctx)
 
 	dodPath, dodExists := projectDoDStatus()
 	out := nextResult{
@@ -196,6 +197,9 @@ func cmdNext(args []string) error {
 	var selectedMeta pt.TaskMeta
 	for i := range candidates {
 		task := candidates[i]
+		if _, isBlocked := blocked[task.ID]; isBlocked {
+			continue
+		}
 		blockers := readyBlockers(ctx, client, task)
 		if len(blockers) > 0 {
 			continue
@@ -275,17 +279,30 @@ func cmdNext(args []string) error {
 
 	// 6) No claimable candidates: if there are open tasks at all, we’re blocked by deps, manual blocks, role filter, phase focus, or gates.
 	openCount := 0
+	openBlockedCount := 0
 	for _, iss := range allIssues {
 		if iss.Status == "open" {
 			openCount++
+			if _, isBlocked := blocked[iss.ID]; isBlocked {
+				openBlockedCount++
+			}
 		}
 	}
 	if openCount > 0 {
 		out.Mode = nextModeBlocked
-		out.Why = append(out.Why, "open tasks exist but none are currently claimable (deps/manual blocks/gates/filters)")
+		if openBlockedCount == openCount && openCount > 0 {
+			out.Why = append(out.Why, "all open tasks are marked blocked")
+			out.Recommended = []nextRecommendation{
+				{Cmd: "pt blocked", Kind: "unblock"},
+				{Cmd: "pt next", Kind: "unblock"},
+			}
+			return printNext(out, *jsonOut)
+		}
+		out.Why = append(out.Why, "open tasks exist but none are currently claimable (deps/blocked/gates/filters)")
 		out.Recommended = []nextRecommendation{
 			{Cmd: "pt workflow status", Kind: "unblock"},
 			{Cmd: "pt ready --all-phases --verbose", Kind: "unblock"},
+			{Cmd: "pt blocked", Kind: "unblock"},
 			{Cmd: "pt next --all-phases", Kind: "unblock"},
 		}
 		return printNext(out, *jsonOut)
