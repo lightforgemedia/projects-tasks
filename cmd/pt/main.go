@@ -2167,6 +2167,7 @@ func cmdComment(args []string) error {
 }
 
 func cmdUpdate(args []string) error {
+	args = reorderArgs(args) // Allow flags after positional args
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	title := fs.String("title", "", "new title")
 	assignee := fs.String("assignee", "", "new assignee")
