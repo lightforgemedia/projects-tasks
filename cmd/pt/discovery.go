@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -1586,6 +1587,18 @@ func cmdDiscoveryApprove(args []string) error {
 
 	if err := saveSynthesis(syn); err != nil {
 		return err
+	}
+
+	// Auto-comment on linked PT task if present
+	if syn.TaskID != "" {
+		client := newClient()
+		ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		commentText := fmt.Sprintf("discovery-approved: %s", componentID)
+		if err := client.AddComment(ctx, syn.TaskID, commentText); err != nil {
+			// Non-fatal: warn but continue
+			fmt.Fprintf(os.Stderr, "Warning: failed to add comment to task %s: %v\n", syn.TaskID, err)
+		}
 	}
 
 	fmt.Println("╔════════════════════════════════════════════════════════════╗")

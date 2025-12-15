@@ -389,6 +389,22 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 		return false, fmt.Sprintf("no comment containing %q found in phase %q", tag, reqPhase)
 	}
 
+	// Handle "discovery:approved:<component-id>" condition (searches current phase tasks)
+	if strings.HasPrefix(condition, "discovery:approved:") {
+		componentID := strings.TrimPrefix(condition, "discovery:approved:")
+		expectedComment := fmt.Sprintf("discovery-approved: %s", componentID)
+		for _, t := range phaseTasks {
+			if taskComments, ok := comments[t.ID]; ok {
+				for _, c := range taskComments {
+					if strings.Contains(strings.ToLower(c), strings.ToLower(expectedComment)) {
+						return true, ""
+					}
+				}
+			}
+		}
+		return false, fmt.Sprintf("discovery not approved for component %q", componentID)
+	}
+
 	// Handle compound conditions with OR
 	if strings.Contains(condition, " OR ") {
 		parts := strings.Split(condition, " OR ")
@@ -404,7 +420,7 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 	}
 
 	// Unknown condition - fail closed with clear error
-	return false, fmt.Sprintf("unknown gate condition %q (supported: all_closed, phase:X complete, has_comment:X, phase:X has_comment:Y)", condition)
+	return false, fmt.Sprintf("unknown gate condition %q (supported: all_closed, phase:X complete, has_comment:X, phase:X has_comment:Y, discovery:approved:X)", condition)
 }
 
 // CheckGate evaluates a gate for a specific task.
