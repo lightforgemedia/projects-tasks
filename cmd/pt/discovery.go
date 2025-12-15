@@ -1048,6 +1048,57 @@ func cmdDiscoverySynthesize(args []string) error {
 		fmt.Printf("\n%d options rejected.\n", len(syn.Rejected))
 	}
 
+	// Agent guidance for evaluation gate
+	fmt.Println()
+	fmt.Printf(`┌─ AGENT SKILL: EVALUATE OPTIONS AGAINST REQUIREMENTS ──────────────────────┐
+│                                                                           │
+│ ⚠️  STOP: Before presenting, validate the top 3 actually meet requirements.│
+│                                                                           │
+│ CHECKLIST (answer honestly for EACH top option):                          │
+│                                                                           │
+│   1. KILLER FEATURE - Does it address what the user emphasized most?      │
+│      If user said "tabs are the killer feature", is tab UX central?       │
+│                                                                           │
+│   2. CAPABILITY COVERAGE - Walk through each UC:                          │
+│      "UC5 multi-chart grid" - Is it actually shown? Or just mentioned?    │
+│      "UC11 SR sync" - Can you point to where in the mockup this works?    │
+│                                                                           │
+│   3. WOULD YOU USE IT? - Be brutally honest.                              │
+│      If you wouldn't use it, why would the user?                          │
+│                                                                           │
+│   4. MATCHES USER'S WORDS - Does it reflect THEIR vision or generic UX?   │
+│      Compare to their exact description, not industry patterns.           │
+│                                                                           │
+│ ═══════════════════════════════════════════════════════════════════════   │
+│ IF ANY TOP OPTION FAILS THESE CHECKS:                                     │
+│ ═══════════════════════════════════════════════════════════════════════   │
+│                                                                           │
+│   Don't settle. Go back and iterate:                                      │
+│     pt discovery feedback %s "Options don't match killer feature"     │
+│     pt discovery option %s F --name "..." --desc "..."                │
+│                                                                           │
+│   Then re-synthesize:                                                     │
+│     pt discovery synthesize %s                                        │
+│                                                                           │
+│ ═══════════════════════════════════════════════════════════════════════   │
+│ IF ALL TOP 3 FAIL:                                                        │
+│ ═══════════════════════════════════════════════════════════════════════   │
+│                                                                           │
+│   This means exploration was insufficient. Options were:                  │
+│     - Too generic (template-based, not requirement-based)                 │
+│     - Missing the core insight the user shared                            │
+│     - Created to satisfy gates, not solve the problem                     │
+│                                                                           │
+│   Push back on subagent work. Redo exploration with:                      │
+│     - User's EXACT requirements quoted                                    │
+│     - Killer feature as the DESIGN CENTER                                 │
+│     - Rejection of generic patterns                                       │
+│                                                                           │
+│ OWNERSHIP: Presenting bad options wastes user's time and trust.           │
+│            Better to iterate now than apologize later.                    │
+└───────────────────────────────────────────────────────────────────────────┘
+`, componentID, componentID, componentID)
+
 	// Agent guidance for synthesis → review transition
 	fmt.Println()
 	fmt.Printf(`┌─ AGENT SKILL: PRESENT OPTIONS TO USER ────────────────────────────────────────┐
