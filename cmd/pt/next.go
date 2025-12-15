@@ -62,11 +62,12 @@ func cmdNext(args []string) error {
 	role := fs.String("role", "", "filter recommended work by role label")
 	strict := fs.Bool("strict", false, "treat soft gates as blocking")
 	allPhases := fs.Bool("all-phases", false, "debug: consider open tasks across all phases")
+	workflowPath := fs.String("workflow", "", "path to workflow template (overrides auto-discovery)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt next [--role=ROLE] [--strict] [--all-phases] [--json]")
+		fmt.Println("Usage: pt next [--role=ROLE] [--strict] [--all-phases] [--workflow=PATH] [--json]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -116,12 +117,26 @@ func cmdNext(args []string) error {
 
 	// 2) If workflow exists, use it to determine current phase and enforce gates.
 	var wf *pt.Workflow
-	if path, err := findWorkflowFile(); err == nil {
-		parsed, err := pt.ParseWorkflow(path)
+	var workflowErr error
+	wfPath := strings.TrimSpace(*workflowPath)
+	if wfPath == "" {
+		path, err := findWorkflowFile()
+		if err == nil {
+			wfPath = path
+		} else {
+			workflowErr = err
+		}
+	}
+	if wfPath != "" {
+		parsed, err := pt.ParseWorkflow(wfPath)
 		if err != nil {
 			return fmt.Errorf("parse workflow: %w", err)
 		}
 		wf = &parsed
+	}
+	if wf == nil && workflowErr != nil {
+		out.Why = append(out.Why, fmt.Sprintf("workflow not selected: %s", workflowErr.Error()))
+		out.Why = append(out.Why, "set PT_WORKFLOW or pass --workflow=PATH to enable phase/gate guidance")
 	}
 
 	currentPhaseID := ""
@@ -176,50 +191,74 @@ func cmdNext(args []string) error {
 	}
 	pt.SortIssues(candidates, "priority")
 
-	// 4) If workflow exists, determine whether we are blocked by gates for the best candidate.
-	if wf != nil && len(candidates) > 0 {
-		task := candidates[0]
-		meta, _ := pt.ParseTaskMeta(task.Description)
-		canProceed, isHard, blockingPhase, msg := wf.CheckGate(task.ID, task, meta, allIssues, comments)
-		if !canProceed {
-			gateType := "soft"
-			if isHard {
-				gateType = "hard"
-			}
-			if isHard || *strict {
-				out.Mode = nextModeBlocked
-				out.Blocking = &nextBlocking{
-					GateType:      gateType,
-					BlockingPhase: blockingPhase,
-					Message:       msg,
-					UnblockSteps: []string{
-						fmt.Sprintf("pt ready --phase=%s --all-phases", blockingPhase),
-						"pt workflow status",
-					},
-				}
-				out.Why = []string{"workflow gate prevents starting the next task", "complete earlier phase work or explicitly override soft gate"}
-				out.Recommended = []nextRecommendation{
-					{Cmd: "pt workflow status", Kind: "unblock"},
-					{Cmd: fmt.Sprintf("pt ready --phase=%s --all-phases --verbose", blockingPhase), Kind: "unblock"},
-					{Cmd: "pt next", Kind: "unblock"},
-				}
-
-				// If this looks like an end-user checkpoint, call it out.
-				if strings.Contains(strings.ToLower(msg), "user") || strings.Contains(strings.ToLower(blockingPhase), "review") {
-					out.ApprovalsNeeded = append(out.ApprovalsNeeded, "end_user")
-				}
-				return printNext(out, *jsonOut)
-			}
-
-			// Non-strict soft gate: recommend the work, but include the warning and the override path.
-			out.Why = []string{fmt.Sprintf("soft gate warning (phase:%s): %s", blockingPhase, msg)}
+	// 4) Find the first task that is actually claimable (no blockers), and check workflow gates.
+	var selected *pt.Issue
+	var selectedMeta pt.TaskMeta
+	for i := range candidates {
+		task := candidates[i]
+		blockers := readyBlockers(ctx, client, task)
+		if len(blockers) > 0 {
+			continue
 		}
+		meta, _ := pt.ParseTaskMeta(task.Description)
+
+		if wf != nil {
+			canProceed, isHard, blockingPhase, msg := wf.CheckGate(task.ID, task, meta, allIssues, comments)
+			if !canProceed {
+				// Hard gates always block.
+				if isHard || *strict {
+					out.Mode = nextModeBlocked
+					gateType := "soft"
+					if isHard {
+						gateType = "hard"
+					}
+					out.Blocking = &nextBlocking{
+						GateType:      gateType,
+						BlockingPhase: blockingPhase,
+						Message:       msg,
+						UnblockSteps: []string{
+							"pt workflow status",
+							fmt.Sprintf("pt ready --phase=%s --all-phases --verbose", blockingPhase),
+							"pt next",
+						},
+					}
+					out.Why = append(out.Why, "workflow gate prevents starting the next task")
+					out.Recommended = []nextRecommendation{
+						{Cmd: "pt workflow status", Kind: "unblock"},
+						{Cmd: fmt.Sprintf("pt ready --phase=%s --all-phases --verbose", blockingPhase), Kind: "unblock"},
+						{Cmd: "pt next", Kind: "unblock"},
+					}
+					// Soft-gate override path is explicit, but not the default.
+					if !isHard {
+						out.Recommended = append(out.Recommended, nextRecommendation{
+							Cmd:  fmt.Sprintf("pt claim %s --as=%s --override-soft=\"<reason>\"", task.ID, defaultIdentityForPrint()),
+							Kind: "unblock",
+						})
+					}
+
+					// If this looks like an end-user checkpoint, call it out.
+					if strings.Contains(strings.ToLower(msg), "user") || strings.Contains(strings.ToLower(blockingPhase), "review") {
+						out.ApprovalsNeeded = append(out.ApprovalsNeeded, "end_user")
+					} else {
+						out.ApprovalsNeeded = append(out.ApprovalsNeeded, "internal")
+					}
+					return printNext(out, *jsonOut)
+				}
+				// Non-strict soft gate: still avoid recommending it as a normal WORK item,
+				// because pt claim requires an explicit override.
+				continue
+			}
+		}
+
+		selected = &task
+		selectedMeta = meta
+		break
 	}
 
 	// 5) WORK recommendation if we have any candidates.
-	if len(candidates) > 0 {
-		task := candidates[0]
-		meta, _ := pt.ParseTaskMeta(task.Description)
+	if selected != nil {
+		task := *selected
+		meta := selectedMeta
 		out.Mode = nextModeWork
 		out.Why = append(out.Why, "task is open and selected from the current focus set")
 		if strings.TrimSpace(meta.Context) != "" {
@@ -234,7 +273,7 @@ func cmdNext(args []string) error {
 		return printNext(out, *jsonOut)
 	}
 
-	// 6) No candidates: if there are any open tasks at all, we’re likely blocked by role filter or phase focus.
+	// 6) No claimable candidates: if there are open tasks at all, we’re blocked by deps, manual blocks, role filter, phase focus, or gates.
 	openCount := 0
 	for _, iss := range allIssues {
 		if iss.Status == "open" {
@@ -243,7 +282,7 @@ func cmdNext(args []string) error {
 	}
 	if openCount > 0 {
 		out.Mode = nextModeBlocked
-		out.Why = []string{"open tasks exist but none are currently selectable (role filter, phase focus, or gates)"}
+		out.Why = append(out.Why, "open tasks exist but none are currently claimable (deps/manual blocks/gates/filters)")
 		out.Recommended = []nextRecommendation{
 			{Cmd: "pt workflow status", Kind: "unblock"},
 			{Cmd: "pt ready --all-phases --verbose", Kind: "unblock"},

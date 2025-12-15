@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"projects-tasks/pkg/pt"
@@ -76,6 +77,51 @@ order = 2
 			t.Fatalf("current_phase.id=%v, want risk", current["id"])
 		}
 	})
+
+	t.Run("workflow selection warning when multiple workflows exist and none selected", func(t *testing.T) {
+		_, store := setupStoreEnv(t)
+		manifest := pt.Manifest{
+			Tasks: []pt.Task{
+				{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+			},
+		}
+		if _, err := store.Sync(t.Context(), manifest); err != nil {
+			t.Fatalf("sync: %v", err)
+		}
+
+		// Create two workflow files and ensure PT_WORKFLOW is not set.
+		wd := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(wd, "workflows"), 0o755); err != nil {
+			t.Fatalf("mkdir workflows: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(wd, "workflows", "a.toml"), []byte("name=\"a\"\n[[phases]]\nid=\"p\"\nname=\"p\"\norder=1\n"), 0o644); err != nil {
+			t.Fatalf("write wf a: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(wd, "workflows", "b.toml"), []byte("name=\"b\"\n[[phases]]\nid=\"p\"\nname=\"p\"\norder=1\n"), 0o644); err != nil {
+			t.Fatalf("write wf b: %v", err)
+		}
+
+		oldWd, _ := os.Getwd()
+		_ = os.Chdir(wd)
+		t.Cleanup(func() { _ = os.Chdir(oldWd) })
+		t.Setenv("PT_WORKFLOW", "")
+
+		out := runCmdNextJSON(t, []string{"--json"})
+		why, _ := out["why"].([]any)
+		if len(why) == 0 {
+			t.Fatalf("expected why messages")
+		}
+		found := false
+		for _, v := range why {
+			if s, ok := v.(string); ok && strings.Contains(s, "workflow not selected") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected workflow selection warning in why, got: %v", why)
+		}
+	})
 }
 
 func runCmdNextJSON(t *testing.T, args []string) map[string]any {
@@ -99,4 +145,3 @@ func runCmdNextJSON(t *testing.T, args []string) map[string]any {
 	}
 	return out
 }
-
