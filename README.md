@@ -95,10 +95,11 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 
 ### Quick Flow (bd-style helper)
 1) `pt sync phases/<file>.toml` — apply manifest to the store.
-2) `pt ready --role=<role> --verbose` — find unblocked work.
-3) `pt claim <id> [--as=you]` — assign and start.
-4) Do the work, then `pt validate <id> [--yes]` — moves to `needs_review` with manual notes.
-5) `pt approve <id>` or `pt reject <id> --reason="..."` — review outcomes.
+2) `pt next [--json]` — conductor-style “what now?” (review → work → unblock → plan → done).
+3) `pt ready --role=<role> --verbose` — find unblocked work (when workflows are active, use `--phase`/`--all-phases`).
+4) `pt claim <id> [--as=$USER] [--draft] [--override-soft=REASON]` — assign and start (enforces workflow gates; soft gates require an explicit override).
+5) Do the work, then `pt validate <id> [--yes]` — moves to `needs_review` with manual notes.
+6) `pt approve <id>` or `pt reject <id> --reason="..."` — review outcomes.
 6) If stuck, `pt release <id>` — returns to open.
 7) Add `--json` to commands to get machine-readable outputs (includes hook results).
 
@@ -118,6 +119,8 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 - Priming contract: `pt context prime [--json]` outputs a 10,000‑foot project view; see `DESIGN_PRIME_OUTPUT.md` for the text/JSON/DOT contract (coverage, “top N of M”, stable file:line refs).
 - Staleness hygiene: add a comment when scope changes; re-validate before review after rebasing or major edits.
 - Identity enforcement: `pt claim` requires a non-empty identity (set `$USER` or pass `--as`).
+- Workflow selection: if multiple workflow files exist, set `PT_WORKFLOW=workflows/<name>.toml` or pass `--workflow=PATH` for workflow commands.
+- Manual blockers: use `pt blocked` / `pt unblock` for non-dependency blockers; `pt next` avoids recommending blocked tasks.
 
 ## Task Creation & Taxonomy
 - Templates: `backend_endpoint` (APIs), `frontend_component` (UI), `bug_fix` (regressions), `refactor` (cleanup), `observability_hook` (SLO/alerts), `migration` (schema), `discovery` (requirements/mental simulation), `spike` (assumption tests).

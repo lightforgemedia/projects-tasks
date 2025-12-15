@@ -6,25 +6,26 @@ See [WORKFLOW-PRINCIPLES.md](./WORKFLOW-PRINCIPLES.md) for the stable philosophy
 
 ---
 
-## Current State (as of 2024-12)
+## Current State (as of 2025-12)
 
 ### What Works
 
 - Core state machine: `open → in_progress → needs_review → done`
 - Manifest sync with TOML `[[task]]` blocks
-- Workflow conductor with phase visualization
-- Gate evaluation (soft/hard)
+- Workflow conductor (`pt next`) and phase visualization (`pt workflow status`)
+- Gate evaluation (soft/hard) with explicit soft overrides (`--override-soft=...`)
 - Worktree integration for branch-per-task
 - History tracking
+- Manual blockers (`pt blocked` / `pt unblock`) respected by `pt next`
+- Ad-hoc task edits (`pt update`) and recovery (`pt reopen`)
+- Draft mode for exploratory work (`pt claim --draft`)
 
-### Known Bugs
+### Known Risks / Rough Edges
 
 | Issue | Impact | Workaround |
 |-------|--------|------------|
-| `gitIsDirty()` uses cwd, not repo root | Worktree commands fail from subdirectories | Run from repo root |
-| Relative `PT_DB` paths resolve per-cwd | Commands affect wrong database | Use absolute paths |
-| Worktree start modifies tracked db | Blocks parallel worktree creation | Commit db between worktrees |
-| Validate in worktree writes to worktree db | `worktree done` fails | `git checkout -- .pt.db.json` first |
+| Store is a single JSON file | Git merge conflicts + last-write-wins across branches | Use `pt snapshot` / `pt export` for shareable artifacts; avoid merging the store |
+| Multiple workflow files | Workflow commands may require explicit selection | Set `PT_WORKFLOW=workflows/<name>.toml` or pass `--workflow=PATH` |
 
 ---
 
@@ -107,6 +108,8 @@ type = "hard"
 condition = "phase:integrate complete"
 block_message = "Signoff blocked. All integration tasks must be closed."
 ```
+
+**Note:** If a phase has **zero tasks**, comment-based gates (e.g. `has_comment:user-picked`) are treated as satisfied to avoid deadlocking the workflow. If you want a gate to be enforced, ensure at least one task is assigned to that phase.
 
 ---
 
@@ -230,9 +233,9 @@ Machine-readable (with `--json`):
 
 ### Current
 
-`.pt.db.json` in repo root, git-tracked.
+`.pt.db.json` in repo root by default (gitignored in this repo).
 
-**Problems**: Merge conflicts, worktree copies diverge, every command = uncommitted change.
+**Problems**: Merge conflicts if tracked, worktree copies can diverge across branches, and every command mutates the store.
 
 ### Recommended
 

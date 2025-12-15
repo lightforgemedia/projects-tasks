@@ -25,9 +25,10 @@
 ## Agent Workflows
 Agents interacting with this repository or using the `pt` tool should follow this loop:
 
-1.  **Discovery**: `pt ready --role=<role> --verbose` to find unblocked work and see blockers/assignee. Use `--sort` for ordering.
+0.  **Conductor** (preferred): `pt next [--json]` to get the current best action (review → work → unblock → plan → done).
+1.  **Discovery**: `pt ready --role=<role> --verbose` to find unblocked work and see blockers/assignee. Use `--sort` for ordering (use `--phase`/`--all-phases` when a workflow is active).
     * Reviewers: `pt list --status=needs_review --role=<role>` to find items awaiting review.
-2.  **Claim**: `pt claim <id> [--as=you]` to lock and assign (status → `in_progress`).
+2.  **Claim**: `pt claim <id> [--as=$USER] [--draft] [--override-soft=REASON]` to lock and assign (status → `in_progress`); gates are enforced when workflows are active.
 3.  **Execution**:
     *   Read task/context via `pt context init <id>` or the issue text.
     *   Use `pt show <id>` to view DoD/comments; `pt comment <id> "note"` to log progress or blockers.
@@ -43,6 +44,7 @@ Agents interacting with this repository or using the `pt` tool should follow thi
 ## Multi-Agent Guidance
 - Identity: always set `--as` (or ensure `$USER` is correct) when claiming so ownership is auditable; `pt claim` fails if identity is empty.
 - Respect blockers: do not claim blocked work; resolve deps first or choose another task.
+- Manual blockers: use `pt blocked <id> <reason>` and `pt unblock <id>` (so `pt next` won’t recommend blocked work).
 - No-context starts: run `pt context init <id>` to bootstrap requirements; read DoD before coding.
 - Priming output: use `pt context prime [--json]` for a 10,000‑foot view; follow `DESIGN_PRIME_OUTPUT.md` when adding priming/discovery features (must report coverage; rankings must say “top N of M”; include stable `path:line` refs).
 - Staleness: if paused or stuck, `pt release <id>` and leave a brief comment so others can continue.
