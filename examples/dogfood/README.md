@@ -40,3 +40,9 @@ pt reject <id> --reason "..."  # back to in_progress with a comment
 - Wrap `pt validate` to notify chat/slack on success/fail.
 - Wrap `pt approve` to trigger deploy or merge workflows.
 - Wrap `pt reject` to file a follow-up checklist.
+
+## Integration script
+Run a simple end-to-end sanity check from the repo root:
+```bash
+bash examples/dogfood/integration.sh
+```

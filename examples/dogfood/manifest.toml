@@ -5,38 +5,52 @@ owner = "demo-team"
 template = "backend_endpoint"
 title = "Define ingestion API contract"
 role = "architect"
+artifact = "doc:docs/api/ingest.md"
 [tasks.dod]
+tests = ["echo ok"]
 manual = "Contract captured in docs/api/ingest.md with status codes and sample payload"
+criteria = ["Contract documented (endpoints, status codes, payloads)"]
 
 [[tasks]]
 template = "backend_endpoint"
 title = "Implement ingestion endpoint"
 role = "backend-dev"
 deps = ["Define ingestion API contract"]
+artifact = "api:/ingest"
 [tasks.dod]
 tests = ["go test ./services/ingest/..."]
 manual = "POST /ingest returns 202 and persists payload"
+criteria = ["Endpoint persists payload", "Returns 202 on success"]
 
 [[tasks]]
 template = "observability_hook"
 title = "Wire alerts for ingestion failures"
 role = "sre"
+artifact = "obs:ingest_failures_alert"
 deps = ["Implement ingestion endpoint"]
 [tasks.dod]
+tests = ["echo ok"]
 manual = "Alert fires on 5xx spike; runbook linked"
+criteria = ["Alert defined", "Runbook linked"]
 
 [[tasks]]
 template = "frontend_component"
 title = "Add dashboard widget for ingestion stats"
 role = "frontend-dev"
+artifact = "ui:IngestionWidget"
 deps = ["Define ingestion API contract"]
 [tasks.dod]
+tests = ["echo ok"]
 manual = "Chart updates live; empty state handled"
+criteria = ["Widget renders", "Empty state handled"]
 
 [[tasks]]
 template = "refactor"
 title = "Post-ship cleanup and runbook"
 role = "ops"
+artifact = "doc:docs/runbook.md"
 deps = ["Implement ingestion endpoint", "Wire alerts for ingestion failures"]
 [tasks.dod]
+tests = ["echo ok"]
 manual = "Document rollback, on-call steps, and smoke checklist"
+criteria = ["Rollback documented", "On-call steps documented", "Smoke checklist present"]
