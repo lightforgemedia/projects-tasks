@@ -1,15 +1,9 @@
-# Placeholder Frontend Module (2025-12-06)
+# Frontend (placeholder)
 
-This directory is a stub to satisfy the DoD for task pt-7 ("Build UI against fixtures (mock data)"). The current repository does not yet contain the real frontend implementation or tests.
+This repository’s current “frontend” area is a placeholder used for dogfooding `pt` workflows.
 
-What’s missing / needed to complete pt-7
-- Actual frontend code and test suite under `frontend/`.
-- Tests should align with fixtures produced by the external dependency validation (pt-6) and the planned UI components.
-- Once real frontend code exists, update the DoD for pt-7 to run the appropriate test command (e.g., `npm test`, `bun test`, or `go test` if applicable).
+The `examples/realworld-app/manifest.toml` and `examples/dogfood/manifest.toml` include `frontend_component` tasks that describe UI artifacts like `ui:IngestionWidget`, but there is no active web UI implementation in this repo yet.
 
-Temporary test shim
-- We provide a trivial Go test (`frontend/dummy_test.go`) so that `go test ./frontend/...` passes until real frontend code is added.
+When a real frontend is introduced, store components under a directory such as:
+- `frontend/src/components/`
 
-Action required
-- Replace this placeholder with real frontend implementation and tests.
-- Update the manifest/DoD accordingly.
