@@ -402,6 +402,154 @@ func TestCheckGate(t *testing.T) {
 			t.Errorf("msg = %q, want 'Need approval'", msg)
 		}
 	})
+
+	t.Run("phase has_comment gate satisfied when phase has no tasks", func(t *testing.T) {
+		// A workflow can define an Explore phase with a comment gate, but some repos
+		// may have no tasks assigned to that phase. Later phases must not deadlock.
+		workflowText := `
+name = "risk-first"
+
+[phase_assignment]
+label_prefix = "phase:"
+
+[phase_assignment.by_template]
+discovery = "prove"
+backend_endpoint = "build"
+
+[[phases]]
+id = "prove"
+name = "Prove"
+order = 1
+
+[[phases]]
+id = "explore"
+name = "Explore"
+order = 2
+
+[phases.gate]
+type = "hard"
+condition = "has_comment:user-picked"
+
+[[phases]]
+id = "build"
+name = "Build"
+order = 3
+`
+		wf, err := parseTOMLWorkflow([]byte(workflowText))
+		if err != nil {
+			t.Fatalf("parseTOMLWorkflow: %v", err)
+		}
+
+		allIssues := []Issue{
+			{ID: "pt-1", Status: "open", Labels: []string{"phase:build"}, Description: ""},
+		}
+		issue := allIssues[0]
+		meta := TaskMeta{Template: "backend_endpoint"}
+		canProceed, isHard, blockingPhase, msg := wf.CheckGate(issue.ID, issue, meta, allIssues, map[string][]string{})
+		if !canProceed {
+			t.Fatalf("expected build not blocked by empty explore phase; isHard=%v blockingPhase=%q msg=%q", isHard, blockingPhase, msg)
+		}
+	})
+
+	t.Run("phase has_comment gate enforced when phase has tasks", func(t *testing.T) {
+		workflowText := `
+name = "risk-first"
+
+[phase_assignment]
+label_prefix = "phase:"
+
+[phase_assignment.by_template]
+discovery = "prove"
+backend_endpoint = "build"
+
+[[phases]]
+id = "prove"
+name = "Prove"
+order = 1
+
+[[phases]]
+id = "explore"
+name = "Explore"
+order = 2
+
+[phases.gate]
+type = "hard"
+condition = "has_comment:user-picked"
+
+[[phases]]
+id = "build"
+name = "Build"
+order = 3
+`
+		wf, err := parseTOMLWorkflow([]byte(workflowText))
+		if err != nil {
+			t.Fatalf("parseTOMLWorkflow: %v", err)
+		}
+
+		allIssues := []Issue{
+			{ID: "pt-explore", Status: "open", Labels: []string{"phase:explore"}, Description: ""},
+			{ID: "pt-build", Status: "open", Labels: []string{"phase:build"}, Description: ""},
+		}
+		build := allIssues[1]
+		meta := TaskMeta{Template: "backend_endpoint"}
+		canProceed, isHard, blockingPhase, msg := wf.CheckGate(build.ID, build, meta, allIssues, map[string][]string{})
+		if canProceed || !isHard || blockingPhase != "explore" {
+			t.Fatalf("expected build blocked by explore comment gate; canProceed=%v isHard=%v blockingPhase=%q msg=%q", canProceed, isHard, blockingPhase, msg)
+		}
+
+		comments := map[string][]string{"pt-explore": {"user-picked: A"}}
+		canProceed, isHard, blockingPhase, msg = wf.CheckGate(build.ID, build, meta, allIssues, comments)
+		if !canProceed || isHard || blockingPhase != "" {
+			t.Fatalf("expected build unblocked after comment; canProceed=%v isHard=%v blockingPhase=%q msg=%q", canProceed, isHard, blockingPhase, msg)
+		}
+	})
+}
+
+func TestWorkflowGateHasCommentEmptyPhaseSatisfied(t *testing.T) {
+	workflowText := `
+name = "risk-first"
+
+[phase_assignment]
+label_prefix = "phase:"
+
+[phase_assignment.by_template]
+discovery = "prove"
+backend_endpoint = "build"
+
+[[phases]]
+id = "prove"
+name = "Prove"
+order = 1
+
+[[phases]]
+id = "explore"
+name = "Explore"
+order = 2
+
+[phases.gate]
+type = "hard"
+condition = "has_comment:user-picked"
+
+[[phases]]
+id = "build"
+name = "Build"
+order = 3
+`
+	wf, err := parseTOMLWorkflow([]byte(workflowText))
+	if err != nil {
+		t.Fatalf("parseTOMLWorkflow: %v", err)
+	}
+
+	allIssues := []Issue{
+		{ID: "pt-build", Status: "open", Labels: []string{"phase:build"}, Description: ""},
+	}
+	build := allIssues[0]
+	meta := TaskMeta{Template: "backend_endpoint"}
+
+	canProceed, isHard, blockingPhase, msg := wf.CheckGate(build.ID, build, meta, allIssues, map[string][]string{})
+	if !canProceed {
+		t.Fatalf("expected build not blocked by empty explore phase; isHard=%v blockingPhase=%q msg=%q", isHard, blockingPhase, msg)
+	}
 }
 
 func TestWorkflowValidation(t *testing.T) {

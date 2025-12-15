@@ -363,6 +363,11 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 	// Handle "has_comment:<tag>" condition (searches current phase tasks)
 	if strings.HasPrefix(condition, "has_comment:") {
 		tag := strings.TrimPrefix(condition, "has_comment:")
+		// If a workflow phase has no tasks assigned, comment-based gates would
+		// otherwise deadlock later phases. Treat an empty phase as satisfied.
+		if len(phaseTasks) == 0 {
+			return true, fmt.Sprintf("phase %q has no tasks; skipping comment gate %q", phase.ID, tag)
+		}
 		for _, t := range phaseTasks {
 			if taskComments, ok := comments[t.ID]; ok {
 				for _, c := range taskComments {
@@ -380,9 +385,11 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 		parts := strings.SplitN(condition, " has_comment:", 2)
 		reqPhase := strings.TrimPrefix(parts[0], "phase:")
 		tag := parts[1]
+		phaseTaskCount := 0
 		for _, issue := range allIssues {
 			meta, _ := parseTaskMeta(issue.Description)
 			if w.GetTaskPhase(issue, meta) == reqPhase {
+				phaseTaskCount++
 				if taskComments, ok := comments[issue.ID]; ok {
 					for _, c := range taskComments {
 						if strings.Contains(strings.ToLower(c), strings.ToLower(tag)) {
@@ -391,6 +398,10 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 					}
 				}
 			}
+		}
+		// If the requested phase has no tasks assigned, do not deadlock later phases.
+		if phaseTaskCount == 0 {
+			return true, fmt.Sprintf("phase %q has no tasks; skipping comment gate %q", reqPhase, tag)
 		}
 		return false, fmt.Sprintf("no comment containing %q found in phase %q", tag, reqPhase)
 	}
