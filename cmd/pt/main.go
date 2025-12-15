@@ -459,8 +459,8 @@ QUICK START
   pt approve <id>                    Complete the task
 
 COMMON WORKFLOW
-  ready   [--role=ROLE] [--verbose]  List unblocked tasks
-  claim   <id> [--as=USER]           Assign and start task
+  ready   [--role=ROLE] [--phase=PHASE|--all-phases] [--verbose]  List open tasks (workflow-aware by default)
+  claim   <id> [--as=USER] [--override-soft=REASON]               Assign and start task (enforces workflow gates)
   release <id>                       Unassign (if stuck)
   validate <id> [--yes]              Run tests, move to review
   approve <id>                       Mark complete
@@ -483,7 +483,7 @@ CREATE & UPDATE
 WORKFLOW GUIDANCE
   status                             Current phase and progress
   next                               Suggested next action
-  workflow check                     Validate phase gates
+  workflow check --task=<id>         Validate phase gates (for hooks/CI)
 
 WORKTREES (task isolation)
   worktree start <id>                Create branch + worktree
