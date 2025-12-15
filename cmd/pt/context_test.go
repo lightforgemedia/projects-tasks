@@ -92,6 +92,44 @@ func TestCmdValidateManualYesSkipsPrompt(t *testing.T) {
 	}
 }
 
+func TestCmdValidateFlagOrdering(t *testing.T) {
+	path, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Test Task", Template: "backend_endpoint", Role: "builder", Artifact: "spec:test", DoD: pt.DefinitionOfDone{Manual: "verify output", Tests: []string{"echo ok"}, Criteria: []string{"observed ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+	// Move to in_progress before validate
+	if err := store.UpdateIssue(t.Context(), "pt-1", "in_progress", ""); err != nil {
+		t.Fatalf("update err: %v", err)
+	}
+
+	// Flags before ID (baseline)
+	if err := cmdValidate([]string{"--yes", "pt-1"}); err != nil {
+		t.Fatalf("cmdValidate (--yes pt-1) failed: %v", err)
+	}
+
+	// Reset task back to in_progress
+	store2 := pt.NewStoreClient(path, "pt")
+	if err := store2.UpdateIssue(t.Context(), "pt-1", "in_progress", ""); err != nil {
+		t.Fatalf("update2 err: %v", err)
+	}
+
+	// Flags after ID (target behavior)
+	if err := cmdValidate([]string{"pt-1", "--yes"}); err != nil {
+		t.Fatalf("cmdValidate (pt-1 --yes) failed: %v", err)
+	}
+
+	store3 := pt.NewStoreClient(path, "pt")
+	issue, _, _ := store3.GetTask(t.Context(), "pt-1")
+	if issue.Status != "needs_review" {
+		t.Fatalf("expected needs_review, got %s", issue.Status)
+	}
+}
+
 func TestCmdContextErrors(t *testing.T) {
 	if err := cmdContext([]string{}); err == nil {
 		t.Error("expected error for missing subcommand")

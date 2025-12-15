@@ -63,6 +63,11 @@ func isTaskID(arg string) bool {
 	if strings.HasPrefix(arg, "-") {
 		return false // It's a flag
 	}
+	// Avoid treating paths/filenames as task IDs (e.g. "/tmp/foo-1.json").
+	// This keeps reorderArgs safe for commands that accept flag values.
+	if strings.ContainsAny(arg, `/\`) || strings.Contains(arg, ".") || strings.HasPrefix(arg, "~") {
+		return false
+	}
 	// Look for pattern like "prefix-N" where N is a number
 	idx := strings.LastIndex(arg, "-")
 	if idx == -1 || idx == len(arg)-1 {
@@ -1452,6 +1457,7 @@ func cmdRelease(args []string) error {
 }
 
 func cmdValidate(args []string) error {
+	args = reorderArgs(args) // Allow flags after positional args
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	yes := fs.Bool("yes", false, "auto-confirm manual checks")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
@@ -1467,7 +1473,10 @@ func cmdValidate(args []string) error {
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
-		return errors.New("missing id argument")
+		if fs.NArg() == 0 {
+			return errors.New("missing id argument")
+		}
+		return fmt.Errorf("expected 1 id argument, got %d: %s", fs.NArg(), strings.Join(fs.Args(), " "))
 	}
 	id := fs.Arg(0)
 	client := newClientWith(*dbPath, *prefix)

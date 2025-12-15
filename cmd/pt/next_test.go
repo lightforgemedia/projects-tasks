@@ -122,6 +122,88 @@ order = 2
 			t.Fatalf("expected workflow selection warning in why, got: %v", why)
 		}
 	})
+
+	t.Run("WORK does not embed local username in claim recommendation", func(t *testing.T) {
+		_, store := setupStoreEnv(t)
+		manifest := pt.Manifest{
+			Tasks: []pt.Task{
+				{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+			},
+		}
+		if _, err := store.Sync(t.Context(), manifest); err != nil {
+			t.Fatalf("sync: %v", err)
+		}
+
+		t.Setenv("USER", "local-user-should-not-appear")
+		t.Setenv("PT_WORKFLOW", "")
+
+		out := runCmdNextJSON(t, []string{"--json"})
+		if out["mode"] != "WORK" {
+			t.Fatalf("mode=%v, want WORK", out["mode"])
+		}
+		recs, ok := out["recommended"].([]any)
+		if !ok || len(recs) == 0 {
+			t.Fatalf("expected recommendations, got: %v", out["recommended"])
+		}
+		foundClaim := false
+		for _, r := range recs {
+			m, _ := r.(map[string]any)
+			cmd, _ := m["cmd"].(string)
+			if strings.HasPrefix(cmd, "pt claim ") {
+				foundClaim = true
+				if strings.Contains(cmd, "local-user-should-not-appear") {
+					t.Fatalf("expected claim recommendation to not include local username, got: %q", cmd)
+				}
+				if !strings.Contains(cmd, "--as=$USER") {
+					t.Fatalf("expected claim recommendation to use $USER placeholder, got: %q", cmd)
+				}
+			}
+		}
+		if !foundClaim {
+			t.Fatalf("expected a pt claim recommendation, got: %v", recs)
+		}
+	})
+}
+
+func TestNextDoesNotEmbedUsername(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	t.Setenv("USER", "local-user-should-not-appear")
+	t.Setenv("PT_WORKFLOW", "")
+
+	out := runCmdNextJSON(t, []string{"--json"})
+	if out["mode"] != "WORK" {
+		t.Fatalf("mode=%v, want WORK", out["mode"])
+	}
+	recs, ok := out["recommended"].([]any)
+	if !ok || len(recs) == 0 {
+		t.Fatalf("expected recommendations, got: %v", out["recommended"])
+	}
+	foundClaim := false
+	for _, r := range recs {
+		m, _ := r.(map[string]any)
+		cmd, _ := m["cmd"].(string)
+		if strings.HasPrefix(cmd, "pt claim ") {
+			foundClaim = true
+			if strings.Contains(cmd, "local-user-should-not-appear") {
+				t.Fatalf("expected claim recommendation to not include local username, got: %q", cmd)
+			}
+			if !strings.Contains(cmd, "--as=$USER") {
+				t.Fatalf("expected claim recommendation to use $USER placeholder, got: %q", cmd)
+			}
+		}
+	}
+	if !foundClaim {
+		t.Fatalf("expected a pt claim recommendation, got: %v", recs)
+	}
 }
 
 func runCmdNextJSON(t *testing.T, args []string) map[string]any {

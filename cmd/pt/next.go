@@ -344,8 +344,14 @@ func hasLabel(iss pt.Issue, label string) bool {
 }
 
 func defaultIdentityForPrint() string {
+	// Avoid embedding a local username in suggested commands; prefer a shell placeholder.
 	if u := strings.TrimSpace(os.Getenv("USER")); u != "" {
-		return u
+		_ = u
+		return "$USER"
+	}
+	if u := strings.TrimSpace(os.Getenv("USERNAME")); u != "" {
+		_ = u
+		return "$USERNAME"
 	}
 	return "<you>"
 }
