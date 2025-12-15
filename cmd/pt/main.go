@@ -474,7 +474,7 @@ VIEW & SEARCH
 
 CREATE & UPDATE
   sync    <manifest>                 Import/update from TOML
-  add     "Title" [flags]            Create single task
+  add     "Title" [flags]            Create single task (seeds handoff fields by default)
   update  <id> [flags]               Modify task fields
   comment <id> "text"                Add note to task
   blocked <id> "reason"              Mark task blocked
@@ -482,7 +482,7 @@ CREATE & UPDATE
 
 WORKFLOW GUIDANCE
   status                             Current phase and progress
-  next                               Suggested next action
+  next                               Conductor: recommended next action (review → work → unblock → plan → done)
   workflow check --task=<id>         Validate phase gates (for hooks/CI)
 
 WORKTREES (task isolation)
