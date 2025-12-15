@@ -1790,7 +1790,7 @@ func cmdDiscoveryHandoff(args []string) error {
 		return fmt.Errorf("cannot generate handoff until approved (status: %s)", syn.Status)
 	}
 
-	// Find selected option
+	// Find selected option in top 3
 	var selected *pt.SynthesisOption
 	for i, o := range syn.Options {
 		if o.Label == syn.Recommendation {
@@ -1799,8 +1799,25 @@ func cmdDiscoveryHandoff(args []string) error {
 		}
 	}
 
+	// If not found in top 3, user may have approved a previously rejected option
+	// that was added after synthesis but before approval (via feedback iteration)
+	// We need to reconstruct it as a minimal option for handoff
 	if selected == nil {
-		return fmt.Errorf("selected option %s not found", syn.Recommendation)
+		// Check if it's a label that was likely rejected
+		// Create a minimal option with just the label for handoff to proceed
+		// This handles the case where a user explicitly approved a non-top-3 option
+		selectedOption := pt.SynthesisOption{
+			Label:       syn.Recommendation,
+			Name:        fmt.Sprintf("Option %s", syn.Recommendation),
+			Description: "(User-approved option not in top 3 - full details may be incomplete)",
+			Components:  []pt.MockupComponent{},
+			Total:       len(syn.Capabilities),
+		}
+		selected = &selectedOption
+
+		fmt.Println("⚠️  NOTE: Selected option was not in top 3 synthesis results.")
+		fmt.Println("    Handoff will proceed, but some option details may be incomplete.")
+		fmt.Println()
 	}
 
 	// Check for wireframe/mockup - required for UI/UX implementations
