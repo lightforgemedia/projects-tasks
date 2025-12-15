@@ -322,6 +322,12 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 		return true, ""
 	}
 
+	// Soft-gate override: if any task comment contains "gate-override:<phase-id>",
+	// treat the gate as satisfied. This provides an explicit, auditable bypass.
+	if phase.Gate.Type == "soft" && hasGateOverride(phase.ID, comments) {
+		return true, fmt.Sprintf("soft gate overridden for phase %q", phase.ID)
+	}
+
 	condition := phase.Gate.Condition
 
 	// Handle "all_closed" condition
@@ -424,12 +430,12 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 }
 
 // CheckGate evaluates a gate for a specific task.
-// Returns: (canProceed, isHardBlock, message)
-func (w *Workflow) CheckGate(taskID string, issue Issue, meta TaskMeta, allIssues []Issue, comments map[string][]string) (bool, bool, string) {
+// Returns: (canProceed, isHardBlock, blockingPhaseID, message)
+func (w *Workflow) CheckGate(taskID string, issue Issue, meta TaskMeta, allIssues []Issue, comments map[string][]string) (bool, bool, string, string) {
 	phaseID := w.GetTaskPhase(issue, meta)
 	phase := w.GetPhaseByID(phaseID)
 	if phase == nil {
-		return true, false, "" // No phase, no gate
+		return true, false, "", "" // No phase, no gate
 	}
 
 	// Find the phase index
@@ -464,7 +470,7 @@ func (w *Workflow) CheckGate(taskID string, issue Issue, meta TaskMeta, allIssue
 			if msg == "" {
 				msg = reason
 			}
-			return false, isHard, msg
+			return false, isHard, priorPhase.ID, msg
 		}
 	}
 
@@ -489,9 +495,28 @@ func (w *Workflow) CheckGate(taskID string, issue Issue, meta TaskMeta, allIssue
 			if msg == "" {
 				msg = reason
 			}
-			return false, isHard, msg
+			return false, isHard, phase.ID, msg
 		}
 	}
 
-	return true, false, ""
+	return true, false, "", ""
+}
+
+func hasGateOverride(phaseID string, comments map[string][]string) bool {
+	if strings.TrimSpace(phaseID) == "" || len(comments) == 0 {
+		return false
+	}
+
+	needle1 := strings.ToLower("gate-override:" + phaseID)
+	needle2 := strings.ToLower("gate-override: " + phaseID)
+
+	for _, cs := range comments {
+		for _, c := range cs {
+			lc := strings.ToLower(c)
+			if strings.Contains(lc, needle1) || strings.Contains(lc, needle2) {
+				return true
+			}
+		}
+	}
+	return false
 }

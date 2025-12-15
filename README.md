@@ -25,8 +25,8 @@ Stateless logic package.
 
 ### CLI (`cmd/pt`)
 - `pt sync <manifest.toml>`: Applies a plan.
-- `pt ready [--role=coder|architect]`: Lists all open work (blocked items are shown with a blocker indicator).
-- `pt claim <id>`: Marks as `in_progress`.
+- `pt ready [--role=ROLE] [--phase=PHASE|--all-phases]`: Lists open work; when a workflow exists, defaults to the current (earliest unfinished) phase to reduce skipping ahead.
+- `pt claim <id> [--override-soft=REASON]`: Marks as `in_progress` and enforces workflow gates (hard blocks; soft requires an explicit override).
 - `pt validate <id>`: Runs hooks; if pass → `needs_review`.
 - `pt approve/reject <id>`: Human review steps.
 
@@ -34,8 +34,8 @@ Stateless logic package.
 
 Store-backed flow:
 - Manifest (TOML) → `pt sync` → issues/labels/deps persisted.
-- `pt ready` lists open work and indicates blockers (deps not done and/or manually blocked). A task is “ready” to claim when it is open and has no blockers.
-- `pt claim/validate/approve/reject` drive the state machine.
+- `pt ready` lists open work, indicates blockers, and (when a workflow exists) focuses on the current phase by default.
+- `pt claim/validate/approve/reject` drive the state machine and enforce gates/DoD.
 - Context builder/validator commands keep agent payloads in spec.
 
 ## Workflow & State Machine

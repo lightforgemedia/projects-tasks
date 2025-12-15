@@ -531,7 +531,7 @@ func cmdWorkflowCheck(args []string) error {
 	}
 
 	// Check gate
-	canProceed, isHard, msg := workflow.CheckGate(*taskID, task, meta, allIssues, comments)
+	canProceed, isHard, blockingPhase, msg := workflow.CheckGate(*taskID, task, meta, allIssues, comments)
 	phaseID := workflow.GetTaskPhase(task, meta)
 
 	if canProceed {
@@ -543,6 +543,9 @@ func cmdWorkflowCheck(args []string) error {
 	if isHard {
 		fmt.Printf("🚫 Hard gate BLOCKED for %s\n", *taskID)
 		fmt.Printf("  Phase: %s\n", phaseID)
+		if strings.TrimSpace(blockingPhase) != "" {
+			fmt.Printf("  Blocking phase: %s\n", blockingPhase)
+		}
 		fmt.Printf("  Reason: %s\n", msg)
 		fmt.Println()
 		fmt.Println("Cannot proceed until gate satisfied.")
@@ -555,10 +558,17 @@ func cmdWorkflowCheck(args []string) error {
 	// Soft gate
 	fmt.Printf("⚠️  Soft gate warning for %s\n", *taskID)
 	fmt.Printf("  Phase: %s\n", phaseID)
+	if strings.TrimSpace(blockingPhase) != "" {
+		fmt.Printf("  Blocking phase: %s\n", blockingPhase)
+	}
 	fmt.Printf("  Warning: %s\n", msg)
 	fmt.Println()
 	fmt.Println("To proceed anyway:")
-	fmt.Printf("  pt comment %s \"risk-acknowledged: <reason>\"\n", *taskID)
+	if strings.TrimSpace(blockingPhase) == "" {
+		fmt.Printf("  pt comment %s \"gate-override: <phase-id> <reason>\"\n", *taskID)
+	} else {
+		fmt.Printf("  pt comment %s \"gate-override: %s <reason>\"\n", *taskID, blockingPhase)
+	}
 
 	return nil
 }

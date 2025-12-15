@@ -223,6 +223,19 @@ func TestEvaluateGate(t *testing.T) {
 		}
 	})
 
+	t.Run("soft gate overridden by comment", func(t *testing.T) {
+		tasks := []Issue{
+			{ID: "pt-1", Status: "open"},
+		}
+		comments := map[string][]string{
+			"pt-1": {"gate-override: risk proceeding despite incomplete work"},
+		}
+		satisfied, reason := wf.EvaluateGate(wf.Phases[0], tasks, tasks, comments)
+		if !satisfied {
+			t.Errorf("expected satisfied due to override, got reason: %s", reason)
+		}
+	})
+
 	t.Run("has_comment satisfied", func(t *testing.T) {
 		phase := Phase{Gate: Gate{Condition: "has_comment:user-approved"}}
 		tasks := []Issue{{ID: "pt-1"}}
@@ -312,7 +325,7 @@ func TestCheckGate(t *testing.T) {
 	t.Run("first phase has no blockers", func(t *testing.T) {
 		issue := Issue{ID: "pt-1", Labels: []string{"phase:risk"}}
 		meta := TaskMeta{}
-		canProceed, isHard, _ := wf.CheckGate("pt-1", issue, meta, nil, nil)
+		canProceed, isHard, _, _ := wf.CheckGate("pt-1", issue, meta, nil, nil)
 		if !canProceed {
 			t.Error("first phase should have no blockers")
 		}
@@ -328,12 +341,15 @@ func TestCheckGate(t *testing.T) {
 		}
 		issue := allIssues[1]
 		meta := TaskMeta{}
-		canProceed, isHard, msg := wf.CheckGate("pt-2", issue, meta, allIssues, nil)
+		canProceed, isHard, blockingPhase, msg := wf.CheckGate("pt-2", issue, meta, allIssues, nil)
 		if canProceed {
 			t.Error("should be blocked by incomplete risk phase")
 		}
 		if isHard {
 			t.Error("risk gate is soft, should not be hard blocked")
+		}
+		if blockingPhase != "risk" {
+			t.Errorf("blockingPhase = %q, want %q", blockingPhase, "risk")
 		}
 		if msg == "" {
 			t.Error("expected message")
@@ -355,12 +371,15 @@ func TestCheckGate(t *testing.T) {
 		}
 		issue := allIssues[1]
 		meta := TaskMeta{}
-		canProceed, isHard, msg := wf2.CheckGate("pt-2", issue, meta, allIssues, nil)
+		canProceed, isHard, blockingPhase, msg := wf2.CheckGate("pt-2", issue, meta, allIssues, nil)
 		if canProceed {
 			t.Error("should be blocked by hard gate")
 		}
 		if !isHard {
 			t.Error("should be hard blocked")
+		}
+		if blockingPhase != "frontend" {
+			t.Errorf("blockingPhase = %q, want %q", blockingPhase, "frontend")
 		}
 		if msg != "Need approval" {
 			t.Errorf("msg = %q, want 'Need approval'", msg)

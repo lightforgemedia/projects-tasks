@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -759,6 +760,8 @@ Approve this review task to unblock the implementation.`
 func cmdReady(args []string) error {
 	fs := flag.NewFlagSet("ready", flag.ContinueOnError)
 	role := fs.String("role", "", "filter by role label")
+	phase := fs.String("phase", "", "filter by workflow phase (requires workflow file)")
+	allPhases := fs.Bool("all-phases", false, "show open tasks across all phases (ignore workflow phase focus)")
 	limit := fs.Int("limit", 10, "max issues")
 	sortKey := fs.String("sort", "priority", "sort by priority|title")
 	verbose := fs.Bool("verbose", false, "show extra info (assignee, blockers)")
@@ -766,7 +769,9 @@ func cmdReady(args []string) error {
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt ready [--role=ROLE] [--limit=N] [--sort=priority|title] [--verbose]") }
+	fs.Usage = func() {
+		fmt.Println("Usage: pt ready [--role=ROLE] [--phase=PHASE|--all-phases] [--limit=N] [--sort=priority|title] [--verbose]")
+	}
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -781,6 +786,69 @@ func cmdReady(args []string) error {
 		return fmt.Errorf("ready failed: %w", err)
 	}
 	pt.SortIssues(issues, *sortKey)
+
+	// Optional workflow-aware filtering: default to the current (earliest unfinished) phase.
+	var wf *pt.Workflow
+	var allIssues []pt.Issue
+	var comments map[string][]string
+	currentPhaseID := ""
+	if wfPath, err := findWorkflowFile(); err == nil {
+		parsed, err := pt.ParseWorkflow(wfPath)
+		if err != nil {
+			return fmt.Errorf("parse workflow: %w", err)
+		}
+		wf = &parsed
+
+		allIssues, err = client.List(ctx, nil, "", 1000)
+		if err != nil {
+			return fmt.Errorf("workflow ready: list issues: %w", err)
+		}
+
+		comments = make(map[string][]string, len(allIssues))
+		for _, iss := range allIssues {
+			comms, _ := client.Comments(ctx, iss.ID)
+			comments[iss.ID] = comms
+		}
+
+		// Determine current phase as the earliest phase with any unfinished tasks.
+		phases := append([]pt.Phase{}, wf.Phases...)
+		sort.Slice(phases, func(i, j int) bool { return phases[i].Order < phases[j].Order })
+		for _, p := range phases {
+			assigned := 0
+			unfinished := 0
+			for _, iss := range allIssues {
+				meta, _ := pt.ParseTaskMeta(iss.Description)
+				if wf.GetTaskPhase(iss, meta) != p.ID {
+					continue
+				}
+				assigned++
+				if iss.Status != "closed" && iss.Status != "done" {
+					unfinished++
+				}
+			}
+			if assigned > 0 && unfinished > 0 {
+				currentPhaseID = p.ID
+				break
+			}
+		}
+	}
+
+	// Apply phase filter if requested; otherwise focus on current phase when workflow exists.
+	targetPhase := strings.TrimSpace(*phase)
+	if targetPhase == "" && wf != nil && !*allPhases {
+		targetPhase = currentPhaseID
+	}
+	if wf != nil && targetPhase != "" {
+		var filtered []pt.Issue
+		for _, iss := range issues {
+			meta, _ := pt.ParseTaskMeta(iss.Description)
+			if wf.GetTaskPhase(iss, meta) == targetPhase {
+				filtered = append(filtered, iss)
+			}
+		}
+		issues = filtered
+	}
+
 	if *jsonOut {
 		out := []map[string]interface{}{}
 		for _, iss := range issues {
@@ -788,6 +856,21 @@ func cmdReady(args []string) error {
 				continue
 			}
 			blockers := readyBlockers(ctx, client, iss)
+			phaseID := ""
+			var gate interface{} = nil
+			if wf != nil {
+				meta, _ := pt.ParseTaskMeta(iss.Description)
+				phaseID = wf.GetTaskPhase(iss, meta)
+				if allIssues != nil && comments != nil {
+					canProceed, isHard, blockingPhase, msg := wf.CheckGate(iss.ID, iss, meta, allIssues, comments)
+					gate = map[string]interface{}{
+						"can_proceed":    canProceed,
+						"is_hard_block":  isHard,
+						"blocking_phase": blockingPhase,
+						"message":        msg,
+					}
+				}
+			}
 			out = append(out, map[string]interface{}{
 				"id":        iss.ID,
 				"title":     iss.Title,
@@ -798,6 +881,8 @@ func cmdReady(args []string) error {
 				"next_hint": iss.NextHint,
 				"artifact":  issueArtifact(iss),
 				"criteria":  issueCriteria(iss),
+				"phase":     phaseID,
+				"gate":      gate,
 			})
 		}
 		return printJSON(out)
@@ -872,6 +957,10 @@ func cmdReady(args []string) error {
 		}
 	}
 	if !printed {
+		if wf != nil && targetPhase != "" {
+			fmt.Printf("No open tasks in phase %q. Run: pt workflow status (or: pt ready --all-phases)\n", targetPhase)
+			return nil
+		}
 		path, exists := projectDoDStatus()
 		if exists {
 			fmt.Printf("No ready tasks. Review project DoD at %s (set PT_PROJECT_DOD to override). If the DoD is not satisfied, identify the gaps and add tasks (via manifest or pt add) with explicit tests + manual checks (and docs/review)—avoid shortcuts. Only ask the user when requirements are unclear or external approval is needed.\n", path)
@@ -1065,11 +1154,12 @@ func cmdClaim(args []string) error {
 	fs := flag.NewFlagSet("claim", flag.ContinueOnError)
 	as := fs.String("as", "", "override assignee (defaults to $USER)")
 	draft := fs.Bool("draft", false, "claim in draft mode (skip DoD validation)")
+	overrideSoft := fs.String("override-soft", "", "override a soft workflow gate with a reason (writes a gate-override comment)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER] [--draft]") }
+	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER] [--draft] [--override-soft=REASON]") }
 	// Parse flags first, then get positional arg
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -1096,6 +1186,57 @@ func cmdClaim(args []string) error {
 	if err != nil {
 		return fmt.Errorf("get task failed: %w", err)
 	}
+
+	// Enforce workflow gates (if a workflow file exists).
+	// This prevents skipping ahead into later phases without satisfying prerequisites.
+	type workflowGateResult struct {
+		CanProceed    bool   `json:"can_proceed"`
+		IsHardBlock   bool   `json:"is_hard_block"`
+		BlockingPhase string `json:"blocking_phase,omitempty"`
+		Message       string `json:"message,omitempty"`
+		Overridden    bool   `json:"overridden,omitempty"`
+	}
+	var gateRes *workflowGateResult
+	var overrideComment string
+	if wfPath, err := findWorkflowFile(); err == nil {
+		wf, err := pt.ParseWorkflow(wfPath)
+		if err != nil {
+			return fmt.Errorf("parse workflow: %w", err)
+		}
+		allIssues, err := client.List(ctx, nil, "", 1000)
+		if err != nil {
+			return fmt.Errorf("workflow gate: list issues: %w", err)
+		}
+		comments := make(map[string][]string, len(allIssues))
+		for _, iss := range allIssues {
+			comms, _ := client.Comments(ctx, iss.ID)
+			comments[iss.ID] = comms
+		}
+
+		canProceed, isHard, blockingPhase, msg := wf.CheckGate(id, issue, meta, allIssues, comments)
+		gateRes = &workflowGateResult{
+			CanProceed:    canProceed,
+			IsHardBlock:   isHard,
+			BlockingPhase: blockingPhase,
+			Message:       msg,
+		}
+
+		if !canProceed {
+			if isHard {
+				return fmt.Errorf("claim blocked by hard gate (phase:%s): %s", blockingPhase, msg)
+			}
+			// Soft gate: require explicit override to proceed, and record it as an auditable comment.
+			if strings.TrimSpace(*overrideSoft) == "" {
+				return fmt.Errorf(
+					"claim blocked by soft gate (phase:%s): %s\nTo override: pt claim %s --override-soft=\"<reason>\" (writes: gate-override: %s <reason>)",
+					blockingPhase, msg, id, blockingPhase,
+				)
+			}
+			overrideComment = fmt.Sprintf("gate-override: %s %s", blockingPhase, strings.TrimSpace(*overrideSoft))
+			gateRes.Overridden = true
+		}
+	}
+
 	dodJSON, _ := json.Marshal(meta.DoD)
 	payload := hookPayload{
 		ID:         issue.ID,
@@ -1115,6 +1256,11 @@ func cmdClaim(args []string) error {
 	if err := trans.Claim(ctx, id, user); err != nil {
 		return fmt.Errorf("claim failed: %w", err)
 	}
+	if overrideComment != "" {
+		if err := client.AddComment(ctx, id, overrideComment); err != nil {
+			return fmt.Errorf("record workflow override: %w", err)
+		}
+	}
 	// Add draft label if --draft flag is set
 	if *draft {
 		if err := client.AddLabels(ctx, id, "state:draft"); err != nil {
@@ -1131,11 +1277,14 @@ func cmdClaim(args []string) error {
 			"id":       id,
 			"assignee": user,
 			"draft":    *draft,
+			"gate":     gateRes,
 			"hooks":    combineHooks(preHooks, postHooks),
 		})
 	}
 	if *draft {
 		fmt.Printf("Claimed %s as %s (draft mode - DoD not enforced until validate)\n", id, user)
+	} else if overrideComment != "" {
+		fmt.Printf("Claimed %s as %s (soft gate override recorded)\n", id, user)
 	} else {
 		fmt.Printf("Claimed %s as %s\n", id, user)
 	}
