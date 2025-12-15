@@ -1877,6 +1877,11 @@ func cmdAdd(args []string) error {
 	role := fs.String("role", "", "role label (required)")
 	template := fs.String("template", "", "task template (required)")
 	artifact := fs.String("artifact", "", "artifact implemented (API/UI spec/ADR) (required)")
+	contextText := fs.String("context", "", "handoff context (why this task exists)")
+	inputsCSV := fs.String("inputs", "", "comma-separated files/dirs to read/modify")
+	scopeText := fs.String("scope", "", "handoff scope (IN/OUT)")
+	referenceText := fs.String("reference", "", "handoff reference (links/docs/issues)")
+	noHandoffSeed := fs.Bool("no-handoff-seed", false, "do not seed TODO handoff placeholders when fields are missing")
 	manual := fs.String("manual", "", "manual DoD text (required)")
 	tests := fs.String("tests", "", "comma-separated test commands (required)")
 	criteria := fs.String("criteria", "", "comma-separated acceptance criteria (required)")
@@ -1887,7 +1892,7 @@ func cmdAdd(args []string) error {
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt add \"Title\" --role=... --template=... --artifact=... --manual=... --tests=... --criteria=... [--validation-cmd=...] [--deps=...] [--next-hint=...]")
+		fmt.Println("Usage: pt add \"Title\" --role=... --template=... --artifact=... --manual=... --tests=... --criteria=... [--context=...] [--inputs=...] [--scope=...] [--reference=...] [--validation-cmd=...] [--deps=...] [--next-hint=...]")
 	}
 	var title string
 	var flagArgs []string
@@ -1966,6 +1971,43 @@ func cmdAdd(args []string) error {
 		NextHint: *nextHint,
 		DoD:      dod,
 	}
+
+	// Workflow-aware task creation:
+	// - Seed handoff fields with explicit TODO placeholders (unless disabled).
+	// - Attach phase label if a workflow exists and uses label_prefix.
+	if !*noHandoffSeed {
+		if strings.TrimSpace(*contextText) == "" {
+			task.Context = "TODO: why does this task exist? What problem/outcome does it solve?"
+		} else {
+			task.Context = *contextText
+		}
+		if strings.TrimSpace(*scopeText) == "" {
+			task.Scope = "TODO: IN: ... OUT: ..."
+		} else {
+			task.Scope = *scopeText
+		}
+		if strings.TrimSpace(*referenceText) != "" {
+			task.Reference = *referenceText
+		} else {
+			task.Reference = "TODO: link relevant docs/specs/issues (or '-')"
+		}
+	} else {
+		task.Context = *contextText
+		task.Scope = *scopeText
+		task.Reference = *referenceText
+	}
+
+	if strings.TrimSpace(*inputsCSV) != "" {
+		for _, p := range strings.Split(*inputsCSV, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				task.Inputs = append(task.Inputs, p)
+			}
+		}
+	} else if !*noHandoffSeed {
+		task.Inputs = []string{"TODO: add file/dir paths (or '-')"}
+	}
+
 	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -1973,6 +2015,22 @@ func cmdAdd(args []string) error {
 	if err != nil {
 		return fmt.Errorf("add task failed: %w", err)
 	}
+
+	// Attach phase label if workflow exists and label_prefix is configured.
+	if wfPath, err := findWorkflowFile(); err == nil {
+		if wf, err := pt.ParseWorkflow(wfPath); err == nil {
+			if strings.TrimSpace(wf.PhaseAssignment.LabelPrefix) != "" {
+				iss, meta, err := client.GetTask(ctx, id)
+				if err == nil {
+					phaseID := wf.GetTaskPhase(iss, meta)
+					if phaseID != "" && phaseID != "unassigned" {
+						_ = client.AddLabels(ctx, id, wf.PhaseAssignment.LabelPrefix+phaseID)
+					}
+				}
+			}
+		}
+	}
+
 	if *jsonOut {
 		return printJSON(map[string]string{"status": "ok", "id": id})
 	}

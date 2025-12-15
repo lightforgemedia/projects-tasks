@@ -76,7 +76,7 @@ func TestCmdValidateStoresComment(t *testing.T) {
 
 func TestCmdAddCommentListSnapshot(t *testing.T) {
 	path, store := setupStoreEnv(t)
-	if err := cmdAdd([]string{"New Task", "--role", "dev", "--template", "backend_endpoint", "--artifact", "spec:new", "--manual", "check", "--tests", "echo ok", "--criteria", "observed ok"}); err != nil {
+	if err := cmdAdd([]string{"New Task", "--role", "dev", "--template", "backend_endpoint", "--artifact", "spec:new", "--manual", "check", "--tests", "echo ok", "--criteria", "observed ok", "--no-handoff-seed"}); err != nil {
 		t.Fatalf("add err: %v", err)
 	}
 	store = pt.NewStoreClient(path, "pt")
