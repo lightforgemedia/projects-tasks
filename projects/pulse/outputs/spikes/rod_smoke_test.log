@@ -1,0 +1,5 @@
+?   	pulse/cmd/pulse	[no test files]
+=== RUN   TestRodCanLaunchNavigateAndEval
+--- PASS: TestRodCanLaunchNavigateAndEval (1.13s)
+PASS
+ok  	pulse/internal/pulse	1.534s

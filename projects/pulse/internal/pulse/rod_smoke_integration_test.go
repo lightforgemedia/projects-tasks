@@ -3,7 +3,6 @@
 package pulse
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -12,19 +11,15 @@ import (
 )
 
 func TestRodCanLaunchNavigateAndEval(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	u := launcher.New().Headless(true).MustLaunch()
 	browser := rod.New().ControlURL(u).MustConnect()
 	defer browser.MustClose()
 
-	page := browser.MustPage("about:blank")
+	page := browser.MustPage("about:blank").Timeout(30 * time.Second)
 	page.MustWaitLoad()
 
 	val := page.MustEval("() => ({ ok: true, title: document.title })")
-	if val.Value.Object() == nil {
-		t.Fatalf("expected an object result")
+	if !val.Get("ok").Bool() {
+		t.Fatalf("expected ok=true, got: %s", val.String())
 	}
 }
-
