@@ -464,7 +464,7 @@ QUICK START
   pt approve <id>                    Complete the task
 
 COMMON WORKFLOW
-  ready   [--role=ROLE] [--phase=PHASE|--all-phases] [--verbose]  List open tasks (workflow-aware by default)
+  ready   [--role=ROLE] [--phase=PHASE|--all-phases] [--verbose] [--include-blocked]  List open tasks (workflow-aware by default)
   claim   <id> [--as=USER] [--override-soft=REASON]               Assign and start task (enforces workflow gates)
   release <id>                       Unassign (if stuck)
   validate <id> [--yes]              Run tests, move to review
@@ -790,12 +790,13 @@ func cmdReady(args []string) error {
 	limit := fs.Int("limit", 10, "max issues")
 	sortKey := fs.String("sort", "priority", "sort by priority|title")
 	verbose := fs.Bool("verbose", false, "show extra info (assignee, blockers)")
+	includeBlocked := fs.Bool("include-blocked", false, "include manually blocked tasks (default: hide)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt ready [--role=ROLE] [--phase=PHASE|--all-phases] [--limit=N] [--sort=priority|title] [--verbose]")
+		fmt.Println("Usage: pt ready [--role=ROLE] [--phase=PHASE|--all-phases] [--limit=N] [--sort=priority|title] [--verbose] [--include-blocked]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -811,6 +812,7 @@ func cmdReady(args []string) error {
 		return fmt.Errorf("ready failed: %w", err)
 	}
 	pt.SortIssues(issues, *sortKey)
+	blockedMap, _ := client.ListBlocked(ctx)
 
 	// Optional workflow-aware filtering: default to the current (earliest unfinished) phase.
 	var wf *pt.Workflow
@@ -880,6 +882,10 @@ func cmdReady(args []string) error {
 			if iss.Status != "open" {
 				continue
 			}
+			blockedInfo, isManuallyBlocked := blockedMap[iss.ID]
+			if isManuallyBlocked && !*includeBlocked {
+				continue
+			}
 			blockers := readyBlockers(ctx, client, iss)
 			phaseID := ""
 			var gate interface{} = nil
@@ -897,12 +903,19 @@ func cmdReady(args []string) error {
 				}
 			}
 			out = append(out, map[string]interface{}{
-				"id":        iss.ID,
-				"title":     iss.Title,
-				"status":    iss.Status,
-				"assignee":  iss.Assignee,
-				"labels":    iss.Labels,
-				"blockers":  blockers,
+				"id":       iss.ID,
+				"title":    iss.Title,
+				"status":   iss.Status,
+				"assignee": iss.Assignee,
+				"labels":   iss.Labels,
+				"blockers": blockers,
+				"blocked":  isManuallyBlocked,
+				"block_reason": func() string {
+					if !isManuallyBlocked {
+						return ""
+					}
+					return blockedInfo.Reason
+				}(),
 				"next_hint": iss.NextHint,
 				"artifact":  issueArtifact(iss),
 				"criteria":  issueCriteria(iss),
@@ -913,8 +926,14 @@ func cmdReady(args []string) error {
 		return printJSON(out)
 	}
 	printed := false
+	skippedManual := 0
 	for _, iss := range issues {
 		if iss.Status != "open" { // hide claimed/in_progress
+			continue
+		}
+		blockedInfo, isManuallyBlocked := blockedMap[iss.ID]
+		if isManuallyBlocked && !*includeBlocked {
+			skippedManual++
 			continue
 		}
 		printed = true
@@ -958,6 +977,9 @@ func cmdReady(args []string) error {
 			if crit := issueCriteria(iss); crit != "" {
 				fmt.Printf("  Criteria: %s\n", crit)
 			}
+			if isManuallyBlocked {
+				fmt.Printf("  ⛔ Blocked: %s\n", blockedInfo.Reason)
+			}
 			if len(blockers) > 0 {
 				fmt.Printf("  ⚠️  Blocked by: %s\n", strings.Join(blockers, ", "))
 			}
@@ -978,10 +1000,17 @@ func cmdReady(args []string) error {
 				}
 				line = fmt.Sprintf("%s [blocked %s]", line, indicator)
 			}
+			if isManuallyBlocked {
+				line = fmt.Sprintf("%s [blocked-manual]", line)
+			}
 			fmt.Println(line)
 		}
 	}
 	if !printed {
+		if skippedManual > 0 && !*includeBlocked {
+			fmt.Printf("No ready tasks (all open tasks are marked blocked). Run: pt blocked (or: pt ready --include-blocked)\n")
+			return nil
+		}
 		if wf != nil && targetPhase != "" {
 			fmt.Printf("No open tasks in phase %q. Run: pt workflow status (or: pt ready --all-phases)\n", targetPhase)
 			return nil
