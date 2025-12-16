@@ -51,6 +51,42 @@ The system enforces the following transitions:
 5.  **Needs Review** → **In Progress**: (Manual) `pt reject "Fix X"`.
 6.  **Closed** → **In Progress**: (Manual) `pt reopen` (reopens a completed task).
 
+## Workflow Philosophy (Risk-First)
+
+PT is designed to prevent agents from “skipping ahead” by making the process explicit:
+
+- **Prove unknowns first** (spikes): validate external dependencies, data shapes, and assumptions before building.
+- **Explore UX before implementation** (discovery/UX): show multiple options and edge cases; pick direction before committing to code.
+- **Build incrementally**: hardest/riskiest parts first, then integrate and polish.
+
+Recommended setup:
+
+```bash
+export PT_WORKFLOW=workflows/risk-first.toml
+pt workflow status
+pt next
+```
+
+### Mock discipline (non-negotiable)
+
+Mocks are allowed only after real behavior is proven, and only if there is a tracked plan to remove them:
+
+1) Prove real behavior (spike) and capture representative payloads (saved under `outputs/` or `testdata/`).  
+2) If mocking, derive mocks from captured payloads (no invented shapes).  
+3) Create an explicit follow-up integration task (and run integration tests in CI).  
+4) Make mock usage visible to users/agents (logs/output clearly say “MOCK”).  
+
+See `docs/WORKFLOW-PRINCIPLES.md` and `docs/workflow-architecture.md` for the full model.
+
+### Checkpoint pattern (how work lands)
+
+For each task:
+
+1) Claim: `pt claim <id> --as=$USER`  
+2) Implement + commit locally as you go (small, reviewable diffs).  
+3) Validate: `pt validate <id> --yes` (runs DoD tests; records manual confirmations).  
+4) Review: `pt approve <id>` or `pt reject <id> --reason="..."`.  
+
 ## Manifest Example
 
 Manifests allow defining a phase of work in a single file.
