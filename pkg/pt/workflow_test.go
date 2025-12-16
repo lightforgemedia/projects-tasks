@@ -298,6 +298,25 @@ func TestEvaluateGate(t *testing.T) {
 		}
 	})
 
+	t.Run("phase:X has_comment:Y OR phase:X has_comment:Z satisfied", func(t *testing.T) {
+		wf2 := Workflow{
+			PhaseAssignment: PhaseAssignment{LabelPrefix: "phase:"},
+			Phases:          []Phase{{ID: "verify", Order: 1}},
+		}
+		phase := Phase{Gate: Gate{Condition: "phase:verify has_comment:demo OR phase:verify has_comment:risk-accepted"}}
+		allIssues := []Issue{
+			{ID: "pt-1", Labels: []string{"phase:verify"}},
+			{ID: "pt-2", Labels: []string{"phase:signoff"}},
+		}
+		comments := map[string][]string{
+			"pt-1": {"demo: outputs/pt-15/gemini-fixed.log"},
+		}
+		satisfied, _ := wf2.EvaluateGate(phase, nil, allIssues, comments)
+		if !satisfied {
+			t.Error("expected OR condition satisfied when first clause matches")
+		}
+	})
+
 	t.Run("unknown condition fails closed", func(t *testing.T) {
 		phase := Phase{Gate: Gate{Condition: "some_unknown_condition"}}
 		tasks := []Issue{{ID: "pt-1", Status: "closed"}}

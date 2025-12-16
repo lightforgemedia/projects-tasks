@@ -330,6 +330,22 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 
 	condition := phase.Gate.Condition
 
+	// Handle compound conditions with OR. This must run before any other condition parsing,
+	// otherwise predicates like "phase:X has_comment:Y OR phase:X has_comment:Z" will be
+	// mis-parsed as a single has_comment tag containing "Y OR ...".
+	if strings.Contains(condition, " OR ") {
+		parts := strings.Split(condition, " OR ")
+		for _, part := range parts {
+			subPhase := phase
+			subPhase.Gate.Condition = strings.TrimSpace(part)
+			satisfied, _ := w.EvaluateGate(subPhase, phaseTasks, allIssues, comments)
+			if satisfied {
+				return true, ""
+			}
+		}
+		return false, "no OR condition satisfied"
+	}
+
 	// Handle "all_closed" condition
 	if condition == "all_closed" {
 		openCount := 0
@@ -420,20 +436,6 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 			}
 		}
 		return false, fmt.Sprintf("discovery not approved for component %q", componentID)
-	}
-
-	// Handle compound conditions with OR
-	if strings.Contains(condition, " OR ") {
-		parts := strings.Split(condition, " OR ")
-		for _, part := range parts {
-			subPhase := phase
-			subPhase.Gate.Condition = strings.TrimSpace(part)
-			satisfied, _ := w.EvaluateGate(subPhase, phaseTasks, allIssues, comments)
-			if satisfied {
-				return true, ""
-			}
-		}
-		return false, "no OR condition satisfied"
 	}
 
 	// Unknown condition - fail closed with clear error
