@@ -31,7 +31,7 @@ Stateless logic package.
 - `pt sync <manifest.toml>`: Applies a plan.
 - When a workflow exists, `pt sync` also assigns `phase:*` labels based on template mapping to keep phase ordering stable.
 - `pt ready [--role=ROLE] [--phase=PHASE|--all-phases]`: Lists open work; when a workflow exists, defaults to the current (earliest unfinished) phase to reduce skipping ahead.
-- `pt claim <id> [--override-soft=REASON]`: Marks as `in_progress` and enforces workflow gates (hard blocks; soft requires an explicit override).
+- `pt claim <id> [--override-soft=REASON] [--workflow=PATH]`: Marks as `in_progress` and enforces workflow gates (hard blocks; soft requires an explicit override). Use `--workflow` (or `PT_WORKFLOW`) when multiple workflow files exist.
 - `pt next [--json]`: Conductor-style “what now?” command (review → work → unblock → plan → done).
 - `pt validate <id>`: Runs hooks; if pass → `needs_review`.
 - `pt approve/reject <id>`: Human review steps.
@@ -137,7 +137,7 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 1) `pt sync phases/<file>.toml` — apply manifest to the store.
 2) `pt next [--json]` — conductor-style “what now?” (review → work → unblock → plan → done).
 3) `pt ready --role=<role> --verbose` — find unblocked work (when workflows are active, use `--phase`/`--all-phases`).
-4) `pt claim <id> [--as=$USER] [--draft] [--override-soft=REASON]` — assign and start (enforces workflow gates; soft gates require an explicit override).
+4) `pt claim <id> [--as=$USER] [--draft] [--override-soft=REASON] [--workflow=PATH]` — assign and start (enforces workflow gates; soft gates require an explicit override).
 5) Do the work, then `pt validate <id> [--yes]` — moves to `needs_review` with manual notes.
 6) `pt approve <id>` or `pt reject <id> --reason="..."` — review outcomes.
 6) If stuck, `pt release <id>` — returns to open.

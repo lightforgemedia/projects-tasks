@@ -486,8 +486,8 @@ QUICK START
   pt approve <id>                    Complete the task
 
 COMMON WORKFLOW
-  ready   [--role=ROLE] [--phase=PHASE|--all-phases] [--verbose] [--include-blocked]  List open tasks (workflow-aware by default)
-  claim   <id> [--as=USER] [--override-soft=REASON]               Assign and start task (enforces workflow gates)
+  ready   [--role=ROLE] [--phase=PHASE|--all-phases] [--workflow=PATH] [--verbose] [--include-blocked]  List open tasks (workflow-aware by default)
+  claim   <id> [--as=USER] [--override-soft=REASON] [--workflow=PATH]               Assign and start task (enforces workflow gates)
   release <id>                       Unassign (if stuck)
   validate <id> [--yes]              Run tests, move to review
   approve <id>                       Mark complete
@@ -683,7 +683,7 @@ func cmdSync(args []string) error {
 
 	// Workflow-aware sync: if a workflow exists and uses a label_prefix, assign phase labels
 	// based on template mapping/defaults to make phase ordering stable for agents.
-	if wfPath, err := findWorkflowFile(); err == nil {
+	if wfPath, err := findWorkflowFileFor(*dbPath); err == nil {
 		if wf, err := pt.ParseWorkflow(wfPath); err == nil {
 			if strings.TrimSpace(wf.PhaseAssignment.LabelPrefix) != "" {
 				for _, id := range idMap {
@@ -762,7 +762,7 @@ func cmdSync(args []string) error {
 func generatePhaseReviewTasks(ctx context.Context, client pt.Client, dbPath, prefix string) (map[string]string, error) {
 	out := make(map[string]string)
 
-	wfPath, err := findWorkflowFile()
+	wfPath, err := findWorkflowFileFor(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("workflow required for phase review generation: %w", err)
 	}
@@ -962,6 +962,7 @@ func cmdReady(args []string) error {
 	role := fs.String("role", "", "filter by role label")
 	phase := fs.String("phase", "", "filter by workflow phase (requires workflow file)")
 	allPhases := fs.Bool("all-phases", false, "show open tasks across all phases (ignore workflow phase focus)")
+	workflowPath := fs.String("workflow", "", "path to workflow template (overrides auto-discovery)")
 	limit := fs.Int("limit", 10, "max issues")
 	sortKey := fs.String("sort", "priority", "sort by priority|title")
 	verbose := fs.Bool("verbose", false, "show extra info (assignee, blockers)")
@@ -971,7 +972,7 @@ func cmdReady(args []string) error {
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt ready [--role=ROLE] [--phase=PHASE|--all-phases] [--limit=N] [--sort=priority|title] [--verbose] [--include-blocked]")
+		fmt.Println("Usage: pt ready [--role=ROLE] [--phase=PHASE|--all-phases] [--workflow=PATH] [--limit=N] [--sort=priority|title] [--verbose] [--include-blocked]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -997,7 +998,24 @@ func cmdReady(args []string) error {
 	var allIssues []pt.Issue
 	var comments map[string][]string
 	currentPhaseID := ""
-	if wfPath, err := findWorkflowFile(); err == nil {
+	wfPath := strings.TrimSpace(*workflowPath)
+	if wfPath == "" {
+		path, err := findWorkflowFileFor(*dbPath)
+		if err == nil {
+			wfPath = path
+		} else if strings.Contains(err.Error(), "multiple workflow files found") {
+			// Allow a non-workflow view when the caller explicitly asked for all phases.
+			// This is primarily for ad-hoc triage; prefer selecting a workflow via --workflow or PT_WORKFLOW.
+			if strings.TrimSpace(*phase) != "" || !*allPhases {
+				return fmt.Errorf("workflow not selected: %w", err)
+			}
+		} else if strings.Contains(err.Error(), "no workflow file found") {
+			// No workflow configured; proceed without phase filtering.
+		} else {
+			return fmt.Errorf("workflow not selected: %w", err)
+		}
+	}
+	if wfPath != "" {
 		parsed, err := pt.ParseWorkflow(wfPath)
 		if err != nil {
 			return fmt.Errorf("parse workflow: %w", err)
@@ -1016,27 +1034,35 @@ func cmdReady(args []string) error {
 		}
 
 		// Determine current phase as the earliest phase with any unfinished tasks.
-		phases := append([]pt.Phase{}, wf.Phases...)
-		sort.Slice(phases, func(i, j int) bool { return phases[i].Order < phases[j].Order })
-		for _, p := range phases {
-			assigned := 0
-			unfinished := 0
-			for _, iss := range allIssues {
-				if strings.TrimSpace(*role) != "" && !hasLabel(iss, fmt.Sprintf("role:%s", strings.TrimSpace(*role))) {
-					continue
-				}
-				meta, _ := pt.ParseTaskMeta(iss.Description)
-				if wf.GetTaskPhase(iss, meta) != p.ID {
-					continue
-				}
-				assigned++
-				if iss.Status != "closed" && iss.Status != "done" {
-					unfinished++
-				}
+		if useEngineV2() {
+			eng, err := engine.NewV2(*wf)
+			if err != nil {
+				return fmt.Errorf("compile workflow: %w", err)
 			}
-			if assigned > 0 && unfinished > 0 {
-				currentPhaseID = p.ID
-				break
+			currentPhaseID, _ = eng.CurrentPhaseID(allIssues, strings.TrimSpace(*role))
+		} else {
+			phases := append([]pt.Phase{}, wf.Phases...)
+			sort.Slice(phases, func(i, j int) bool { return phases[i].Order < phases[j].Order })
+			for _, p := range phases {
+				assigned := 0
+				unfinished := 0
+				for _, iss := range allIssues {
+					if strings.TrimSpace(*role) != "" && !hasLabel(iss, fmt.Sprintf("role:%s", strings.TrimSpace(*role))) {
+						continue
+					}
+					meta, _ := pt.ParseTaskMeta(iss.Description)
+					if wf.GetTaskPhase(iss, meta) != p.ID {
+						continue
+					}
+					assigned++
+					if iss.Status != "closed" && iss.Status != "done" {
+						unfinished++
+					}
+				}
+				if assigned > 0 && unfinished > 0 {
+					currentPhaseID = p.ID
+					break
+				}
 			}
 		}
 	}
@@ -1074,7 +1100,19 @@ func cmdReady(args []string) error {
 				meta, _ := pt.ParseTaskMeta(iss.Description)
 				phaseID = wf.GetTaskPhase(iss, meta)
 				if allIssues != nil && comments != nil {
-					canProceed, isHard, blockingPhase, msg := wf.CheckGate(iss.ID, iss, meta, allIssues, comments)
+					var canProceed bool
+					var isHard bool
+					var blockingPhase string
+					var msg string
+					if useEngineV2() {
+						eng, err := engine.NewV2(*wf)
+						if err != nil {
+							return fmt.Errorf("compile workflow: %w", err)
+						}
+						canProceed, isHard, blockingPhase, msg = eng.CheckGate(iss.ID, iss, meta, allIssues, comments)
+					} else {
+						canProceed, isHard, blockingPhase, msg = wf.CheckGate(iss.ID, iss, meta, allIssues, comments)
+					}
 					gate = map[string]interface{}{
 						"can_proceed":    canProceed,
 						"is_hard_block":  isHard,
@@ -1252,7 +1290,7 @@ func cmdList(args []string) error {
 	if *phase != "" {
 		wfPath := strings.TrimSpace(*workflowPath)
 		if wfPath == "" {
-			p, err := findWorkflowFile()
+			p, err := findWorkflowFileFor(*dbPath)
 			if err != nil {
 				return fmt.Errorf("--phase requires workflow file: %w", err)
 			}
@@ -1355,7 +1393,7 @@ func cmdShow(args []string) error {
 	// Show phase if workflow exists
 	wfPath := strings.TrimSpace(*workflowPath)
 	if wfPath == "" {
-		if p, err := findWorkflowFile(); err == nil {
+		if p, err := findWorkflowFileFor(*dbPath); err == nil {
 			wfPath = p
 		}
 	}
@@ -1410,11 +1448,12 @@ func cmdClaim(args []string) error {
 	as := fs.String("as", "", "override assignee (defaults to $USER)")
 	draft := fs.Bool("draft", false, "claim in draft mode (skip DoD validation)")
 	overrideSoft := fs.String("override-soft", "", "override a soft workflow gate with a reason (writes a gate-override comment)")
+	workflowPath := fs.String("workflow", "", "path to workflow template (overrides auto-discovery)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER] [--draft] [--override-soft=REASON]") }
+	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER] [--draft] [--override-soft=REASON] [--workflow=PATH]") }
 	// Parse flags first, then get positional arg
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -1453,7 +1492,24 @@ func cmdClaim(args []string) error {
 	}
 	var gateRes *workflowGateResult
 	var overrideComment string
-	if wfPath, err := findWorkflowFile(); err == nil {
+	wfPath := strings.TrimSpace(*workflowPath)
+	if wfPath != "" {
+		if resolved, ok := resolveWorkflowPath(wfPath, workflowProjectRoot(*dbPath)); ok {
+			wfPath = resolved
+		} else {
+			return fmt.Errorf("workflow file not found: %s", wfPath)
+		}
+	} else {
+		path, err := findWorkflowFileFor(*dbPath)
+		if err == nil {
+			wfPath = path
+		} else if strings.Contains(err.Error(), "no workflow file found") {
+			wfPath = ""
+		} else {
+			return fmt.Errorf("workflow not selected: %w", err)
+		}
+	}
+	if wfPath != "" {
 		wf, err := pt.ParseWorkflow(wfPath)
 		if err != nil {
 			return fmt.Errorf("parse workflow: %w", err)
@@ -2288,7 +2344,7 @@ func cmdAdd(args []string) error {
 	}
 
 	// Attach phase label if workflow exists and label_prefix is configured.
-	if wfPath, err := findWorkflowFile(); err == nil {
+	if wfPath, err := findWorkflowFileFor(*dbPath); err == nil {
 		if wf, err := pt.ParseWorkflow(wfPath); err == nil {
 			if strings.TrimSpace(wf.PhaseAssignment.LabelPrefix) != "" {
 				iss, meta, err := client.GetTask(ctx, id)

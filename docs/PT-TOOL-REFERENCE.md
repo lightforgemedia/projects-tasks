@@ -41,6 +41,10 @@ Key commands (current behavior; see `pt --help` for the full list):
   - `--phase` requires a workflow; use `--workflow` when multiple workflow files exist.
 - `pt next [--workflow=PATH] [--all-phases] [--json]`
   - Conductor-style “what now?”; avoids recommending manually blocked tasks.
+- `pt ready [--workflow=PATH] ...`
+  - When multiple `workflows/*.toml` exist, select one via `--workflow` (or `PT_WORKFLOW`) for phase-aware output.
+- `pt claim <id> [--workflow=PATH] ...`
+  - When multiple `workflows/*.toml` exist, select one via `--workflow` (or `PT_WORKFLOW`) so gates are enforced deterministically.
 - `pt review write <id> --kind=pre|post|demo [--phase=ID]`
   - Writes a markdown review under `.pt/reviews/` and links it to the task via a comment.
   - Pair with `pt sync --generate-phase-reviews` so phase kickoff/closeout/demo checkpoints exist and `pt next` can recommend them.

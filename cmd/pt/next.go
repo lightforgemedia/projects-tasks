@@ -125,7 +125,7 @@ func cmdNext(args []string) error {
 	var workflowErr error
 	wfPath := strings.TrimSpace(*workflowPath)
 	if wfPath == "" {
-		path, err := findWorkflowFile()
+		path, err := findWorkflowFileFor(*dbPath)
 		if err == nil {
 			wfPath = path
 		} else {

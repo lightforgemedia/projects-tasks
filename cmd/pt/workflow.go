@@ -68,16 +68,25 @@ Hook Integration:
 }
 
 func findWorkflowFile() (string, error) {
+	return findWorkflowFileFor("")
+}
+
+// findWorkflowFileFor resolves a workflow file relative to the project root implied by dbPath.
+// This avoids accidentally picking up workflows from the caller's repo/cwd when operating on
+// a different PT store (e.g., tests using a temp PT_DB).
+func findWorkflowFileFor(dbPath string) (string, error) {
+	projectRoot := workflowProjectRoot(dbPath)
+
 	// Check env var first
 	if env := os.Getenv("PT_WORKFLOW"); env != "" {
-		if resolved, ok := resolveWorkflowPath(env); ok {
+		if resolved, ok := resolveWorkflowPath(env, projectRoot); ok {
 			return resolved, nil
 		}
 		return "", fmt.Errorf("workflow file not found: %s", env)
 	}
 
 	// Look for workflows/*.toml
-	matches := findWorkflowGlobMatches("workflows/*.toml")
+	matches := findWorkflowGlobMatches("workflows/*.toml", projectRoot)
 	if len(matches) == 1 {
 		return matches[0], nil
 	}
@@ -86,56 +95,113 @@ func findWorkflowFile() (string, error) {
 	}
 
 	// Look for .pt/workflow.toml
-	if resolved, ok := resolveWorkflowPath(".pt/workflow.toml"); ok {
-		return resolved, nil
+	if strings.TrimSpace(projectRoot) != "" {
+		candidate := filepath.Join(projectRoot, ".pt", "workflow.toml")
+		if _, err := os.Stat(candidate); err == nil {
+			if abs, err := filepath.Abs(candidate); err == nil {
+				return abs, nil
+			}
+			return filepath.Clean(candidate), nil
+		}
+	} else {
+		if resolved, ok := resolveWorkflowPath(".pt/workflow.toml", projectRoot); ok {
+			return resolved, nil
+		}
 	}
 
 	return "", errors.New("no workflow file found; create workflows/<name>.toml or use --workflow=PATH")
 }
 
-func resolveWorkflowPath(path string) (string, bool) {
+func workflowProjectRoot(dbPath string) string {
+	if strings.TrimSpace(dbPath) == "" {
+		dbPath = pt.DiscoveredStorePath()
+	}
+	dbPath = strings.TrimSpace(dbPath)
+	if dbPath == "" {
+		return ""
+	}
+	return projectRootFromStorePath(dbPath)
+}
+
+func resolveWorkflowPath(path string, projectRoot string) (string, bool) {
 	p := strings.TrimSpace(path)
 	if p == "" {
 		return "", false
 	}
 
-	// 1) As provided (relative to current working dir, or absolute).
-	if _, err := os.Stat(p); err == nil {
-		return p, true
+	// 1) Absolute paths are used as-is.
+	if filepath.IsAbs(p) {
+		if _, err := os.Stat(p); err == nil {
+			return filepath.Clean(p), true
+		}
+		return "", false
 	}
 
-	// 2) If relative, attempt to resolve relative to the git repo root.
-	if !filepath.IsAbs(p) {
-		if root, err := gitRepoRoot(""); err == nil && root != "" {
-			candidate := filepath.Join(root, p)
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate, true
+	// 2) Prefer resolving relative paths against the project root (if known).
+	if strings.TrimSpace(projectRoot) != "" {
+		candidate := filepath.Join(projectRoot, p)
+		if _, err := os.Stat(candidate); err == nil {
+			if abs, err := filepath.Abs(candidate); err == nil {
+				return abs, true
 			}
+			return filepath.Clean(candidate), true
+		}
+	}
+
+	// 3) Then try relative to CWD.
+	if _, err := os.Stat(p); err == nil {
+		if abs, err := filepath.Abs(p); err == nil {
+			return abs, true
+		}
+		return filepath.Clean(p), true
+	}
+
+	// 4) Finally, attempt to resolve relative to the git repo root.
+	if root, err := gitRepoRoot(""); err == nil && root != "" {
+		candidate := filepath.Join(root, p)
+		if _, err := os.Stat(candidate); err == nil {
+			if abs, err := filepath.Abs(candidate); err == nil {
+				return abs, true
+			}
+			return filepath.Clean(candidate), true
 		}
 	}
 
 	return "", false
 }
 
-func findWorkflowGlobMatches(glob string) []string {
+func findWorkflowGlobMatches(glob string, projectRoot string) []string {
 	var out []string
 
-	// 1) CWD
-	if matches, err := filepath.Glob(glob); err == nil {
-		for _, m := range matches {
-			if resolved, ok := resolveWorkflowPath(m); ok {
-				out = append(out, resolved)
-			}
-		}
-	}
-
-	// 2) Repo root
-	if root, err := gitRepoRoot(""); err == nil && root != "" {
-		candidate := filepath.Join(root, glob)
+	// If we have a project root (store-derived), only search there to avoid leaking
+	// workflows from the caller's repo/cwd into unrelated stores.
+	if strings.TrimSpace(projectRoot) != "" {
+		candidate := filepath.Join(projectRoot, glob)
 		if matches, err := filepath.Glob(candidate); err == nil {
 			for _, m := range matches {
-				if resolved, ok := resolveWorkflowPath(m); ok {
+				if resolved, ok := resolveWorkflowPath(m, projectRoot); ok {
 					out = append(out, resolved)
+				}
+			}
+		}
+	} else {
+		// 1) CWD
+		if matches, err := filepath.Glob(glob); err == nil {
+			for _, m := range matches {
+				if resolved, ok := resolveWorkflowPath(m, projectRoot); ok {
+					out = append(out, resolved)
+				}
+			}
+		}
+
+		// 2) Repo root (fallback)
+		if root, err := gitRepoRoot(""); err == nil && root != "" {
+			candidate := filepath.Join(root, glob)
+			if matches, err := filepath.Glob(candidate); err == nil {
+				for _, m := range matches {
+					if resolved, ok := resolveWorkflowPath(m, projectRoot); ok {
+						out = append(out, resolved)
+					}
 				}
 			}
 		}
@@ -173,7 +239,7 @@ func cmdWorkflowStatus(args []string) error {
 	wfPath := *workflowPath
 	if wfPath == "" {
 		var err error
-		wfPath, err = findWorkflowFile()
+		wfPath, err = findWorkflowFileFor(*dbPath)
 		if err != nil {
 			return err
 		}
@@ -519,7 +585,7 @@ func cmdWorkflowNext(args []string) error {
 	wfPath := *workflowPath
 	if wfPath == "" {
 		var err error
-		wfPath, err = findWorkflowFile()
+		wfPath, err = findWorkflowFileFor(*dbPath)
 		if err != nil {
 			return err
 		}
@@ -648,7 +714,7 @@ func cmdWorkflowCheck(args []string) error {
 	wfPath := *workflowPath
 	if wfPath == "" {
 		var err error
-		wfPath, err = findWorkflowFile()
+		wfPath, err = findWorkflowFileFor(*dbPath)
 		if err != nil {
 			return err
 		}

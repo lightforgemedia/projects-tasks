@@ -40,3 +40,6 @@ context_*.json
 
 # PT runtime state
 .pt/
+
+# Demo run outputs (generated logs)
+outputs/demo/**/out/
