@@ -1,0 +1,16 @@
+id = "product_card_quickadd"
+version = 1
+tags = ["catalog", "cart", "p1", "area:product_card"]
+
+[preconditions]
+route = "/products?query=socks"
+login = "fixture:buyer_basic"
+
+[[steps]]
+action = "click"
+target = "role=button[name='Quick Add']"
+
+[[assertions]]
+type = "visible"
+target = "data-testid=mini-cart"
+

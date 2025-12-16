@@ -1,0 +1,26 @@
+id = "settings_profile_save"
+version = 1
+tags = ["settings", "p1", "area:settings"]
+
+[preconditions]
+route = "/settings/profile"
+login = "fixture:buyer_basic"
+
+[[steps]]
+action = "click"
+target = "role=button[name='Edit profile']"
+
+[[steps]]
+action = "type"
+target = "role=textbox[name='Display name']"
+value = "Agent Test"
+
+[[steps]]
+action = "click"
+target = "role=button[name='Save']"
+
+[[assertions]]
+type = "text_contains"
+target = "data-testid=toast"
+value = "Saved"
+

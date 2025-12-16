@@ -1,0 +1,25 @@
+id = "auth_login_basic"
+version = 1
+tags = ["auth", "p0", "area:auth"]
+
+[preconditions]
+route = "/login"
+
+[[steps]]
+action = "type"
+target = "role=textbox[name='Email']"
+value = "user@example.com"
+
+[[steps]]
+action = "type"
+target = "role=textbox[name='Password']"
+value = "correct-horse-battery-staple"
+
+[[steps]]
+action = "click"
+target = "role=button[name='Sign in']"
+
+[[assertions]]
+type = "url_is"
+value = "/dashboard"
+
