@@ -150,6 +150,9 @@ func cmdNext(args []string) error {
 			assigned := 0
 			unfinished := 0
 			for _, iss := range allIssues {
+				if strings.TrimSpace(*role) != "" && !hasLabel(iss, fmt.Sprintf("role:%s", strings.TrimSpace(*role))) {
+					continue
+				}
 				meta, _ := pt.ParseTaskMeta(iss.Description)
 				if wf.GetTaskPhase(iss, meta) != p.ID {
 					continue
@@ -196,19 +199,26 @@ func cmdNext(args []string) error {
 	// 4) Find the first task that is actually claimable (no blockers), and check workflow gates.
 	var selected *pt.Issue
 	var selectedMeta pt.TaskMeta
+	var fallback *pt.Issue
+	var fallbackMeta pt.TaskMeta
+	var fallbackWhy []string
+
+	skippedManual := 0
+	skippedDeps := 0
+	skippedSoftGate := 0
+	skippedPreflight := 0
 	for i := range candidates {
 		task := candidates[i]
 		if _, isBlocked := blocked[task.ID]; isBlocked {
+			skippedManual++
 			continue
 		}
 		blockers := readyBlockers(ctx, client, task)
 		if len(blockers) > 0 {
+			skippedDeps++
 			continue
 		}
 		meta, _ := pt.ParseTaskMeta(task.Description)
-		if reason := unclaimableReason(task, meta); reason != "" {
-			continue
-		}
 
 		if wf != nil {
 			canProceed, isHard, blockingPhase, msg := wf.CheckGate(task.ID, task, meta, allIssues, comments)
@@ -254,13 +264,36 @@ func cmdNext(args []string) error {
 				}
 				// Non-strict soft gate: still avoid recommending it as a normal WORK item,
 				// because pt claim requires an explicit override.
+				skippedSoftGate++
 				continue
 			}
+		}
+
+		// Preflight: missing file artifacts should not stall the whole workflow. Prefer tasks
+		// whose referenced file exists, but if none do, still recommend the best candidate
+		// with an explicit warning.
+		if reason := unclaimableReason(task, meta); reason != "" {
+			skippedPreflight++
+			if fallback == nil {
+				cp := task
+				fallback = &cp
+				fallbackMeta = meta
+				fallbackWhy = []string{
+					fmt.Sprintf("preflight warning: %s", reason),
+					"if this file is intended to be created by the task, ignore this warning; otherwise, fix the artifact path via pt update or manifest",
+				}
+			}
+			continue
 		}
 
 		selected = &task
 		selectedMeta = meta
 		break
+	}
+	if selected == nil && fallback != nil {
+		selected = fallback
+		selectedMeta = fallbackMeta
+		out.Why = append(out.Why, fallbackWhy...)
 	}
 
 	// 5) WORK recommendation if we have any candidates.
@@ -303,6 +336,11 @@ func cmdNext(args []string) error {
 			return printNext(out, *jsonOut)
 		}
 		out.Why = append(out.Why, "open tasks exist but none are currently claimable (deps/blocked/gates/filters)")
+		if len(candidates) > 0 {
+			out.Why = append(out.Why, fmt.Sprintf("focus set: %d open tasks; skipped manual=%d deps=%d soft_gates=%d preflight=%d", len(candidates), skippedManual, skippedDeps, skippedSoftGate, skippedPreflight))
+		} else if wf != nil && !*allPhases && strings.TrimSpace(currentPhaseID) != "" {
+			out.Why = append(out.Why, fmt.Sprintf("no open tasks matched current phase focus (%s); try --all-phases", currentPhaseID))
+		}
 		// Point to one concrete task to inspect, plus the broad views.
 		var openIssues []pt.Issue
 		for _, iss := range allIssues {

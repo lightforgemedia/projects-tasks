@@ -321,6 +321,53 @@ func TestCmdNextSkipsUnclaimableOpen(t *testing.T) {
 	}
 }
 
+func TestCmdNextFallsBackToMissingArtifactInsteadOfBlocking(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	td := t.TempDir()
+	missing := filepath.Join(td, "missing.go")
+
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Creates File", Template: "backend_endpoint", Role: "dev", Artifact: "code:" + missing, DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	out := runCmdNextJSON(t, []string{"--json"})
+	if out["mode"] != "WORK" {
+		t.Fatalf("mode=%v, want WORK (fallback to task even if artifact missing)", out["mode"])
+	}
+	why, _ := out["why"].([]any)
+	foundWarning := false
+	for _, v := range why {
+		if s, ok := v.(string); ok && strings.Contains(s, "preflight warning") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("expected preflight warning in why, got: %v", why)
+	}
+	recs, ok := out["recommended"].([]any)
+	if !ok || len(recs) == 0 {
+		t.Fatalf("expected recommendations, got: %v", out["recommended"])
+	}
+	foundClaim := false
+	for _, r := range recs {
+		m, _ := r.(map[string]any)
+		cmd, _ := m["cmd"].(string)
+		if strings.HasPrefix(cmd, "pt claim ") && strings.Contains(cmd, "pt-1") {
+			foundClaim = true
+			break
+		}
+	}
+	if !foundClaim {
+		t.Fatalf("expected claim recommendation to target pt-1, got: %v", recs)
+	}
+}
+
 func runCmdNextJSON(t *testing.T, args []string) map[string]any {
 	t.Helper()
 	old := os.Stdout

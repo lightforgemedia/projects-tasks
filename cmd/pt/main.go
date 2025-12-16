@@ -865,6 +865,9 @@ func cmdReady(args []string) error {
 			assigned := 0
 			unfinished := 0
 			for _, iss := range allIssues {
+				if strings.TrimSpace(*role) != "" && !hasLabel(iss, fmt.Sprintf("role:%s", strings.TrimSpace(*role))) {
+					continue
+				}
 				meta, _ := pt.ParseTaskMeta(iss.Description)
 				if wf.GetTaskPhase(iss, meta) != p.ID {
 					continue

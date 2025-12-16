@@ -203,11 +203,30 @@ func cmdWorkflowStatus(args []string) error {
 	// Build phase status
 	status := buildWorkflowStatus(workflow, allIssues, comments)
 
+	// Surface task-level blockers (deps + manual blocks) in output and in suggested next.
+	manualBlocked, _ := client.ListBlocked(ctx)
+	taskBlockers := make(map[string][]string, len(allIssues))
+	for _, iss := range allIssues {
+		if iss.Status != "open" {
+			continue
+		}
+		taskBlockers[iss.ID] = readyBlockers(ctx, client, iss)
+	}
+	applyWorkflowTaskBlockers(&status, manualBlocked, taskBlockers)
+
 	if *jsonOut {
-		return printJSON(status)
+		return printJSON(struct {
+			pt.WorkflowStatus
+			TaskBlockers  map[string][]string       `json:"task_blockers,omitempty"`
+			ManualBlocked map[string]pt.BlockedInfo `json:"manual_blocked,omitempty"`
+		}{
+			WorkflowStatus: status,
+			TaskBlockers:   taskBlockers,
+			ManualBlocked:  manualBlocked,
+		})
 	}
 
-	printWorkflowStatus(status)
+	printWorkflowStatus(status, manualBlocked, taskBlockers)
 	return nil
 }
 
@@ -313,7 +332,33 @@ func buildWorkflowStatus(workflow pt.Workflow, allIssues []pt.Issue, comments ma
 	return status
 }
 
-func printWorkflowStatus(status pt.WorkflowStatus) {
+func applyWorkflowTaskBlockers(status *pt.WorkflowStatus, manualBlocked map[string]pt.BlockedInfo, taskBlockers map[string][]string) {
+	// Recompute suggested next to avoid recommending a deps-blocked task as READY.
+	status.SuggestedNext = nil
+	status.NextReason = ""
+	for _, ps := range status.Phases {
+		if ps.IsBlocked {
+			continue
+		}
+		for _, t := range ps.Tasks {
+			if t.Status != "open" {
+				continue
+			}
+			if _, ok := manualBlocked[t.ID]; ok {
+				continue
+			}
+			if len(taskBlockers[t.ID]) > 0 {
+				continue
+			}
+			cp := t
+			status.SuggestedNext = &cp
+			status.NextReason = fmt.Sprintf("Phase: %s - %s", ps.Phase.Name, ps.Phase.Description)
+			return
+		}
+	}
+}
+
+func printWorkflowStatus(status pt.WorkflowStatus, manualBlocked map[string]pt.BlockedInfo, taskBlockers map[string][]string) {
 	// Header
 	fmt.Println("┌─────────────────────────────────────────────────────────────┐")
 	fmt.Printf("│  Workflow: %-48s │\n", status.Workflow.Name)
@@ -380,7 +425,22 @@ func printWorkflowStatus(status pt.WorkflowStatus) {
 
 			extra := ""
 			if t.Status == "open" && !ps.IsBlocked {
-				extra = " ← READY"
+				ready := true
+				if _, ok := manualBlocked[t.ID]; ok {
+					ready = false
+					extra = extra + " [blocked-manual]"
+				}
+				if b := taskBlockers[t.ID]; len(b) > 0 {
+					ready = false
+					indicator := b[0]
+					if len(b) > 1 {
+						indicator = fmt.Sprintf("%s(+%d)", b[0], len(b)-1)
+					}
+					extra = extra + fmt.Sprintf(" [blocked %s]", indicator)
+				}
+				if ready {
+					extra = extra + " ← READY"
+				}
 			}
 			// Mark checkpoint tasks
 			if hasCheckpointLabel(t) {
