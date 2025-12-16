@@ -252,3 +252,7 @@ func TestPathScenarios_DiscoveryFromWorktree(t *testing.T) {
 		t.Errorf("wrong task title: %q", issues[0].Title)
 	}
 }
+
+func TestDBDiscovery(t *testing.T) {
+	TestPathScenarios_DiscoveryFromWorktree(t)
+}
