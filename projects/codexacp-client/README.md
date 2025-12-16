@@ -56,9 +56,12 @@ cd projects/codexacp-client
 go run ./cmd/gemini-acp \
   --agent gemini \
   --agent-args "--experimental-acp" \
-  --prompt "Summarize this workspace."
+  --prompt "Summarize this workspace." \
+  --timeout=30s
 ```
 Tool events and streamed text will print to stdout. Use `--debug` for slog output.
+
+Note: Gemini ACP validates `mcpServers` strictly as an array. This wrapper always sends `mcpServers: []` when no MCP servers are configured (never `null`), avoiding `newSession` invalid params errors.
 
 ### With MCP registration
 Pass an MCP server (stdio) into the same wrapper:

@@ -15,10 +15,12 @@ This checklist must be satisfied before considering the Codex ACP client “done
 
 4) Adapter Smoke (best-effort)
    - Attempt a smoke run against `codex-acp` (or document if unavailable in this environment). Expected flow: initialize -> newSession -> prompt; stream agent text; see tool-event logs if tools fire.
-   - Gemini ACP (2025-12-07): `gemini --experimental-acp` returns `newSession` error when `mcpServers` is null/omitted. Current mitigation: run with `--mcp-args "" --mcp-cmd ""` to avoid null; MCP injection remains unverified because agents may ignore/require explicit empty arrays.
+   - Gemini ACP: rejects `mcpServers: null` (expects an array). The wrappers now send `mcpServers: []` when unset, so `newSession` should succeed.
+     - Evidence (local): see `outputs/pt-2/gemini.log` (old failure) vs `outputs/pt-15/gemini-fixed.log` (fixed).
+   - MCP injection via `mcpServers` (Gemini): best-effort confirmed via `cmd/acp-mcp-smoke` (echo tool call observed in `outputs/pt-3/mcp.log`).
 
 5) Risks & Gaps
    - Known gaps (e.g., terminal stubs, large raw payload routing, lack of persistent logs) are captured in README or TODOs.
-   - MCP server injection via `mcpServers` is not yet confirmed with Gemini ACP (agent rejects null mcpServers); codex-acp adapter is known to ignore client-supplied MCP. Tool calls are not observable via MCP in this environment.
+   - Codex via `codex-acp`: adapter is known to ignore client-supplied MCP servers; tool calls may not be observable via MCP in that path.
 
 Sign-off expectation: a reviewer verifies the above, records outcome in task comments, and closes the “Project review & sign-off” task.

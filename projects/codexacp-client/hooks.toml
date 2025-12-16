@@ -1,0 +1,24 @@
+[defaults]
+  timeout = "60s"
+  on_fail = "fail"
+  verbose = true
+
+[[hook]]
+  event = "pre-claim"
+  # Don't deadlock on planning/proof tasks; keep go test strict for code work.
+  skip_templates = "discovery,spike"
+  skip_labels = "checkpoint:*"
+  cmd = "log=/tmp/pt_hook_go_test_${PT_EVENT}_${PT_ID}.log; go test ./... > $log 2>&1 && echo hook-ok: go test passed [$PT_EVENT] for $PT_ID log:$log || { echo hook-block: go test failed [$PT_EVENT] for $PT_ID log:$log Fix failing tests and prior task DoD before retrying.; exit 1; }"
+
+[[hook]]
+  event = "pre-validate"
+  skip_templates = "discovery,spike"
+  skip_labels = "checkpoint:*"
+  cmd = "log=/tmp/pt_hook_go_test_${PT_EVENT}_${PT_ID}.log; go test ./... > $log 2>&1 && echo hook-ok: go test passed [$PT_EVENT] for $PT_ID log:$log || { echo hook-block: go test failed [$PT_EVENT] for $PT_ID log:$log Fix failing tests and prior task DoD before retrying.; exit 1; }"
+
+[[hook]]
+  event = "pre-approve"
+  skip_templates = "discovery,spike"
+  skip_labels = "checkpoint:*"
+  cmd = "log=/tmp/pt_hook_go_test_${PT_EVENT}_${PT_ID}.log; go test ./... > $log 2>&1 && echo hook-ok: go test passed [$PT_EVENT] for $PT_ID log:$log || { echo hook-block: go test failed [$PT_EVENT] for $PT_ID log:$log Fix failing tests and prior task DoD before retrying.; exit 1; }"
+

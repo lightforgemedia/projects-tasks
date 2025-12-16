@@ -84,7 +84,8 @@ func main() {
 		return
 	}
 
-	var mcpServers []acp.McpServer
+	// Some agents (Gemini ACP) reject mcpServers=null; always send an array.
+	mcpServers := []acp.McpServer{}
 	if strings.TrimSpace(*mcpCmd) != "" {
 		mcpServers = acpclient.BuildMcpServers(*mcpCmd, fields(*mcpArgs), parseEnv(*mcpEnv))
 	}

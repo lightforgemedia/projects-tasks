@@ -29,6 +29,9 @@ func TestBuildMcpServers(t *testing.T) {
 	}
 
 	servers = BuildMcpServers("", nil, nil)
+	if servers == nil {
+		t.Fatalf("expected empty slice (not nil) when cmd empty")
+	}
 	if len(servers) != 0 {
 		t.Fatalf("expected no servers when cmd empty")
 	}

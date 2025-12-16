@@ -1,0 +1,70 @@
+title = "codexacp-client dogfood (verify DoD + smoke)"
+owner = "dogfood"
+
+[[tasks]]
+template = "spike"
+title = "Env spike: verify agent binaries and prerequisites"
+role = "backend-dev"
+artifact = "doc:outputs/<task-id>/env"
+max_hours = 1
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "From projects/codexacp-client: capture versions/paths for gemini, claude, and codex-acp (if present) into outputs/<task-id>/env.md. Include `command -v <bin>` and `<bin> --version` output. If missing, document what's missing and what to install."
+criteria = ["outputs/<task-id>/env.md exists", "prereqs documented (what was found vs missing)"]
+
+[[tasks]]
+template = "spike"
+title = "Smoke: gemini-acp one-shot prompt"
+role = "backend-dev"
+deps = ["Env spike: verify agent binaries and prerequisites"]
+artifact = "doc:outputs/<task-id>/gemini"
+max_hours = 2
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Attempt: `go run ./cmd/gemini-acp --agent gemini --agent-args \"--experimental-acp\" --prompt \"Summarize this workspace.\" --timeout=30s`. Save stdout/stderr to outputs/<task-id>/gemini.log. If it fails due to credentials/agent behavior, capture the exact error and mitigation notes."
+criteria = ["outputs/<task-id>/gemini.log exists", "result documented (success or concrete blocker)"]
+
+[[tasks]]
+template = "refactor"
+title = "Fix: gemini-acp sends mcpServers as empty array (not null)"
+role = "backend-dev"
+deps = ["Smoke: gemini-acp one-shot prompt"]
+artifact = "code:cmd/gemini-acp"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Gemini ACP rejects mcpServers=null. Update the wrapper(s) to send mcpServers as [] when no servers are configured. Re-run: `go run ./cmd/gemini-acp --agent gemini --agent-args \"--experimental-acp\" --prompt \"Summarize this workspace.\" --timeout=30s` and capture logs to outputs/<task-id>/gemini-fixed.log."
+criteria = ["newSession succeeds (no Invalid params for mcpServers)", "outputs/<task-id>/gemini-fixed.log exists"]
+
+[[tasks]]
+template = "spike"
+title = "Smoke: ACP mcpServers injection (agenttools echo)"
+role = "backend-dev"
+deps = ["Smoke: gemini-acp one-shot prompt"]
+artifact = "doc:outputs/<task-id>/mcp"
+max_hours = 2
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Attempt: `go run ./cmd/acp-mcp-smoke --agent gemini --agent-args \"--experimental-acp\" --mcp-cmd \"../agenttools/bin/mcp-server\" --mcp-args \"-transport=stdio\" --prompt \"Call the MCP echo tool with text=hello\" --timeout=30s --debug`. Save stdout/stderr to outputs/<task-id>/mcp.log. If the agent ignores mcpServers, document that (no tool events) and capture any request errors."
+criteria = ["outputs/<task-id>/mcp.log exists", "document whether MCP injection is honored by agent"]
+
+[[tasks]]
+template = "refactor"
+title = "Docs: update README/PROJECT_DOD with smoke results"
+role = "backend-dev"
+deps = ["Smoke: ACP mcpServers injection (agenttools echo)", "Fix: gemini-acp sends mcpServers as empty array (not null)"]
+artifact = "doc:README.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Update projects/codexacp-client/README.md and projects/codexacp-client/PROJECT_DOD.md with the observed smoke behavior (success/error), exact commands run, and limitations. Ensure the docs are accurate for a new agent returning with no context."
+criteria = ["README includes exact smoke commands + expected outcomes", "PROJECT_DOD reflects current limitations"]
+
+[[tasks]]
+template = "refactor"
+title = "Project review & sign-off"
+role = "backend-dev"
+deps = ["Docs: update README/PROJECT_DOD with smoke results"]
+artifact = "doc:PROJECT_DOD.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Confirm projects/codexacp-client/PROJECT_DOD.md items are satisfied or explicitly marked best-effort with evidence links. Record a short closeout comment with evidence paths under outputs/<task-id>/."
+criteria = ["PROJECT_DOD reviewed with evidence", "no open tasks remain"]
