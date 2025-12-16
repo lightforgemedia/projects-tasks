@@ -503,6 +503,8 @@ UX DISCOVERY (for user-facing tasks)
   ux-select  <id> <choice>           Choose approach
 
 ADVANCED
+  context init <id> [--role=ROLE]   Generate context JSON scaffold from task
+  context validate <file>           Validate context JSON against contract
   context prime [--json]             Project summary for agents
   handoff <id>                       Generate handoff document
   doctor [--fix]                     Check/repair store
@@ -2560,6 +2562,12 @@ func cmdContext(args []string) error {
 	subArgs := args[1:]
 
 	switch sub {
+	case "help", "--help", "-h":
+		fmt.Println("Usage: pt context <init|validate|prime> [args]")
+		fmt.Println("  init     Generate a context JSON scaffold from a task")
+		fmt.Println("  validate Validate a context JSON file against a contract")
+		fmt.Println("  prime    Summarize project state for agents")
+		return nil
 	case "init":
 		return cmdContextInit(subArgs)
 	case "validate":
@@ -2627,6 +2635,7 @@ func cmdContextInit(args []string) error {
 	}
 
 	contractPath := fmt.Sprintf("contracts/%s.toml", targetRole)
+	contractPath = resolveContractPath(contractPath)
 	contract, err := projects_tasks_pkg_contract.Load(contractPath)
 	if err != nil {
 		return fmt.Errorf("load contract %s: %w", contractPath, err)
@@ -2634,7 +2643,17 @@ func cmdContextInit(args []string) error {
 	_ = contract
 
 	// Scaffold payload
+	criteria := meta.DoD.Criteria
+	if len(criteria) == 0 {
+		criteria = meta.DoD.Tests
+	}
 	payload := map[string]any{
+		"role": targetRole,
+		"meta": map[string]any{
+			"role":             targetRole,
+			"contract_path":    contractPath,
+			"contract_version": contract.Meta.Version,
+		},
 		"goal": map[string]any{
 			"prompt":      issue.Description, // simplistic mapping
 			"description": issue.Description,
@@ -2643,7 +2662,7 @@ func cmdContextInit(args []string) error {
 			"files": []string{},
 		},
 		"success": map[string]any{
-			"criteria": meta.DoD.Tests,
+			"criteria": criteria,
 			"tests":    meta.DoD.Tests,
 		},
 		"provenance": map[string]any{

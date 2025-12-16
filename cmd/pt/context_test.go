@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -139,6 +142,15 @@ func TestCmdContextErrors(t *testing.T) {
 	}
 }
 
+func TestCmdContextHelp(t *testing.T) {
+	if err := cmdContext([]string{"--help"}); err != nil {
+		t.Fatalf("expected no error for context --help, got: %v", err)
+	}
+	if err := cmdContext([]string{"help"}); err != nil {
+		t.Fatalf("expected no error for context help, got: %v", err)
+	}
+}
+
 func TestCmdContextPrime(t *testing.T) {
 	_, _ = setupStoreEnv(t)
 
@@ -204,5 +216,48 @@ func TestCmdContextValidateDefaultsContractFromRole(t *testing.T) {
 	// Should succeed using contracts/builder.toml
 	if err := cmdContextValidate([]string{payloadPath}); err != nil {
 		t.Fatalf("expected success with inferred contract, got %v", err)
+	}
+}
+
+func TestCmdContextInitEmitsRoleAndValidateWorksWithoutContractFlag(t *testing.T) {
+	t.Setenv("PT_WORKFLOW", "")
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Ctx Task", Template: "backend_endpoint", Role: "builder", Artifact: "spec:ctx", DoD: pt.DefinitionOfDone{Manual: "verify", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	// Capture stdout from context init.
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	if err := cmdContextInit([]string{"pt-1"}); err != nil {
+		w.Close()
+		os.Stdout = old
+		t.Fatalf("context init err: %v", err)
+	}
+
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	payload := buf.Bytes()
+
+	if !bytes.Contains(payload, []byte(`"role": "builder"`)) {
+		t.Fatalf("expected role to be present in payload, got:\n%s", buf.String())
+	}
+
+	// Validate without --contract (role should allow inference).
+	ctxPath := filepath.Join(t.TempDir(), "context.json")
+	if err := os.WriteFile(ctxPath, payload, 0644); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+	if err := cmdContextValidate([]string{ctxPath}); err != nil {
+		t.Fatalf("expected validate success without --contract, got: %v\npayload=%s", err, buf.String())
 	}
 }
