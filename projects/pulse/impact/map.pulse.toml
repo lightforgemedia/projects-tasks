@@ -1,0 +1,20 @@
+# Pulse local mapping (repo-root-relative paths)
+#
+# This file exists to make the MVP dry-run runner usable in this repository.
+# When Pulse is used against a real application, replace this with an app-specific map.
+
+p0_tag = "p0"
+always_tags = ["p0"]
+
+[[rules]]
+prefix = "projects/pulse/flow/"
+tags = ["area:product_card"]
+
+[[rules]]
+prefix = "projects/pulse/runtime/"
+tags = ["area:settings"]
+
+[[rules]]
+prefix = "projects/pulse/impact/"
+tags = ["area:auth"]
+

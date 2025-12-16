@@ -1,0 +1,10 @@
+Pulse dry-run (MVP)
+repo=/Users/tawawhite/PROJECTS/projects-tasks
+pulse_root=/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse
+diff=HEAD~8..HEAD
+changed_files=22
+selected_tags=area:auth,area:product_card,area:settings,p0
+selected_flows=3
+  - auth_login_basic  (reasons=area:auth,p0)
+  - product_card_quickadd  (reasons=area:product_card)
+  - settings_profile_save  (reasons=area:settings)
