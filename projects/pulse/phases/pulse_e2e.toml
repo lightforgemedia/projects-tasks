@@ -1,0 +1,94 @@
+title = "Pulse MVP E2E"
+owner = "agent"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: demo server + pages for micro-flows"
+role = "backend-dev"
+artifact = "code:projects/pulse/internal/demo/server.go"
+deps = []
+next_hint = "After this, implement `pulse run` to drive these pages with Rod."
+context = "We need a deterministic local target so the MVP can run real browser flows without external dependencies."
+inputs = ["projects/pulse/PROJECT_DOD.md", "projects/pulse/testdata/flows/valid/*.toml"]
+scope = "IN: Go HTTP server with routes: /products, /login, /settings/profile and stable elements (role/name + data-testid). OUT: auth/security/real app logic."
+reference = "projects/pulse/outputs/spikes/microflow-schema.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Run server locally (document command) and verify each route renders the expected stable elements (Quick Add button, mini-cart, login fields, profile save)."
+criteria = ["server starts cleanly", "routes match flow preconditions", "elements have stable locators (role/name or data-testid)"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: runtime supports role=... locator (with optional name=...)"
+role = "backend-dev"
+artifact = "code:projects/pulse/runtime/pulse_runtime.js"
+deps = ["Build: demo server + pages for micro-flows"]
+context = "Our flows prefer role/name locators. The injected runtime needs to resolve role=... (and name=...) deterministically."
+inputs = ["projects/pulse/runtime/pulse_runtime.js", "projects/pulse/outputs/spikes/microflow-schema.md"]
+scope = "IN: support targets like role=button[name='Quick Add'] and role=textbox[name='Email']. OUT: advanced selectors and fuzzy matching."
+reference = "projects/pulse/outputs/spikes/microflow-schema.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Manually inspect runtime: no console logging; add a small snippet in doc comment showing role locator parsing behavior."
+criteria = ["Act can resolve role locators", "resolution is deterministic", "no default logging"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: pulse run executes steps + basic assertions (real browser)"
+role = "backend-dev"
+artifact = "code:projects/pulse/cmd/pulse/main.go"
+deps = ["Build: runtime supports role=... locator (with optional name=...)", "Build: demo server + pages for micro-flows"]
+next_hint = "Next: add reporting + artifacts on failure."
+context = "Move beyond dry-run: launch browser (Rod), load a flow, run steps (click/type/press/wait), and evaluate assertions (visible/hidden/text_contains/url_is)."
+inputs = ["projects/pulse/flow/flow.go", "projects/pulse/runtime/pulse_runtime.js", "projects/pulse/impact/map.go"]
+scope = "IN: single-flow execution against demo server, headless by default. OUT: self-healing, fingerprint drift policy, impact filtering."
+reference = "projects/pulse/outputs/explore/cli-output.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Run: go run ./projects/pulse/cmd/pulse --run --flow=<one valid fixture> --base-url=http://127.0.0.1:<port> and confirm it passes."
+criteria = ["executes at least 1 flow end-to-end", "assertion failures produce non-zero exit", "headless mode works"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: per-step report + failure artifacts (screenshot + dom)"
+role = "backend-dev"
+artifact = "code:projects/pulse/internal/run/report.go"
+deps = ["Build: pulse run executes steps + basic assertions (real browser)"]
+context = "MVP DoD requires evidence: clear report output and artifacts on failure (snapshot paths)."
+inputs = ["projects/pulse/outputs/explore/cli-output.md"]
+scope = "IN: write report.json + capture screenshot/dom on failure under projects/pulse/outputs/runs/<run-id>/. OUT: a11y dumps, patch files."
+reference = "projects/pulse/outputs/explore/cli-output.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Force a failure (e.g., wrong assertion) and confirm screenshot + dom files are written and referenced in stdout."
+criteria = ["report includes per-step results", "snapshot artifact created on failure", "paths match docs"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Integrate: E2E test for 3 micro-flows on demo server"
+role = "backend-dev"
+artifact = "code:projects/pulse/internal/e2e/e2e_test.go"
+deps = ["Build: per-step report + failure artifacts (screenshot + dom)", "Build: demo server + pages for micro-flows"]
+context = "We need an automated proof that the MVP runs real flows reliably, not just dry-run selection."
+inputs = ["projects/pulse/testdata/flows/valid/*.toml", "projects/pulse/PROJECT_DOD.md"]
+scope = "IN: start demo server in test, run 3 flows headless, assert pass. OUT: drift/self-heal."
+reference = "projects/pulse/PROJECT_DOD.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Also run: go test -tags=integration ./... and capture output in projects/pulse/outputs/runs/."
+criteria = ["3 flows pass reliably", "test is deterministic (no sleeps-only)", "runs headless in CI"]
+
+[[tasks]]
+template = "refactor"
+title = "Docs: update Pulse DoD evidence + sample run logs"
+role = "tech-writer"
+artifact = "doc:projects/pulse/PROJECT_DOD.md"
+deps = ["Integrate: E2E test for 3 micro-flows on demo server"]
+context = "Close the loop: document how to verify MVP and where evidence lives."
+inputs = ["projects/pulse/outputs/explore/cli-output.md", "projects/pulse/outputs/runs/dry-run.latest.txt"]
+scope = "IN: update DoD with concrete commands + example outputs. OUT: broader product docs."
+reference = "projects/pulse/README.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Ensure PROJECT_DOD.md includes: commands, expected outputs, and pointers to artifacts/logs."
+criteria = ["DoD is executable", "evidence paths are correct", "no stale references"]
