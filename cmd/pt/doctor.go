@@ -15,7 +15,7 @@ import (
 
 func cmdDoctor(args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
-	dbPath := fs.String("db", "", "store path to check (default: .pt.db.json)")
+	dbPath := fs.String("db", "", "store path to check (default: .pt/db.json)")
 	fix := fs.Bool("fix", false, "attempt to fix issues (creates backup first)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	fs.Usage = func() {
@@ -28,9 +28,6 @@ func cmdDoctor(args []string) error {
 	storePath := *dbPath
 	if storePath == "" {
 		storePath = pt.DiscoveredStorePath()
-		if storePath == "" {
-			storePath = ".pt.db.json"
-		}
 	}
 
 	// Check store file exists
@@ -85,11 +82,11 @@ func cmdDoctor(args []string) error {
 
 	if *jsonOut {
 		return printJSON(map[string]interface{}{
-			"store_path":   storePath,
-			"checks":       checks,
-			"issue_count":  issueCount,
-			"fixed_count":  fixedCount,
-			"fix_applied":  *fix && fixedCount > 0,
+			"store_path":  storePath,
+			"checks":      checks,
+			"issue_count": issueCount,
+			"fixed_count": fixedCount,
+			"fix_applied": *fix && fixedCount > 0,
 		})
 	}
 

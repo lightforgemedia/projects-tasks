@@ -17,7 +17,7 @@ func TestPathScenarios_StoreResolution(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create store with path in temp dir
-	storePath := filepath.Join(tmpDir, ".pt.db.json")
+	storePath := filepath.Join(tmpDir, ".pt", "db.json")
 	client := pt.NewStoreClient(storePath, "test")
 
 	// The store should work from anywhere now
@@ -193,7 +193,7 @@ func TestPathScenarios_DiscoveryFromWorktree(t *testing.T) {
 	}
 
 	// Create PT store in main repo
-	storePath := filepath.Join(mainRepo, ".pt.db.json")
+	storePath := filepath.Join(mainRepo, ".pt", "db.json")
 	client := pt.NewStoreClient(storePath, "test")
 	ctx := t.Context()
 	_, err := client.AddTask(ctx, pt.Task{

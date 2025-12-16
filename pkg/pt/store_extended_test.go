@@ -3,6 +3,7 @@ package pt
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -170,13 +171,13 @@ func TestNewStoreClient_Defaults(t *testing.T) {
 	// We can check if it creates the default file.
 
 	// Clean up potential default file
-	defer os.Remove(".pt.db.json")
+	_ = os.RemoveAll(".pt")
 
 	// Force a save to create the file
 	_ = c.saveLocked()
 
-	if _, err := os.Stat(".pt.db.json"); err != nil {
-		t.Errorf("expected default file .pt.db.json to be created")
+	if _, err := os.Stat(filepath.Join(".pt", "db.json")); err != nil {
+		t.Errorf("expected default file .pt/db.json to be created")
 	}
 }
 

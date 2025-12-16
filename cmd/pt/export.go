@@ -13,7 +13,7 @@ import (
 
 func cmdExport(args []string) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
-	dbPath := fs.String("db", "", "store path to export (default: .pt.db.json)")
+	dbPath := fs.String("db", "", "store path to export (default: .pt/db.json)")
 	outPath := fs.String("out", "", "output file (default: stdout)")
 	pretty := fs.Bool("pretty", true, "pretty-print JSON output")
 	fs.Usage = func() {
@@ -26,9 +26,6 @@ func cmdExport(args []string) error {
 	storePath := *dbPath
 	if storePath == "" {
 		storePath = pt.DiscoveredStorePath()
-		if storePath == "" {
-			storePath = ".pt.db.json"
-		}
 	}
 
 	// Read the store file
@@ -77,7 +74,7 @@ func cmdExport(args []string) error {
 
 func cmdImport(args []string) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
-	dbPath := fs.String("db", "", "target store path (default: .pt.db.json)")
+	dbPath := fs.String("db", "", "target store path (default: .pt/db.json)")
 	mode := fs.String("mode", "merge", "import mode: merge (add new, update existing) or replace (overwrite)")
 	backup := fs.Bool("backup", true, "create backup before import")
 	jsonOut := fs.Bool("json", false, "output JSON")
@@ -95,9 +92,6 @@ func cmdImport(args []string) error {
 	storePath := *dbPath
 	if storePath == "" {
 		storePath = pt.DiscoveredStorePath()
-		if storePath == "" {
-			storePath = ".pt.db.json"
-		}
 	}
 
 	// Read import file
@@ -143,9 +137,9 @@ func cmdImport(args []string) error {
 	}
 
 	stats := map[string]int{
-		"issues_added":    0,
-		"issues_updated":  0,
-		"issues_skipped":  0,
+		"issues_added":   0,
+		"issues_updated": 0,
+		"issues_skipped": 0,
 	}
 
 	if *mode == "replace" {

@@ -49,22 +49,35 @@ func NewClientFromEnv() Client {
 	if dbPath == "" && getEnv("PT_NO_DISCOVER") == "" {
 		if discovered := discoverParentStore(); discovered != "" {
 			dbPath = discovered
+			// If we discovered a legacy store at repo root, migrate it to the recommended
+			// location to keep worktrees sharing one DB and to avoid git-root clutter.
+			if migrated := maybeMigrateLegacyStore(discovered); migrated != "" {
+				dbPath = migrated
+			}
 		}
+	}
+
+	// If nothing exists yet, pick a stable default (repo root if available; main repo if in a worktree).
+	if dbPath == "" {
+		dbPath = defaultStorePath()
 	}
 
 	return NewStoreClient(dbPath, prefix)
 }
 
 // DiscoveredStorePath returns the store path that will be used, for informational purposes.
-// Returns empty string if using default path.
+// It is side-effect free (does not migrate stores).
 func DiscoveredStorePath() string {
 	if getEnv("PT_DB") != "" {
 		return getEnv("PT_DB")
 	}
 	if getEnv("PT_NO_DISCOVER") != "" {
-		return ""
+		return defaultStorePath()
 	}
-	return discoverParentStore()
+	if discovered := discoverParentStore(); discovered != "" {
+		return discovered
+	}
+	return defaultStorePath()
 }
 
 func getEnv(key string) string {
@@ -117,6 +130,47 @@ func doDiscoverParentStore() string {
 	}
 
 	return "" // no store found
+}
+
+func defaultStorePath() string {
+	// Prefer the main repo root when in a worktree, otherwise current repo root.
+	root := findMainRepoRoot()
+	if root == "" {
+		root = findGitRepoRoot()
+	}
+	if strings.TrimSpace(root) == "" {
+		// Not a git repo: default to a local .pt directory.
+		return filepath.Join(".pt", "db.json")
+	}
+	return filepath.Join(root, ".pt", "db.json")
+}
+
+// maybeMigrateLegacyStore moves a legacy repo-root store (.pt.db.json) to the
+// recommended location (.pt/db.json) when possible.
+//
+// Input can be a discovered store path anywhere; migration only happens when the
+// discovered path ends in ".pt.db.json" and the target ".pt/db.json" does not exist.
+// Returns the new path if migration succeeds (or if the new path already exists).
+func maybeMigrateLegacyStore(discoveredPath string) string {
+	legacy := strings.TrimSpace(discoveredPath)
+	if !strings.HasSuffix(legacy, ".pt.db.json") {
+		return ""
+	}
+	root := filepath.Dir(legacy)
+	target := filepath.Join(root, ".pt", "db.json")
+	if _, err := os.Stat(target); err == nil {
+		return target
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		return ""
+	}
+	// Best-effort migration; if it fails, keep using the legacy store.
+	_ = os.MkdirAll(filepath.Dir(target), 0o755)
+	if err := os.Rename(legacy, target); err != nil {
+		return ""
+	}
+	_ = os.Remove(legacy + ".lock")
+	return target
 }
 
 // findGitRepoRoot returns the root of the current git repository.

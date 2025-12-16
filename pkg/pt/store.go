@@ -53,11 +53,11 @@ type MockInfo struct {
 	RetiredAt       string `json:"retired_at,omitempty"`
 }
 
-// NewStoreClient creates or opens a store at path. If path empty, defaults to ".pt.db.json".
+// NewStoreClient creates or opens a store at path. If path empty, defaults to ".pt/db.json".
 // Paths are resolved to absolute at construction time to ensure operations are cwd-independent.
 func NewStoreClient(path, prefix string) *StoreClient {
 	if strings.TrimSpace(path) == "" {
-		path = ".pt.db.json"
+		path = filepath.Join(".pt", "db.json")
 	}
 	if strings.TrimSpace(prefix) == "" {
 		prefix = "pt"
@@ -116,9 +116,9 @@ func detectManifestCycles(manifest Manifest) error {
 	}
 
 	const (
-		unseen  = 0
+		unseen   = 0
 		visiting = 1
-		done    = 2
+		done     = 2
 	)
 	state := make(map[string]int, len(adj))
 
@@ -867,6 +867,10 @@ func (c *StoreClient) saveLocked() error {
 func (c *StoreClient) lockFile() (*os.File, error) {
 	if c.lockPath == "" {
 		return nil, fmt.Errorf("lock path not set")
+	}
+	dir := filepath.Dir(c.lockPath)
+	if dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0o755)
 	}
 	f, err := os.OpenFile(c.lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {

@@ -45,7 +45,7 @@ Subcommands:
   check --task=<id>   Check if a task can proceed (gate evaluation)
 
 Options (all subcommands):
-  --db=PATH           Path to store (default: $PT_DB or .pt.db.json; may auto-discover parent store in worktrees)
+  --db=PATH           Path to store (default: $PT_DB or .pt/db.json; may auto-discover parent store in worktrees)
   --workflow=PATH     Path to workflow template (default: workflows/*.toml or $PT_WORKFLOW)
 
 Examples:

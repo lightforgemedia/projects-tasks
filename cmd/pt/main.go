@@ -2316,7 +2316,10 @@ func cmdSnapshot(args []string) error {
 		dbPath = os.Getenv("PT_DB")
 	}
 	if strings.TrimSpace(dbPath) == "" {
-		dbPath = ".pt.db.json"
+		dbPath = pt.DiscoveredStorePath()
+		if strings.TrimSpace(dbPath) == "" {
+			dbPath = filepath.Join(".pt", "db.json")
+		}
 	}
 	if _, err := os.Stat(dbPath); err != nil {
 		return fmt.Errorf("store not found at %s", dbPath)
@@ -2875,9 +2878,6 @@ func cmdContextPrime(args []string) error {
 	storePath := strings.TrimSpace(*dbPath)
 	if storePath == "" {
 		storePath = pt.DiscoveredStorePath()
-		if storePath == "" {
-			storePath = ".pt.db.json"
-		}
 	}
 
 	// Get worktree info
@@ -3580,9 +3580,6 @@ func cmdEnv(args []string) error {
 
 	// Get the store path
 	dbPath := pt.DiscoveredStorePath()
-	if dbPath == "" {
-		dbPath = ".pt.db.json"
-	}
 
 	fmt.Printf("PT_DB=%s\n", dbPath)
 	fmt.Printf("export PT_DB\n")
