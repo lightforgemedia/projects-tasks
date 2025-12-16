@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"projects-tasks/pkg/pt"
+	"projects-tasks/pkg/pt/engine"
 )
 
 type nextMode string
@@ -120,6 +121,7 @@ func cmdNext(args []string) error {
 
 	// 2) If workflow exists, use it to determine current phase and enforce gates.
 	var wf *pt.Workflow
+	var wfEngine *engine.V2
 	var workflowErr error
 	wfPath := strings.TrimSpace(*workflowPath)
 	if wfPath == "" {
@@ -136,6 +138,13 @@ func cmdNext(args []string) error {
 			return fmt.Errorf("parse workflow: %w", err)
 		}
 		wf = &parsed
+		if useEngineV2() {
+			eng, err := engine.NewV2(parsed)
+			if err != nil {
+				return fmt.Errorf("compile workflow: %w", err)
+			}
+			wfEngine = eng
+		}
 	}
 	if wf == nil && workflowErr != nil {
 		out.Why = append(out.Why, fmt.Sprintf("workflow not selected: %s", workflowErr.Error()))
@@ -144,7 +153,12 @@ func cmdNext(args []string) error {
 
 	currentPhaseID := ""
 	var currentPhase *pt.Phase
-	if wf != nil {
+	if wfEngine != nil {
+		currentPhaseID, currentPhase = wfEngine.CurrentPhaseID(allIssues, strings.TrimSpace(*role))
+		if currentPhase != nil {
+			out.CurrentPhase = nextPhase{ID: currentPhase.ID, Name: currentPhase.Name, Order: currentPhase.Order}
+		}
+	} else if wf != nil {
 		phases := append([]pt.Phase{}, wf.Phases...)
 		sort.Slice(phases, func(i, j int) bool { return phases[i].Order < phases[j].Order })
 		for _, p := range phases {
@@ -319,7 +333,13 @@ func cmdNext(args []string) error {
 		meta, _ := pt.ParseTaskMeta(task.Description)
 
 		if wf != nil {
-			canProceed, isHard, blockingPhase, msg := wf.CheckGate(task.ID, task, meta, allIssues, comments)
+			var canProceed, isHard bool
+			var blockingPhase, msg string
+			if wfEngine != nil {
+				canProceed, isHard, blockingPhase, msg = wfEngine.CheckGate(task.ID, task, meta, allIssues, comments)
+			} else {
+				canProceed, isHard, blockingPhase, msg = wf.CheckGate(task.ID, task, meta, allIssues, comments)
+			}
 			if !canProceed {
 				// Hard gates always block.
 				if isHard || *strict {

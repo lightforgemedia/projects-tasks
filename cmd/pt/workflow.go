@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"projects-tasks/pkg/pt"
+	"projects-tasks/pkg/pt/engine"
 )
 
 func cmdWorkflow(args []string) error {
@@ -200,8 +201,17 @@ func cmdWorkflowStatus(args []string) error {
 		comments[iss.ID] = comms
 	}
 
-	// Build phase status
-	status := buildWorkflowStatus(workflow, allIssues, comments)
+	// Build phase status (feature-flagged)
+	var status pt.WorkflowStatus
+	if useEngineV2() {
+		eng, err := engine.NewV2(workflow)
+		if err != nil {
+			return fmt.Errorf("compile workflow: %w", err)
+		}
+		status = eng.BuildWorkflowStatus(allIssues, comments)
+	} else {
+		status = buildWorkflowStatus(workflow, allIssues, comments)
+	}
 
 	// Surface task-level blockers (deps + manual blocks) in output and in suggested next.
 	manualBlocked, _ := client.ListBlocked(ctx)
