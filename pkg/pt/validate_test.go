@@ -108,6 +108,22 @@ func TestValidateDoDStripsOuterQuotes(t *testing.T) {
 	}
 }
 
+func TestValidateDoDRewritesPTSelf(t *testing.T) {
+	t.Setenv("PT_SELF", "/abs/path/to/pt")
+	r := &stubRunner{}
+	vr := ValidationRunner{Runner: r}
+	dod := DefinitionOfDone{
+		Tests: []string{"pt review check pt-7 --kind=pre"},
+	}
+	res, err := vr.ValidateDoD(context.Background(), dod, true)
+	if err != nil || !res.Passed {
+		t.Fatalf("expected pass, got err=%v res=%+v", err, res)
+	}
+	if got := r.log; len(got) != 1 || got[0] != `sh -c /abs/path/to/pt review check pt-7 --kind=pre` {
+		t.Fatalf("unexpected command log: %v", got)
+	}
+}
+
 func TestValidateDoDWorkDirWired(t *testing.T) {
 	// When Runner is nil, WorkDir should be passed to the default ExecRunner
 	tmpDir := t.TempDir()

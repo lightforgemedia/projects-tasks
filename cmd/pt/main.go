@@ -344,6 +344,11 @@ func issueCriteria(iss pt.Issue) string {
 }
 
 func run(args []string) error {
+	if strings.TrimSpace(os.Getenv("PT_SELF")) == "" {
+		if self, err := os.Executable(); err == nil && strings.TrimSpace(self) != "" {
+			_ = os.Setenv("PT_SELF", self)
+		}
+	}
 	if len(args) < 2 {
 		usage()
 		return errors.New("")

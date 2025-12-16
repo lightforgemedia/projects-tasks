@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -31,6 +33,7 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 
 	runCmd := func(cmdStr string) error {
 		cmdStr = normalizeDoDCmd(cmdStr)
+		cmdStr = rewritePTSelf(cmdStr)
 		if strings.TrimSpace(cmdStr) == "" {
 			return nil
 		}
@@ -55,6 +58,29 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 		return ValidationResult{Passed: false, Output: strings.Join(outputs, "\n")}, errors.New("manual check not confirmed")
 	}
 	return ValidationResult{Passed: true, Output: strings.Join(outputs, "\n")}, nil
+}
+
+func rewritePTSelf(cmd string) string {
+	self := strings.TrimSpace(os.Getenv("PT_SELF"))
+	if self == "" {
+		return cmd
+	}
+	base := filepath.Base(self)
+	if base != "pt" && base != "pt.exe" {
+		return cmd
+	}
+	s := strings.TrimSpace(cmd)
+	if s == "pt" {
+		return self
+	}
+	if strings.HasPrefix(s, "pt ") || strings.HasPrefix(s, "pt\t") {
+		rest := strings.TrimSpace(s[len("pt"):])
+		if rest == "" {
+			return self
+		}
+		return self + " " + rest
+	}
+	return cmd
 }
 
 func normalizeDoDCmd(cmd string) string {
