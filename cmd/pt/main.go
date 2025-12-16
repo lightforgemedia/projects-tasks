@@ -809,7 +809,10 @@ func cmdReady(args []string) error {
 	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	issues, err := client.Ready(ctx, *role, *limit)
+	// Fetch all open tasks; apply --limit after local filtering (blocked/deps/gates).
+	// This prevents a misleading "no ready tasks" when the backend returns only blocked
+	// items within the first N results.
+	issues, err := client.Ready(ctx, *role, 0)
 	if err != nil {
 		return fmt.Errorf("ready failed: %w", err)
 	}
@@ -924,11 +927,15 @@ func cmdReady(args []string) error {
 				"phase":     phaseID,
 				"gate":      gate,
 			})
+			if *limit > 0 && len(out) >= *limit {
+				break
+			}
 		}
 		return printJSON(out)
 	}
 	printed := false
 	skippedManual := 0
+	shown := 0
 	for _, iss := range issues {
 		if iss.Status != "open" { // hide claimed/in_progress
 			continue
@@ -1006,6 +1013,10 @@ func cmdReady(args []string) error {
 				line = fmt.Sprintf("%s [blocked-manual]", line)
 			}
 			fmt.Println(line)
+		}
+		shown++
+		if *limit > 0 && shown >= *limit {
+			break
 		}
 	}
 	if !printed {
