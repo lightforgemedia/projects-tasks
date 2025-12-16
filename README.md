@@ -4,6 +4,10 @@ This repository ships a **Go SDK** and **CLI** with a built-in store to provide 
 
 **Goal:** Provide structured project/task planning (manifests, templates, validation, state machine) on a simple built-in store.
 
+## Quick Start
+
+See `docs/QUICKSTART.md` for a copy-paste “new project” onboarding flow.
+
 ## System Shape
 
 - **Data Backbone:** Built-in JSON store (or pluggable backend) for issues/deps/status/labels.
