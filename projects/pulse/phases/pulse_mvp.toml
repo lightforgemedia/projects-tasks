@@ -1,0 +1,112 @@
+title = "Pulse MVP (Micro-flows + Runtime + Runner)"
+
+# NOTE: This project is expected to run PT from `projects/pulse/` with:
+#   PT_DB=.pt/db.json  PT_PREFIX=pulse  PT_WORKFLOW=workflows/risk-first.toml
+
+[[tasks]]
+template = "spike"
+title = "Spike: choose browser control backend (Go-Rod vs chromedp)"
+role = "backend-dev"
+artifact = "doc:projects/pulse/outputs/spikes/browser-backend.md"
+max_hours = 2
+context = "Pulse requires stable browser lifecycle control and init script injection. We must pick a single backend and prove it can: launch Chromium, navigate, inject window.__pulse, and take a screenshot."
+inputs = ["projects/pulse/README.md", "projects/pulse/PROJECT_DOD.md"]
+scope = "IN: evaluate Go-Rod vs chromedp and pick one. OUT: implement the full runner."
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Write findings doc with: chosen lib, why, minimal PoC plan, and required env. If a new Go dependency is needed, document it explicitly."
+criteria = ["backend choice documented", "PoC plan defined", "dependency decision recorded"]
+
+[[tasks]]
+template = "spike"
+title = "Spike: define Micro-flow TOML schema + validation rules"
+role = "backend-dev"
+artifact = "doc:projects/pulse/outputs/spikes/microflow-schema.md"
+max_hours = 2
+context = "We need a strict but ergonomic TOML schema for micro-flows (steps/assertions/preconditions). Validation must be deterministic and produce actionable errors."
+inputs = ["projects/pulse/README.md"]
+scope = "IN: schema v1 + error examples. OUT: runner implementation."
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Write schema doc with at least: 3 example flows, 5 invalid examples (and exact errors), and naming/tagging rules."
+criteria = ["schema v1 documented", "invalid cases enumerated", "error messages specified"]
+
+[[tasks]]
+template = "spike"
+title = "Spike: fingerprint model + drift policy (structural vs cosmetic)"
+role = "backend-dev"
+artifact = "doc:projects/pulse/outputs/spikes/fingerprints.md"
+max_hours = 2
+context = "Fingerprints must be selector-light and drift-aware. We need a model that can flag structural drift as hard-fail while tolerating cosmetic drift within bounds."
+inputs = ["projects/pulse/README.md"]
+scope = "IN: fingerprint fields, hashing choices, tolerance windows, and drift classification. OUT: full fpgen implementation."
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Write doc with: fingerprint fields, how each is computed, drift thresholds, and 3 drift scenarios (pass/fail decisions)."
+criteria = ["fingerprint model specified", "drift policy specified", "scenarios documented"]
+
+[[tasks]]
+template = "refactor"
+title = "Explore: CLI UX for pulse run output (pass/fail + artifacts)"
+role = "tech-writer"
+artifact = "doc:projects/pulse/outputs/explore/cli-output.md"
+context = "We need an output format that is agent-friendly and human-friendly: step-level logs, clear failure reasons, and pointers to artifacts."
+inputs = ["projects/pulse/PROJECT_DOD.md"]
+scope = "IN: propose 2-3 output formats and pick one. OUT: full implementation."
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Provide 3 sample logs: all-pass, assertion fail (with snapshot path), and fingerprint drift (with suggested patch path)."
+criteria = ["output format chosen", "sample logs provided"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: pulse runtime API contract (window.__pulse) + stub implementation string"
+role = "backend-dev"
+artifact = "code:projects/pulse/runtime/pulse_runtime.js"
+context = "Define the injected API surface: GetState, ListInteractive, Act, Snapshot. Keep it small, deterministic, and token-efficient."
+inputs = ["projects/pulse/README.md", "projects/pulse/outputs/explore/cli-output.md"]
+scope = "IN: implement minimal runtime functions returning stable JSON. OUT: advanced selector strategies and extension messaging."
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Manually inspect runtime file and ensure it does not log to stdout by default (only returns values)."
+criteria = ["runtime file exists", "API functions present", "return shapes documented inline"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: parse Micro-flow TOML into Go structs"
+role = "backend-dev"
+artifact = "code:projects/pulse/flow/flow.go"
+context = "The runner must load TOML flows and validate them. Parsing must preserve stable ids/tags and produce actionable errors."
+inputs = ["projects/pulse/outputs/spikes/microflow-schema.md"]
+scope = "IN: structs + parser + validation errors. OUT: browser execution."
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Add at least 2 golden flow fixtures under projects/pulse/testdata/flows and ensure parse errors include file + field."
+criteria = ["flows parse", "validation errors are actionable", "golden fixtures exist"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: impact mapper (git diff -> flow tags)"
+role = "backend-dev"
+artifact = "code:projects/pulse/impact/map.go"
+context = "CI should run only impacted flows plus P0 smoke. Mapper reads git diff and tag mapping config."
+inputs = ["projects/pulse/README.md"]
+scope = "IN: mapping config + resolver. OUT: CI integration."
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Provide a small mapping config and a sample diff; document expected selected tags."
+criteria = ["diff->tags mapping works", "P0 always included"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Integrate: flow runner skeleton (loads flows, selects impacted set, dry-run report)"
+role = "backend-dev"
+artifact = "code:projects/pulse/cmd/pulse/main.go"
+context = "Before real browser automation, implement dry-run execution: load flows, select by tags, print deterministic plan."
+inputs = ["projects/pulse/flow/flow.go", "projects/pulse/impact/map.go"]
+scope = "IN: dry-run runner + CLI flags. OUT: real browser execution."
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Run: go run ./projects/pulse/cmd/pulse --dry-run --diff=... and confirm it prints selected flows + reasons."
+criteria = ["dry-run works", "plan output matches schema", "no flake"]
+

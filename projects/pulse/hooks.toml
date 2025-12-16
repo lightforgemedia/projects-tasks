@@ -1,0 +1,16 @@
+[defaults]
+  timeout = "120s"
+  on_fail = "fail"
+
+[[hook]]
+  event = "pre-claim"
+  cmd = "go test ./... > /tmp/pulse_hook_go_test.log 2>&1 || ( echo \"hook-block: go test failed [$PT_EVENT] for $PT_ID. See /tmp/pulse_hook_go_test.log. Fix failing tests before starting new work.\" && exit 1 )"
+
+[[hook]]
+  event = "pre-validate"
+  cmd = "go test ./... > /tmp/pulse_hook_go_test.log 2>&1 || ( echo \"hook-block: go test failed [$PT_EVENT] for $PT_ID. See /tmp/pulse_hook_go_test.log. Fix failing tests before validating.\" && exit 1 )"
+
+[[hook]]
+  event = "pre-approve"
+  cmd = "go test ./... > /tmp/pulse_hook_go_test.log 2>&1 || ( echo \"hook-block: go test failed [$PT_EVENT] for $PT_ID. See /tmp/pulse_hook_go_test.log. Fix failing tests before approving.\" && exit 1 )"
+
