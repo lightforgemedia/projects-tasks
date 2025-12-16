@@ -8,6 +8,12 @@
 // - ListInteractive() -> [{ id, role, name, rect, locatorHints, fingerprint }]
 // - Act(cmd) -> { ok, type, target, error? }
 // - Snapshot(mode) -> { ok, mode, url, title }
+//
+// Locator examples supported by Act():
+// - role=button[name='Quick Add']
+// - role=textbox[name='Email']
+// - data-testid=mini-cart
+// - css=#some-id
 (function () {
   if (typeof window === "undefined") return;
   if (window.__pulse) return;
@@ -63,7 +69,49 @@
     if (aria) return normText(aria);
     const testid = el.getAttribute && el.getAttribute("data-testid");
     if (testid) return normText(testid);
+    const tag = (el.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") {
+      const label = labelTextForFormControl(el);
+      if (label) return label;
+    }
     return normText(el.innerText || el.textContent || "");
+  }
+
+  function labelTextForFormControl(el) {
+    const id = el && el.id;
+    if (id) {
+      const lab = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+      if (lab) return normText(lab.textContent || "");
+    }
+    const labelledBy = el.getAttribute && el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const ref = document.getElementById(labelledBy);
+      if (ref) return normText(ref.textContent || "");
+    }
+    return "";
+  }
+
+  function parseRoleLocator(target) {
+    // role=button[name='Quick Add']
+    const raw = String(target || "");
+    const rolePart = raw.slice("role=".length);
+    const bracket = rolePart.indexOf("[");
+    const role = (bracket >= 0 ? rolePart.slice(0, bracket) : rolePart).trim();
+    let name = "";
+    if (bracket >= 0) {
+      const attrs = rolePart.slice(bracket);
+      const k = "name=";
+      const i = attrs.indexOf(k);
+      if (i >= 0) {
+        const after = attrs.slice(i + k.length);
+        const q = after[0];
+        if (q === "'" || q === "\"") {
+          const end = after.indexOf(q, 1);
+          if (end > 0) name = after.slice(1, end);
+        }
+      }
+    }
+    return { role, name: normText(name) };
   }
 
   function fingerprintOf(el) {
@@ -82,6 +130,17 @@
     if (t.startsWith("data-testid=")) {
       const v = t.slice("data-testid=".length);
       return document.querySelector(`[data-testid="${CSS.escape(v)}"]`);
+    }
+    if (t.startsWith("role=")) {
+      const q = parseRoleLocator(t);
+      if (!q.role) return null;
+      const candidates = listInteractiveElements();
+      for (const c of candidates) {
+        if (c.role !== q.role) continue;
+        if (q.name && normText(c.name) !== q.name) continue;
+        return c._el;
+      }
+      return null;
     }
     if (t.startsWith("fp:auto:")) {
       const parts = t.split(":");
@@ -219,4 +278,3 @@
     },
   };
 })();
-
