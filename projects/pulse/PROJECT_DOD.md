@@ -77,4 +77,13 @@ Evidence:
 
 ## Current status
 - ✅ Unit tests, demo server, `pulse --dry-run`, `pulse --run`, failure artifacts, and integration E2E are implemented.
-- ☐ Drift policy + self-healing (`*.fp.toml` suggestion) is still required to fully satisfy this DoD.
+- ✅ Drift policy + “suggested patch” emission is implemented:
+  - Cosmetic drift is tolerated (runner proceeds and emits a `patches/*.fp.toml` suggestion).
+  - Structural drift hard-fails with actionable output and a suggested patch file.
+
+Drift evidence:
+- `projects/pulse/outputs/runs/drift.latest.txt`
+- `projects/pulse/outputs/runs/drift.integration.latest.txt`
+- Example patch artifacts:
+  - `projects/pulse/outputs/runs/2025-12-16T06-01-09Z/patches/drift_cosmetic.step-0.fp.toml`
+  - `projects/pulse/outputs/runs/2025-12-16T06-01-11Z/patches/drift_structural.step-0.fp.toml`
