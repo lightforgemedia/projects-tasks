@@ -1,0 +1,32 @@
+{
+  "run_id": "2025-12-16T05-47-02Z",
+  "flow_id": "product_card_intentional_fail",
+  "status": "fail",
+  "target_url": "http://127.0.0.1:53534/products?query=socks",
+  "started_at": "2025-12-16T05:47:02Z",
+  "duration_ms": 685,
+  "steps": [
+    {
+      "index": 0,
+      "action": "click",
+      "target": "role=button[name='Quick Add']",
+      "status": "ok"
+    }
+  ],
+  "assertions": [
+    {
+      "index": 0,
+      "type": "visible",
+      "target": "data-testid=does-not-exist",
+      "status": "fail",
+      "error": "assertion[0] visible failed: target=data-testid=does-not-exist",
+      "elapsed_ms": 3
+    }
+  ],
+  "artifacts": {
+    "report_path": "/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/report.json",
+    "screenshot_png": "/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/flows/product_card_intentional_fail/snapshot.png",
+    "dom_html": "/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/flows/product_card_intentional_fail/dom.html"
+  },
+  "error": "assertion[0] visible failed: target=data-testid=does-not-exist"
+}

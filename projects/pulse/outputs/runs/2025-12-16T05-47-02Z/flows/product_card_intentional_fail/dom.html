@@ -1,0 +1,37 @@
+<html lang="en"><head>
+    <meta charset="utf-8">
+    <title>Products</title>
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 24px; }
+      #mini-cart { border: 1px solid #ddd; padding: 12px; width: 280px; display: none; }
+      #mini-cart[aria-hidden="false"] { display: block; }
+    </style>
+  </head>
+  <body>
+    <h1>Products</h1>
+    <p>Query: <span data-testid="query">socks</span></p>
+
+    <button type="button" aria-label="Quick Add" data-testid="quick-add">Quick Add</button>
+    <div role="dialog" aria-label="Mini cart" data-testid="mini-cart" id="mini-cart" aria-hidden="false">
+      <strong>Mini cart</strong>
+      <div data-testid="cart-items">1 item</div>
+    </div>
+
+    <script>
+      (function () {
+        var qp = new URLSearchParams(location.search || "");
+        var q = qp.get("query") || "";
+        var el = document.querySelector('[data-testid="query"]');
+        if (el) el.textContent = q;
+
+        var btn = document.querySelector('[data-testid="quick-add"]');
+        var cart = document.querySelector('[data-testid="mini-cart"]');
+        if (btn && cart) {
+          btn.addEventListener("click", function () {
+            cart.setAttribute("aria-hidden", "false");
+          });
+        }
+      })();
+    </script>
+  
+</body></html>

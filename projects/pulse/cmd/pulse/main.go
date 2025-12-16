@@ -22,6 +22,7 @@ import (
 	"pulse/flow"
 	"pulse/impact"
 	"pulse/internal/demo"
+	"pulse/internal/run"
 )
 
 func main() {
@@ -167,6 +168,23 @@ func runOneFlow(repoOverride string, pulseOverride string, flowArg string, base 
 		return err
 	}
 
+	outputRoot := filepath.Join(pRoot, "outputs", "runs")
+	runID := run.NewRunID(time.Now())
+	runDir, flowDir, err := run.EnsureRunDirs(outputRoot, runID, f.ID)
+	if err != nil {
+		return err
+	}
+	reportPath := filepath.Join(runDir, "report.json")
+
+	start := time.Now()
+	rep := run.Report{
+		RunID:     runID,
+		FlowID:    f.ID,
+		Status:    "fail", // default; flipped on success
+		TargetURL: targetURL,
+		StartedAt: start.UTC().Format(time.RFC3339),
+	}
+
 	u := launcher.New().Headless(headless).MustLaunch()
 	browser := rod.New().ControlURL(u).MustConnect()
 	defer browser.MustClose()
@@ -177,21 +195,86 @@ func runOneFlow(repoOverride string, pulseOverride string, flowArg string, base 
 	page.MustWaitLoad()
 
 	if !page.MustEval(`() => typeof window.__pulse !== "undefined"`).Bool() {
-		return errors.New("runtime not injected (window.__pulse missing)")
+		rep.Error = "runtime not injected (window.__pulse missing)"
+		rep.DurationMS = time.Since(start).Milliseconds()
+		_ = run.WriteReportJSON(reportPath, rep)
+		return errors.New(rep.Error)
 	}
 
 	fmt.Printf("==> %s  START\n", f.ID)
+
 	for i, s := range f.Steps {
-		if err := runStep(page, i, s); err != nil {
+		stepStart := time.Now()
+		err := runStep(page, i, s)
+		stepRes := run.StepResult{
+			Index:   i,
+			Action:  s.Action,
+			Target:  s.Target,
+			Status:  "ok",
+			Elapsed: time.Since(stepStart).Milliseconds(),
+		}
+		if err != nil {
+			stepRes.Status = "fail"
+			stepRes.Error = err.Error()
+			rep.Steps = append(rep.Steps, stepRes)
+			rep.Error = err.Error()
+			rep.DurationMS = time.Since(start).Milliseconds()
+			snap, dom, aErr := run.CaptureFailureArtifacts(flowDir, page)
+			if aErr == nil {
+				rep.Artifacts.ScreenshotPNG = snap
+				rep.Artifacts.DOMHTML = dom
+			}
+			_ = run.WriteReportJSON(reportPath, rep)
+			if aErr == nil {
+				fmt.Printf("    snapshot: %s\n", snap)
+				fmt.Printf("    dom:      %s\n", dom)
+			}
+			fmt.Printf("Report: %s\n", reportPath)
 			return err
 		}
+		rep.Steps = append(rep.Steps, stepRes)
 	}
+
 	for i, a := range f.Assertions {
-		if err := runAssertion(page, i, a); err != nil {
+		asStart := time.Now()
+		err := runAssertion(page, i, a)
+		asRes := run.AssertionResult{
+			Index:   i,
+			Type:    a.Type,
+			Target:  a.Target,
+			Value:   a.Value,
+			Status:  "ok",
+			Elapsed: time.Since(asStart).Milliseconds(),
+		}
+		if err != nil {
+			asRes.Status = "fail"
+			asRes.Error = err.Error()
+			rep.Assertions = append(rep.Assertions, asRes)
+			rep.Error = err.Error()
+			rep.DurationMS = time.Since(start).Milliseconds()
+			snap, dom, aErr := run.CaptureFailureArtifacts(flowDir, page)
+			if aErr == nil {
+				rep.Artifacts.ScreenshotPNG = snap
+				rep.Artifacts.DOMHTML = dom
+			}
+			_ = run.WriteReportJSON(reportPath, rep)
+			if aErr == nil {
+				fmt.Printf("    snapshot: %s\n", snap)
+				fmt.Printf("    dom:      %s\n", dom)
+			}
+			fmt.Printf("Report: %s\n", reportPath)
 			return err
 		}
+		rep.Assertions = append(rep.Assertions, asRes)
+	}
+
+	rep.Status = "pass"
+	rep.DurationMS = time.Since(start).Milliseconds()
+	if err := run.WriteReportJSON(reportPath, rep); err != nil {
+		return err
 	}
 	fmt.Printf("==> %s  PASS\n", f.ID)
+	fmt.Printf("Report: %s\n", reportPath)
 	return nil
 }
 

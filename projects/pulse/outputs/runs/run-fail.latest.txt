@@ -1,0 +1,14 @@
+base=http://127.0.0.1:53534
+--- pulse run (expected fail)
+==> product_card_intentional_fail  START
+  step[0] click  target=role=button[name='Quick Add']
+    snapshot: /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/flows/product_card_intentional_fail/snapshot.png
+    dom:      /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/flows/product_card_intentional_fail/dom.html
+Report: /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/report.json
+error: run: assertion[0] visible failed: target=data-testid=does-not-exist
+exit status 1
+exit_code=1
+report=/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/report.json
+snapshot=/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/flows/product_card_intentional_fail/snapshot.png
+dom=/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T05-47-02Z/flows/product_card_intentional_fail/dom.html
+OK
