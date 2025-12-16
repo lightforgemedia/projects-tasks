@@ -10,7 +10,7 @@ This repository ships a **Go SDK** and **CLI** with a built-in store to provide 
 - **Go SDK (`pkg/pt`):** Reusable library exposing plan/sync/ready/validate primitives. Any service or agent can embed this logic.
 - **CLI (`cmd/pt`):** A thin wrapper around the SDK. Guides users through schema fields, enforces state machines (`open` → `in_progress` → `needs_review` → `closed`), and handles user interaction.
 - **Manifests:** TOML/JSON files for "Phase Bundles". These act as "Infrastructure as Code" for project management.
-- **Context Contracts:** Strict schemas (`contracts/*.toml`) that validate agent inputs (files, goals, criteria) to prevent drift and hallucination.
+- **Context Contracts:** Strict schemas (`contracts/*.toml`) that validate agent inputs (files, goals, criteria) to prevent drift and hallucination. See `docs/CONTEXT_CONTRACTS.md`.
 - **Validation:** "Definition of Done" (DoD) per template (tests + manual steps + acceptance criteria required; optional validation_cmd), plus ready-work queries that only surface unblocked tasks.
 
 ## Library & CLI Split
@@ -188,10 +188,10 @@ Agents use contracts to ensure they have all required inputs before working.
 
 ```bash
 # 1. Generate context skeleton from task details
-pt context init --role=builder proj-12 > context.json
+pt context init proj-12 --role=builder > context.builder.json
 
 # 2. Validate context against the contract
-pt context validate --contract=contracts/builder.toml context.json
+pt context validate context.builder.json
 # Output: Context is valid.
 ```
 

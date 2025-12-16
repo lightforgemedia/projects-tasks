@@ -31,6 +31,7 @@ Agents interacting with this repository or using the `pt` tool should follow thi
 2.  **Claim**: `pt claim <id> [--as=$USER] [--draft] [--override-soft=REASON]` to lock and assign (status → `in_progress`); gates are enforced when workflows are active.
 3.  **Execution**:
     *   Read task/context via `pt context init <id>` or the issue text.
+    *   Prefer Context Contracts for no-context starts: `pt context init <id> --role=builder > context.builder.json` then `pt context validate context.builder.json` before coding.
     *   Use `pt show <id>` to view DoD/comments; `pt comment <id> "note"` to log progress or blockers.
     *   Implement changes.
     *   If DoD includes `manual` steps, only use `pt validate --yes <id>` after performing them; confirmations are recorded in the review comment.
@@ -46,6 +47,7 @@ Agents interacting with this repository or using the `pt` tool should follow thi
 - Respect blockers: do not claim blocked work; resolve deps first or choose another task.
 - Manual blockers: use `pt blocked <id> <reason>` and `pt unblock <id>` (so `pt next` won’t recommend blocked work).
 - No-context starts: run `pt context init <id>` to bootstrap requirements; read DoD before coding.
+- Context Contracts: see `docs/CONTEXT_CONTRACTS.md` for the recommended builder/reviewer payload flow.
 - Priming output: use `pt context prime [--json]` for a 10,000‑foot view; follow `DESIGN_PRIME_OUTPUT.md` when adding priming/discovery features (must report coverage; rankings must say “top N of M”; include stable `path:line` refs).
 - Staleness: if paused or stuck, `pt release <id>` and leave a brief comment so others can continue.
 - Next hints: manifests can include `next_hint`; `pt ready --verbose` will surface suggested follow-ups.
