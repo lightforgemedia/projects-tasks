@@ -44,6 +44,7 @@ Key commands (current behavior; see `pt --help` for the full list):
 - `pt review write <id> --kind=pre|post|demo [--phase=ID]`
   - Writes a markdown review under `.pt/reviews/` and links it to the task via a comment.
   - Pair with `pt sync --generate-phase-reviews` so phase kickoff/closeout/demo checkpoints exist and `pt next` can recommend them.
+  - Demo conventions live in `docs/DEMO_DESIGN.md`.
 - Context Contracts:
   - `pt context init <id> --role=builder > context.builder.json`
   - `pt context validate context.builder.json` (infers contract from payload role; override with `--contract=PATH`)
