@@ -1,0 +1,6 @@
+base=http://127.0.0.1:53942
+--- drift=cosmetic
+    <button type="button" aria-label="Quick-Add" data-testid="quick-add">Quick-Add</button>
+--- drift=structural
+    <a href="#" aria-label="Quick Add" data-testid="quick-add">Quick Add</a>
+OK

@@ -50,7 +50,7 @@ func registerRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
-		writeHTML(w, productsHTML)
+		writeHTML(w, productsHTMLFor(r.URL.Query().Get("drift")))
 	})
 
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,19 @@ func writeHTML(w http.ResponseWriter, body string) {
 	_, _ = w.Write([]byte(body))
 }
 
-const productsHTML = `<!doctype html>
+func productsHTMLFor(drift string) string {
+	quickAdd := `<button type="button" aria-label="Quick Add" data-testid="quick-add">Quick Add</button>`
+	switch drift {
+	case "cosmetic":
+		quickAdd = `<button type="button" aria-label="Quick-Add" data-testid="quick-add">Quick-Add</button>`
+	case "structural":
+		// Role changes from button -> link, while keeping the same name.
+		quickAdd = `<a href="#" aria-label="Quick Add" data-testid="quick-add">Quick Add</a>`
+	}
+	return fmt.Sprintf(productsHTMLTemplate, quickAdd)
+}
+
+const productsHTMLTemplate = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -86,7 +98,7 @@ const productsHTML = `<!doctype html>
     <h1>Products</h1>
     <p>Query: <span data-testid="query"></span></p>
 
-    <button type="button" aria-label="Quick Add" data-testid="quick-add">Quick Add</button>
+    %s
     <div role="dialog" aria-label="Mini cart" data-testid="mini-cart" id="mini-cart" aria-hidden="true">
       <strong>Mini cart</strong>
       <div data-testid="cart-items">1 item</div>

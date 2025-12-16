@@ -26,6 +26,8 @@ func TestDemoServerRoutesContainStableElements(t *testing.T) {
 	}
 	for _, tc := range []check{
 		{path: "/products?query=socks", want: []string{`aria-label="Quick Add"`, `data-testid="mini-cart"`}},
+		{path: "/products?query=socks&drift=cosmetic", want: []string{`aria-label="Quick-Add"`, `data-testid="mini-cart"`}},
+		{path: "/products?query=socks&drift=structural", want: []string{`data-testid="quick-add">Quick Add</a>`, `data-testid="mini-cart"`}},
 		{path: "/login", want: []string{`for="email"`, `for="password"`, `aria-label="Sign in"`}},
 		{path: "/settings/profile", want: []string{`aria-label="Edit profile"`, `aria-label="Save"`, `data-testid="toast"`, `>Saved<`}},
 	} {
