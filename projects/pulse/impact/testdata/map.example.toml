@@ -1,0 +1,11 @@
+p0_tag = "p0"
+always_tags = ["p0"]
+
+[[rules]]
+prefix = "frontend/product/"
+tags = ["area:product_card"]
+
+[[rules]]
+prefix = "frontend/settings/"
+tags = ["area:settings"]
+
