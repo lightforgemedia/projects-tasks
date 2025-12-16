@@ -14,6 +14,12 @@ if [[ ! -x "${PT_BIN}" ]]; then
   exit 1
 fi
 
+# Ensure the demo runs against the current source (avoid stale ./pt binaries).
+(
+  cd "${ROOT}"
+  go build -o pt ./cmd/pt
+)
+
 DEMO_DIR="$(mktemp -d)"
 trap 'rm -rf "${DEMO_DIR}"' EXIT
 
@@ -87,17 +93,27 @@ export PT_SKIP_HOOKS=1
   "${PT_BIN}" claim pt-1 --as demo-agent
   echo "exit=$?"
   set -e
-) | tee "${OUT_DIR}/04-claim-no-workflow.txt"
+) 2>&1 | tee "${OUT_DIR}/04-claim-no-workflow.txt"
 
 (
   cd "${DEMO_DIR}"
-  "${PT_BIN}" claim pt-1 --as demo-agent --workflow "${DEMO_DIR}/workflows/a.toml"
+  "${PT_BIN}" workflow use "workflows/a.toml"
+) | tee "${OUT_DIR}/05-workflow-use.txt"
+
+(
+  cd "${DEMO_DIR}"
+  "${PT_BIN}" workflow current
+) | tee "${OUT_DIR}/06-workflow-current.txt"
+
+(
+  cd "${DEMO_DIR}"
+  "${PT_BIN}" claim pt-1 --as demo-agent
 ) | tee "${OUT_DIR}/05-claim-with-workflow.txt"
 
 (
   cd "${DEMO_DIR}"
   "${PT_BIN}" release pt-1 --as demo-agent
-) | tee "${OUT_DIR}/06-release.txt"
+) | tee "${OUT_DIR}/07-release.txt"
 
 (
   cd "${DEMO_DIR}"
@@ -105,12 +121,11 @@ export PT_SKIP_HOOKS=1
   "${PT_BIN}" ready --json
   echo "exit=$?"
   set -e
-) | tee "${OUT_DIR}/07-ready-no-workflow.txt"
+) 2>&1 | tee "${OUT_DIR}/08-ready-no-workflow.txt"
 
 (
   cd "${DEMO_DIR}"
-  "${PT_BIN}" ready --workflow "${DEMO_DIR}/workflows/a.toml" --json
-) | tee "${OUT_DIR}/08-ready-with-workflow.txt"
+  "${PT_BIN}" ready --json
+) | tee "${OUT_DIR}/09-ready-with-workflow.txt"
 
 echo "OK: wrote demo artifacts to ${OUT_DIR}"
-

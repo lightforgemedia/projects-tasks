@@ -29,6 +29,10 @@ func cmdWorkflow(args []string) error {
 		return cmdWorkflowNext(subArgs)
 	case "check":
 		return cmdWorkflowCheck(subArgs)
+	case "use":
+		return cmdWorkflowUse(subArgs)
+	case "current":
+		return cmdWorkflowCurrent(subArgs)
 	case "-h", "--help", "help":
 		return workflowUsage()
 	default:
@@ -44,6 +48,8 @@ Subcommands:
   status              Show workflow phase progress and blockers
   next                Show recommended next action with context
   check --task=<id>   Check if a task can proceed (gate evaluation)
+  use <name|path>     Persistently select a workflow for this project (writes .pt/workflow.toml)
+  current             Print the currently selected workflow (if any)
 
 Options (all subcommands):
   --db=PATH           Path to store (default: $PT_DB or .pt/db.json; may auto-discover parent store in worktrees)
@@ -55,6 +61,9 @@ Examples:
   pt workflow next
   pt workflow check --task=pt-5
   pt workflow check --task=pt-5 --exit-on-hard-gate  # For hooks
+  pt workflow use risk-first
+  pt workflow use workflows/risk-first.toml
+  pt workflow current
 
 Hook Integration:
   Add to hooks.toml to check workflow gates before claiming:
@@ -65,6 +74,10 @@ Hook Integration:
   on_fail = "fail"
 `)
 	return errors.New("")
+}
+
+type workflowSelection struct {
+	Path string `json:"path"`
 }
 
 func findWorkflowFile() (string, error) {
@@ -85,28 +98,31 @@ func findWorkflowFileFor(dbPath string) (string, error) {
 		return "", fmt.Errorf("workflow file not found: %s", env)
 	}
 
+	// Project-local selection file (preferred when multiple workflows exist).
+	if strings.TrimSpace(projectRoot) != "" {
+		selPath := filepath.Join(projectRoot, ".pt", "workflow.toml")
+		if _, err := os.Stat(selPath); err == nil {
+			if resolved, err := resolveWorkflowSelection(selPath, projectRoot); err == nil && resolved != "" {
+				return resolved, nil
+			} else if err == nil {
+				// Backward-compatible: treat the selection file itself as a full workflow template.
+				if abs, err := filepath.Abs(selPath); err == nil {
+					return abs, nil
+				}
+				return filepath.Clean(selPath), nil
+			} else {
+				return "", err
+			}
+		}
+	}
+
 	// Look for workflows/*.toml
 	matches := findWorkflowGlobMatches("workflows/*.toml", projectRoot)
 	if len(matches) == 1 {
 		return matches[0], nil
 	}
 	if len(matches) > 1 {
-		return "", fmt.Errorf("multiple workflow files found (%s); specify --workflow=PATH", strings.Join(matches, ", "))
-	}
-
-	// Look for .pt/workflow.toml
-	if strings.TrimSpace(projectRoot) != "" {
-		candidate := filepath.Join(projectRoot, ".pt", "workflow.toml")
-		if _, err := os.Stat(candidate); err == nil {
-			if abs, err := filepath.Abs(candidate); err == nil {
-				return abs, nil
-			}
-			return filepath.Clean(candidate), nil
-		}
-	} else {
-		if resolved, ok := resolveWorkflowPath(".pt/workflow.toml", projectRoot); ok {
-			return resolved, nil
-		}
+		return "", fmt.Errorf("multiple workflow files found (%s); select one via PT_WORKFLOW, --workflow=PATH, or `pt workflow use <path>`", strings.Join(matches, ", "))
 	}
 
 	return "", errors.New("no workflow file found; create workflows/<name>.toml or use --workflow=PATH")
@@ -121,6 +137,57 @@ func workflowProjectRoot(dbPath string) string {
 		return ""
 	}
 	return projectRootFromStorePath(dbPath)
+}
+
+func resolveWorkflowSelection(selectionFile string, projectRoot string) (string, error) {
+	raw, err := os.ReadFile(selectionFile)
+	if err != nil {
+		return "", fmt.Errorf("read workflow selection: %w", err)
+	}
+	sel := workflowSelection{Path: parseWorkflowSelectionPath(string(raw))}
+	if strings.TrimSpace(sel.Path) == "" {
+		return "", nil
+	}
+	resolved, ok := resolveWorkflowPath(sel.Path, projectRoot)
+	if !ok {
+		return "", fmt.Errorf("workflow selection %q points to missing file: %s", selectionFile, strings.TrimSpace(sel.Path))
+	}
+	return resolved, nil
+}
+
+func parseWorkflowSelectionPath(raw string) string {
+	// Minimal parser for:
+	//   path = "workflows/risk-first.toml"
+	// Supports surrounding whitespace, quotes, and trailing comments.
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// strip inline comment
+		if idx := strings.Index(line, "#"); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		if !strings.HasPrefix(line, "path") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		if key != "path" {
+			continue
+		}
+		val := strings.TrimSpace(parts[1])
+		val = strings.Trim(val, " \t")
+		val = strings.TrimPrefix(val, "\"")
+		val = strings.TrimSuffix(val, "\"")
+		val = strings.TrimPrefix(val, "'")
+		val = strings.TrimSuffix(val, "'")
+		return strings.TrimSpace(val)
+	}
+	return ""
 }
 
 func resolveWorkflowPath(path string, projectRoot string) (string, bool) {
@@ -219,6 +286,109 @@ func findWorkflowGlobMatches(glob string, projectRoot string) []string {
 	}
 	sort.Strings(uniq)
 	return uniq
+}
+
+func cmdWorkflowUse(args []string) error {
+	fs := flag.NewFlagSet("workflow use", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "path to store")
+	prefix := fs.String("prefix", "", "override issue prefix (unused; for symmetry)")
+	workflowPath := fs.String("workflow", "", "path to workflow template (optional; if provided, uses this instead of the arg)")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt workflow use <name|path> [--db=PATH]") }
+	flagArgs, pos := splitFlagsAndPositionals(args)
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
+	_ = prefix
+	target := strings.TrimSpace(*workflowPath)
+	if target == "" {
+		if len(pos) != 1 {
+			fs.Usage()
+			return errors.New("missing workflow name/path")
+		}
+		target = strings.TrimSpace(pos[0])
+	}
+	projectRoot := workflowProjectRoot(*dbPath)
+	if strings.TrimSpace(projectRoot) == "" {
+		return errors.New("cannot determine project root (set PT_DB or use --db)")
+	}
+
+	// Allow name form: risk-first -> workflows/risk-first.toml
+	if !strings.Contains(target, "/") && !strings.Contains(target, string(os.PathSeparator)) && !strings.HasSuffix(target, ".toml") {
+		target = filepath.Join("workflows", target+".toml")
+	}
+
+	resolved, ok := resolveWorkflowPath(target, projectRoot)
+	if !ok {
+		return fmt.Errorf("workflow file not found: %s", target)
+	}
+
+	selPath := filepath.Join(projectRoot, ".pt", "workflow.toml")
+	if err := os.MkdirAll(filepath.Dir(selPath), 0o755); err != nil {
+		return fmt.Errorf("create .pt dir: %w", err)
+	}
+	content := fmt.Sprintf("# PT workflow selection (project-local)\n# This file disambiguates workflows when multiple templates exist.\npath = %q\n", target)
+	if err := os.WriteFile(selPath, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write workflow selection: %w", err)
+	}
+
+	if *jsonOut {
+		return printJSON(map[string]any{
+			"status":        "ok",
+			"project_root":  projectRoot,
+			"selection_file": selPath,
+			"path":          resolved,
+		})
+	}
+	fmt.Printf("Workflow selected: %s\n", resolved)
+	fmt.Printf("Selection saved: %s\n", selPath)
+	return nil
+}
+
+func splitFlagsAndPositionals(args []string) ([]string, []string) {
+	var flags []string
+	var pos []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if strings.HasPrefix(a, "-") {
+			flags = append(flags, a)
+			// Support "--flag value" in any position.
+			if !strings.Contains(a, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				flags = append(flags, args[i+1])
+				i++
+			}
+			continue
+		}
+		pos = append(pos, a)
+	}
+	return flags, pos
+}
+
+func cmdWorkflowCurrent(args []string) error {
+	fs := flag.NewFlagSet("workflow current", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "path to store")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt workflow current [--db=PATH] [--json]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	projectRoot := workflowProjectRoot(*dbPath)
+	if strings.TrimSpace(projectRoot) == "" {
+		return errors.New("cannot determine project root (set PT_DB or use --db)")
+	}
+	wfPath, err := findWorkflowFileFor(*dbPath)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return printJSON(map[string]any{
+			"status":       "ok",
+			"project_root": projectRoot,
+			"workflow":     wfPath,
+		})
+	}
+	fmt.Println(wfPath)
+	return nil
 }
 
 func cmdWorkflowStatus(args []string) error {

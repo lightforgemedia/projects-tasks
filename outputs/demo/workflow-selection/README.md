@@ -10,9 +10,7 @@ This demo shows:
 From the repo root:
 
 ```bash
-go build -o pt ./cmd/pt
 ./outputs/demo/workflow-selection/run.sh
 ```
 
 Artifacts are written under `outputs/demo/workflow-selection/out/`.
-
