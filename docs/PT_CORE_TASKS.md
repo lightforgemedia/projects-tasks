@@ -4,27 +4,25 @@ This file tracks **only** tasks that are directly related to building and harden
 
 ## PT-only tasks to focus on
 
-Open / in progress PT-core tasks in the current store (grouped by intent):
+### Active (open / in progress)
 
 - **Process / task quality**
-  - `pt-55` — PT: review task authoring guidance with user
-- **Contracts & context**
-  - `pt-66` — Implement `pkg/contract` Loading (`code:contract-loading`)
-  - `pt-67` — Implement `pkg/contract` Validation (`code:contract-validation`)
-  - `pt-68` — Implement `pt context` CLI (`code:pt-context-cli`)
-  - `pt-69` — Document Context Contracts (`doc:context-contracts`)
-- **Docs & onboarding**
-  - `pt-73` — Update Documentation (`doc:pt-docs`)
-  - `pt-99` — Update README with workflow philosophy (`doc:readme-update`)
-  - `pt-100` — Create quick-start guide for new projects (`doc:quickstart`)
+  - `pt-55` — PT: review task authoring guidance with user (`doc:pt-task-guidance-review`) — waiting on user sign-off
 - **DB / multi-project ergonomics**
-  - `pt-90` — Move db outside git tracking (`code:db-location`)
-  - `pt-91` — Auto-discover db location (`code:db-discovery`)
   - `pt-108` — Implement store split or worktree tracking alternative (`code:store-architecture`)
-- **CLI / conductor UX**
-  - `pt-95` — Improve phase assignment visibility (`code:phase-visibility`)
-  - `pt-97` — Reduce command verbosity (`code:command-ux`)
-  - `pt-137` — Fix: `pt next` should prefer claimable tasks (not just open) (`code:cmd/pt/next.go`)
+
+### Recently completed (for context)
+
+- `pt-66` — `pkg/contract` Loading
+- `pt-67` — `pkg/contract` Validation
+- `pt-68` — `pt context` CLI
+- `pt-69` — Context Contracts docs
+- `pt-73` — Docs refresh
+- `pt-90` — Default DB moved to `.pt/db.json`
+- `pt-91` — Worktree-aware DB discovery
+- `pt-100` — New project quick-start (`docs/QUICKSTART.md`)
+- `pt-138` — `pt ready` applies `--limit` after filtering blocked tasks
+- `pt-139` — `pt validate` runs DoD from project root when store is `.pt/db.json`
 
 ## How to use this list
 
