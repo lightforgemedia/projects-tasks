@@ -434,6 +434,8 @@ func run(args []string) error {
 		return cmdSearch(cmdArgs)
 	case "feedback":
 		return cmdFeedback(cmdArgs)
+	case "submit-bug", "submit_bug":
+		return cmdSubmitBug(cmdArgs)
 	case "review":
 		return cmdReview(cmdArgs)
 	case "hooks":
@@ -541,6 +543,7 @@ ADVANCED
   context init <id> [--role=ROLE]   Generate context JSON scaffold from task
   context validate <file>           Validate context JSON against contract
   context prime [--json]             Project summary for agents
+  submit-bug --label=... --description=... --found_in=... --repro=...  Write a bug report to ~/.pt/bugs/ (stop work if PT is wrong)
   handoff <id>                       Generate handoff document
   doctor [--fix]                     Check/repair store
   export/import                      Backup and restore

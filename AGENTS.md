@@ -16,6 +16,7 @@
 - Log any pt issues or improvement ideas as pt tasks (via manifests or `pt add`).
 - Keep task-level and project-level DoDs current (e.g., `PROJECT_DOD.md`); use pt review/sign-off tasks to enforce them.
 - For new features/servers/CLIs, DoD must include real validation (run the feature end-to-end, not just unit tests). If a manual/standalone check is needed (e.g., start the server and call a tool), perform it and record the result in task comments.
+- If you believe PT itself is incorrect or misleading, STOP project work and file a bug report via `pt submit-bug` (the tool is the workflow rail).
 
 ## Task Test Planning (mandatory)
 - Every task (and each phase) must spell out an explicit test plan in the DoD: which commands to run (unit, integration, E2E), what to validate manually, and what evidence to capture (logs/output).
@@ -77,6 +78,11 @@ Agents interacting with this repository or using the `pt` tool should follow thi
   - Gaps/Risks: short bullets (auth, wiring, build integration, tests, etc.).
   - Recommendations: numbered next actions.
   - Status: Ready / Blocked / Needs follow-up.
+
+## PT Bug Reports (when the tool is wrong)
+- If PT is behaving incorrectly (wrong gating, corrupted store, misleading `pt next`, etc.), STOP and file a bug report:
+  - `pt submit-bug --label="short-slug" --description="..." --found_in="cmd/path/version" --repro="exact steps"`
+- This writes a markdown report to `~/.pt/bugs/<YYYY-MM-DD>/bug-<label>.md` (override base dir with `--dir` or `PT_BUG_DIR`).
 
 ## Automation Hooks (planned)
 - Configure hooks in repo `hooks.toml` or global `$HOME/.config/pt/hooks.toml` (env `PT_HOOKS` overrides). Events: pre/post sync/claim/validate, post release/approve/reject.
