@@ -6,13 +6,11 @@ This file tracks **only** tasks that are directly related to building and harden
 
 ### Active (open / in progress)
 
-- **Process / task quality**
-  - `pt-55` — PT: review task authoring guidance with user (`doc:pt-task-guidance-review`) — waiting on user sign-off
-- **DB / multi-project ergonomics**
-  - `pt-108` — Implement store split or worktree tracking alternative (`code:store-architecture`)
+- None currently. Use `pt next` / `pt ready` to drive new work.
 
 ### Recently completed (for context)
 
+- `pt-55` — User sign-off: task authoring guidance
 - `pt-66` — `pkg/contract` Loading
 - `pt-67` — `pkg/contract` Validation
 - `pt-68` — `pt context` CLI
@@ -21,6 +19,7 @@ This file tracks **only** tasks that are directly related to building and harden
 - `pt-90` — Default DB moved to `.pt/db.json`
 - `pt-91` — Worktree-aware DB discovery
 - `pt-100` — New project quick-start (`docs/QUICKSTART.md`)
+- `pt-108` — Worktree tracking hardened (real git test)
 - `pt-138` — `pt ready` applies `--limit` after filtering blocked tasks
 - `pt-139` — `pt validate` runs DoD from project root when store is `.pt/db.json`
 
