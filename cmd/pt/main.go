@@ -807,8 +807,12 @@ func generatePhaseReviewTasks(ctx context.Context, client pt.Client, dbPath, pre
 
 	// These tasks are "rails": they do not block work via deps, but pt next can recommend
 	// them at phase boundaries.
+	labelPrefix := strings.TrimSpace(wf.PhaseAssignment.LabelPrefix)
+	if labelPrefix == "" {
+		labelPrefix = "phase:"
+	}
 	for _, ph := range phaseIDs {
-		phaseLabel := "phase:" + ph.ID
+		phaseLabel := labelPrefix + ph.ID
 
 		preTitle := fmt.Sprintf("[Phase Pre] %s", ph.Name)
 		pre := pt.Task{
@@ -867,7 +871,7 @@ func generatePhaseReviewTasks(ctx context.Context, client pt.Client, dbPath, pre
 				Criteria: []string{"Demo markdown exists and is linked via review-file comment", "Demo commands are runnable and artifacts are captured under outputs/"},
 			},
 		}
-		phaseLabel := "phase:" + lastPhaseID
+		phaseLabel := labelPrefix + lastPhaseID
 		id, err := addOrGet(title, demo, "checkpoint:required", "checkpoint:demo", phaseLabel)
 		if err != nil {
 			return nil, fmt.Errorf("add demo task: %w", err)
