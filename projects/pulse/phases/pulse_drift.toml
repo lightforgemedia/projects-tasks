@@ -1,0 +1,48 @@
+title = "Pulse Drift & Healing (MVP)"
+owner = "agent"
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: demo server supports drift modes for /products"
+role = "backend-dev"
+artifact = "code:projects/pulse/internal/demo/server.go"
+deps = []
+context = "We need a deterministic way to simulate cosmetic vs structural UI drift so we can prove the drift policy and patch emission end-to-end."
+inputs = ["projects/pulse/internal/demo/server.go", "projects/pulse/testdata/flows/valid/product_card_quickadd.toml"]
+scope = "IN: query params like drift=cosmetic|structural that change the Quick Add element in controlled ways. OUT: complex demo variations."
+reference = "projects/pulse/outputs/spikes/fingerprints.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Run demo server and confirm /products?drift=cosmetic still shows a Quick Add control, and /products?drift=structural changes its role/shape."
+criteria = ["cosmetic drift mode changes label only", "structural drift mode changes role/shape", "defaults unchanged"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Build: drift detection + suggested *.fp.toml patch emission"
+role = "backend-dev"
+artifact = "code:projects/pulse/cmd/pulse/main.go"
+deps = ["Build: demo server supports drift modes for /products"]
+context = "When a target cannot be resolved, the runner should classify drift (cosmetic vs structural) and emit a suggested fingerprint/locator update file for review."
+inputs = ["projects/pulse/runtime/pulse_runtime.js", "projects/pulse/outputs/spikes/fingerprints.md", "projects/pulse/outputs/explore/cli-output.md"]
+scope = "IN: on target-not-found, call ListInteractive, find best candidate, classify drift, emit patch file under outputs/runs/<run-id>/patches/*.fp.toml. OUT: automatic mutation of flows."
+reference = "projects/pulse/outputs/spikes/fingerprints.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Trigger a drift run and confirm stdout includes drift classification and suggested_patch path, and that the patch file exists."
+criteria = ["cosmetic drift can proceed with warning", "structural drift hard-fails", "patch file emitted for review"]
+
+[[tasks]]
+template = "backend_endpoint"
+title = "Integrate: E2E drift scenarios (cosmetic tolerated, structural fails with patch)"
+role = "backend-dev"
+artifact = "code:projects/pulse/internal/e2e/drift_test.go"
+deps = ["Build: drift detection + suggested *.fp.toml patch emission"]
+context = "Prove DoD requirements: cosmetic drift tolerated and structural drift produces actionable output + patch artifact."
+inputs = ["projects/pulse/internal/e2e/e2e_test.go", "projects/pulse/internal/demo/server.go"]
+scope = "IN: integration-tagged tests that run drift flows headless. OUT: CI wiring."
+reference = "projects/pulse/PROJECT_DOD.md"
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Run: go test -tags=integration ./... -run Drift -v and capture output under projects/pulse/outputs/runs/."
+criteria = ["cosmetic drift test passes", "structural drift test fails with patch artifact asserted", "output includes suggested_patch"]
+
