@@ -1,0 +1,20 @@
+?   	pulse/cmd/pulse	[no test files]
+testing: warning: no tests to run
+PASS
+ok  	pulse/flow	0.354s [no tests to run]
+testing: warning: no tests to run
+PASS
+ok  	pulse/impact	0.492s [no tests to run]
+testing: warning: no tests to run
+PASS
+ok  	pulse/internal/demo	0.591s [no tests to run]
+=== RUN   TestDrift_CosmeticTolerated_EmitsPatch
+--- PASS: TestDrift_CosmeticTolerated_EmitsPatch (0.88s)
+=== RUN   TestDrift_StructuralFails_EmitsPatch
+--- PASS: TestDrift_StructuralFails_EmitsPatch (0.79s)
+PASS
+ok  	pulse/internal/e2e	2.374s
+testing: warning: no tests to run
+PASS
+ok  	pulse/internal/pulse	0.825s [no tests to run]
+?   	pulse/internal/run	[no test files]
