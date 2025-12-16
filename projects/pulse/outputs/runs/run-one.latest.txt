@@ -1,0 +1,6 @@
+base=http://127.0.0.1:53293
+--- pulse run
+==> product_card_quickadd  START
+  step[0] click  target=role=button[name='Quick Add']
+  assertion[0] visible OK  target=data-testid=mini-cart
+==> product_card_quickadd  PASS
