@@ -728,6 +728,18 @@ func TestShellEnv(t *testing.T) {
 	if !strings.Contains(out, "export PT_DB") {
 		t.Fatalf("expected 'export PT_DB' in output, got: %s", out)
 	}
+	if !strings.Contains(out, "PT_PROJECT_DOD=") {
+		t.Fatalf("expected PT_PROJECT_DOD in output, got: %s", out)
+	}
+	if !strings.Contains(out, "export PT_PROJECT_DOD") {
+		t.Fatalf("expected 'export PT_PROJECT_DOD' in output, got: %s", out)
+	}
+	if !strings.Contains(out, "PT_HOOKS=") {
+		t.Fatalf("expected PT_HOOKS in output, got: %s", out)
+	}
+	if !strings.Contains(out, "export PT_HOOKS") {
+		t.Fatalf("expected 'export PT_HOOKS' in output, got: %s", out)
+	}
 }
 
 func TestHelpOutput(t *testing.T) {

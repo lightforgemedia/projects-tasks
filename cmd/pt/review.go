@@ -337,6 +337,14 @@ Artifacts captured (paths):
 
 Known limitations / constraints:
 - TODO
+
+## Demo Commands (pt demo run)
+
+Add one or more commands as fenced code blocks. ` + "`pt demo run <task-id>`" + ` will execute each block from the project root and capture logs.
+
+` + "```sh" + `
+echo "replace-me"
+` + "```" + `
 `
 	default:
 		return header + "TODO\n"

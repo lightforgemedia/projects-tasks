@@ -404,6 +404,8 @@ func run(args []string) error {
 		return cmdCd(cmdArgs)
 	case "env":
 		return cmdEnv(cmdArgs)
+	case "demo":
+		return cmdDemo(cmdArgs)
 	case "doctor":
 		return cmdDoctor(cmdArgs)
 	case "export":
@@ -498,7 +500,7 @@ COMMON WORKFLOW
   claim   <id> [--as=USER] [--override-soft=REASON] [--workflow=PATH]               Assign and start task (enforces workflow gates)
   release <id>                       Unassign (if stuck)
   validate <id> [--yes]              Run tests, move to review
-  approve <id>                       Mark complete
+  approve <id> [--comment="..."]     Mark complete (optionally adds an evidence comment)
   reject  <id> --reason="..."        Send back for fixes
 
 VIEW & SEARCH
@@ -527,7 +529,8 @@ WORKTREES (task isolation)
   worktree done <id>                 Merge and cleanup
   worktree status                    List active worktrees
   cd <id>                            Output worktree path
-  env                                Output PT_DB for shell
+  env                                Output PT_DB/PT_PROJECT_DOD/PT_HOOKS for shell
+  demo run <id>                      Run demo commands and capture logs
 
 UX DISCOVERY (for user-facing tasks)
   ux-cases   <id>                    Define use cases
@@ -3920,8 +3923,17 @@ func cmdEnv(args []string) error {
 
 	// Get the store path
 	dbPath := pt.DiscoveredStorePath()
+	root := projectRootFromStorePath(dbPath)
+	projectDoD := filepath.Join(root, "PROJECT_DOD.md")
+	projectHooks := filepath.Join(root, "hooks.toml")
 
 	fmt.Printf("PT_DB=%s\n", dbPath)
 	fmt.Printf("export PT_DB\n")
+	if strings.TrimSpace(root) != "" {
+		fmt.Printf("PT_PROJECT_DOD=%s\n", projectDoD)
+		fmt.Printf("export PT_PROJECT_DOD\n")
+		fmt.Printf("PT_HOOKS=%s\n", projectHooks)
+		fmt.Printf("export PT_HOOKS\n")
+	}
 	return nil
 }
