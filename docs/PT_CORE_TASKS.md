@@ -11,6 +11,7 @@ This file tracks **only** tasks that are directly related to building and harden
 ### Recently completed (for context)
 
 - `pt-55` — User sign-off: task authoring guidance
+- `pt-140` — V2: task authoring guidance (targeted tests + manual "N/A")
 - `pt-66` — `pkg/contract` Loading
 - `pt-67` — `pkg/contract` Validation
 - `pt-68` — `pt context` CLI
