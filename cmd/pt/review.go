@@ -227,6 +227,35 @@ func cmdReviewCheck(args []string) error {
 		if _, err := os.Stat(p); err != nil {
 			return fmt.Errorf("linked review file missing: %s", p)
 		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return fmt.Errorf("read linked review file: %s", p)
+		}
+		if err := reviewValidateFilled(string(raw)); err != nil {
+			return fmt.Errorf("linked review file appears unfilled: %s (%v)", p, err)
+		}
+	}
+	return nil
+}
+
+func reviewValidateFilled(markdown string) error {
+	// The generated templates contain placeholder TODOs; require authors to replace them.
+	// Keep this check small and deterministic (no markdown parsing).
+	var offenders []string
+	for i, line := range strings.Split(markdown, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "- TODO") || trimmed == "TODO" {
+			offenders = append(offenders, fmt.Sprintf("line %d: %s", i+1, trimmed))
+			if len(offenders) >= 5 {
+				break
+			}
+		}
+	}
+	if len(offenders) > 0 {
+		return fmt.Errorf("contains TODO placeholders (%s)", strings.Join(offenders, "; "))
 	}
 	return nil
 }

@@ -65,9 +65,20 @@ func TestReviewWriteCreatesFileAndLinksComment(t *testing.T) {
 		t.Fatalf("expected review link comment, got: %v", comments)
 	}
 
-	// And review check passes.
+	// Review check should fail until the template TODOs are replaced.
+	if err := cmdReview([]string{"check", id, "--db", db, "--kind", "pre"}); err == nil {
+		t.Fatalf("expected review check to fail when file contains TODO placeholders")
+	}
+	raw2, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatalf("read review: %v", err)
+	}
+	filled := strings.ReplaceAll(string(raw2), "- TODO", "- done")
+	if err := os.WriteFile(files[0], []byte(filled), 0o644); err != nil {
+		t.Fatalf("write filled review: %v", err)
+	}
 	if err := cmdReview([]string{"check", id, "--db", db, "--kind", "pre"}); err != nil {
-		t.Fatalf("review check: %v", err)
+		t.Fatalf("review check after fill: %v", err)
 	}
 }
 
