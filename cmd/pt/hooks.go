@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"projects-tasks/pkg/pt"
 )
 
 type hookDefaults struct {
@@ -74,15 +76,22 @@ func loadHooks() (*hookConfig, error) {
 		return parseHooksTOML(path)
 	}
 
+	projectHooks := discoveredProjectHooksPath()
 	var merged hookConfig
-	paths := []string{
-		userHooksPath(),
-		"hooks.toml",
+	paths := []string{userHooksPath()}
+	if strings.TrimSpace(projectHooks) != "" {
+		paths = append(paths, projectHooks)
 	}
+	paths = append(paths, "hooks.toml")
+	seen := make(map[string]bool)
 	for _, p := range paths {
 		if p == "" {
 			continue
 		}
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
 		if _, err := os.Stat(p); err != nil {
 			continue
 		}
@@ -105,6 +114,22 @@ func loadHooks() (*hookConfig, error) {
 		return nil, nil
 	}
 	return &merged, nil
+}
+
+func discoveredProjectHooksPath() string {
+	if strings.TrimSpace(os.Getenv("PT_HOOKS")) != "" {
+		return strings.TrimSpace(os.Getenv("PT_HOOKS"))
+	}
+	storePath := pt.DiscoveredStorePath()
+	root := projectRootFromStorePath(storePath)
+	if strings.TrimSpace(root) == "" {
+		return ""
+	}
+	candidate := filepath.Join(root, "hooks.toml")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+	return ""
 }
 
 func parseHooksTOML(path string) (*hookConfig, error) {

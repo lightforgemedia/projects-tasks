@@ -456,6 +456,57 @@ func TestCmdApproveShowsOnlyReadyWork(t *testing.T) {
 	}
 }
 
+func TestCmdApproveSupportsCommentFlag(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	ctx := t.Context()
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{
+				Title:    "A",
+				Template: "backend_endpoint",
+				Role:     "dev",
+				Artifact: "spec:a",
+				DoD:      pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}},
+			},
+		},
+	}
+	if _, err := store.Sync(ctx, manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+	if err := store.UpdateIssue(ctx, "pt-1", "needs_review", ""); err != nil {
+		t.Fatalf("set needs_review err: %v", err)
+	}
+
+	comment := "demo: outputs/demo/run.log"
+	if err := cmdApprove([]string{"pt-1", "--comment", comment}); err != nil {
+		t.Fatalf("approve err: %v", err)
+	}
+
+	// Re-open store to observe persisted comments.
+	store2 := pt.NewStoreClient(os.Getenv("PT_DB"), "pt")
+	iss, _, err := store2.GetTask(ctx, "pt-1")
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if iss.Status != "closed" {
+		t.Fatalf("status=%q want closed", iss.Status)
+	}
+	comments, err := store2.Comments(ctx, "pt-1")
+	if err != nil {
+		t.Fatalf("comments: %v", err)
+	}
+	found := false
+	for _, c := range comments {
+		if strings.Contains(c, comment) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected approve comment %q in %v", comment, comments)
+	}
+}
+
 func TestContextPrimeReportsOverriddenDBPath(t *testing.T) {
 	td := t.TempDir()
 	dbPath := filepath.Join(td, "override.db.json")

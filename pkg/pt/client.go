@@ -112,6 +112,23 @@ func ResetDiscoverCache() {
 }
 
 func doDiscoverParentStore() string {
+	// Prefer the nearest store between the current directory and the git repo root.
+	// This enables multi-project setups inside a monorepo (e.g., projects/<name>/.pt/db.json)
+	// without requiring PT_DB to be set.
+	if cwd, err := os.Getwd(); err == nil {
+		repoRoot := findGitRepoRoot()
+		if strings.TrimSpace(repoRoot) != "" {
+			if found := findStoreInAncestors(cwd, repoRoot); found != "" {
+				return found
+			}
+		} else {
+			// Not a git repo; only consider a store in the current directory.
+			if found := findStoreInDir(cwd); found != "" {
+				return found
+			}
+		}
+	}
+
 	// First, try to find store in the current git repo root (main repo or worktree)
 	repoRoot := findGitRepoRoot()
 	if repoRoot != "" {
@@ -130,6 +147,32 @@ func doDiscoverParentStore() string {
 	}
 
 	return "" // no store found
+}
+
+func findStoreInAncestors(startDir, stopDir string) string {
+	startAbs, err := filepath.Abs(startDir)
+	if err != nil {
+		return ""
+	}
+	stopAbs, err := filepath.Abs(stopDir)
+	if err != nil {
+		return ""
+	}
+	cur := startAbs
+	for {
+		if found := findStoreInDir(cur); found != "" {
+			return found
+		}
+		// Stop once we've reached the configured boundary.
+		if cur == stopAbs {
+			return ""
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return ""
+		}
+		cur = parent
+	}
 }
 
 func defaultStorePath() string {

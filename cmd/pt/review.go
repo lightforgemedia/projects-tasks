@@ -319,8 +319,15 @@ What’s next (recommended next action):
 Goal: Make it easy to run and *see* the product working.
 
 How to run:
-1. ` + "`<command>`" + `
-2. ` + "`<command>`" + `
+1. Run tests (must pass):
+   - ` + "`go test ./...`" + `
+2. Create a demo output directory and capture logs (avoid “it worked for me”):
+   - ` + "`mkdir -p outputs/demo`" + `
+3. Run the demo command and tee output to a file:
+   - ` + "`<command> 2>&1 | tee outputs/demo/<name>.log`" + `
+4. If the demo can hang (agents/servers), always use an explicit timeout:
+   - Prefer a tool flag (e.g., ` + "`--timeout 30s`" + `) if available.
+   - Otherwise wrap with a shell timeout where available.
 
 What to look for (expected behavior):
 - TODO

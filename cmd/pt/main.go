@@ -119,6 +119,14 @@ func projectDoDPath() string {
 	if v := strings.TrimSpace(os.Getenv("PT_PROJECT_DOD")); v != "" {
 		return v
 	}
+	// Default: look for PROJECT_DOD.md at the discovered store's project root.
+	// This supports multi-project repos where each project has its own .pt/db.json.
+	storePath := pt.DiscoveredStorePath()
+	root := projectRootFromStorePath(storePath)
+	if strings.TrimSpace(root) != "" {
+		candidate := filepath.Join(root, "PROJECT_DOD.md")
+		return candidate
+	}
 	return "PROJECT_DOD.md"
 }
 
@@ -752,9 +760,9 @@ func cmdSync(args []string) error {
 	}
 	path, exists := projectDoDStatus()
 	if exists {
-		fmt.Printf("Project DoD: %s (ensure a review/sign-off task tracks it; set PT_PROJECT_DOD to override)\n", path)
+		fmt.Printf("Project DoD: %s (ensure a review/sign-off task tracks it; set env var PT_PROJECT_DOD to override)\n", path)
 	} else {
-		fmt.Printf("Project DoD missing. Create %s (or set PT_PROJECT_DOD) and add a review/sign-off task to guide completion.\n", path)
+		fmt.Printf("Project DoD missing. Create %s (or set env var PT_PROJECT_DOD) and add a review/sign-off task to guide completion.\n", path)
 	}
 	return nil
 }
@@ -1244,9 +1252,9 @@ func cmdReady(args []string) error {
 		}
 		path, exists := projectDoDStatus()
 		if exists {
-			fmt.Printf("No ready tasks. Review project DoD at %s (set PT_PROJECT_DOD to override). If the DoD is not satisfied, identify the gaps and add tasks (via manifest or pt add) with explicit tests + manual checks (and docs/review)—avoid shortcuts. Only ask the user when requirements are unclear or external approval is needed.\n", path)
+			fmt.Printf("No ready tasks. Review project DoD at %s (set env var PT_PROJECT_DOD to override). If the DoD is not satisfied, identify the gaps and add tasks (via manifest or pt add) with explicit tests + manual checks (and docs/review)—avoid shortcuts. Only ask the user when requirements are unclear or external approval is needed.\n", path)
 		} else {
-			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set PT_PROJECT_DOD), then create tasks to reach that DoD using best practices: explicit tests + manual checks, docs, and review. Minimize user prompts unless requirements are unclear.\n", path)
+			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set env var PT_PROJECT_DOD), then create tasks to reach that DoD using best practices: explicit tests + manual checks, docs, and review. Minimize user prompts unless requirements are unclear.\n", path)
 		}
 	}
 	return nil
@@ -1939,12 +1947,14 @@ func cmdValidate(args []string) error {
 }
 
 func cmdApprove(args []string) error {
+	args = reorderArgs(args) // Allow flags after positional args
 	fs := flag.NewFlagSet("approve", flag.ContinueOnError)
+	comment := fs.String("comment", "", "add a comment while approving (avoids a separate pt comment)")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt approve <id>") }
+	fs.Usage = func() { fmt.Println("Usage: pt approve <id> [--comment=\"...\"]") }
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1992,6 +2002,11 @@ func cmdApprove(args []string) error {
 	trans := pt.Transitioner{Client: client}
 	if err := trans.Approve(ctx, id); err != nil {
 		return fmt.Errorf("approve failed: %w", err)
+	}
+	if strings.TrimSpace(*comment) != "" {
+		if err := client.AddComment(ctx, id, strings.TrimSpace(*comment)); err != nil {
+			return fmt.Errorf("add comment failed: %w", err)
+		}
 	}
 	postHooks, err := runHooks("post-approve", payload)
 	if err != nil {

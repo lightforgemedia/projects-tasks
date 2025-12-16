@@ -253,6 +253,101 @@ func TestPathScenarios_DiscoveryFromWorktree(t *testing.T) {
 	}
 }
 
+// TestPathScenarios_DiscoveryPrefersNearestStore verifies that when multiple stores exist
+// in a single git repo (e.g. monorepo subprojects), discovery prefers the nearest store
+// between the current directory and the repo root.
+func TestPathScenarios_DiscoveryPrefersNearestStore(t *testing.T) {
+	t.Setenv("PT_DB", "")
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	baseDir := t.TempDir()
+	repoRoot := filepath.Join(baseDir, "repo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = repoRoot
+	_ = cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Test")
+	cmd.Dir = repoRoot
+	_ = cmd.Run()
+
+	testFile := filepath.Join(repoRoot, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoRoot
+	_ = cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "initial")
+	cmd.Dir = repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v\n%s", err, out)
+	}
+
+	// Create a store at repo root (should be ignored when a nearer store exists).
+	rootStore := filepath.Join(repoRoot, ".pt", "db.json")
+	rootClient := pt.NewStoreClient(rootStore, "test")
+	ctx := t.Context()
+	if _, err := rootClient.AddTask(ctx, pt.Task{
+		Template: "refactor",
+		Title:    "Root task",
+		Role:     "dev",
+		Artifact: "code:root",
+		DoD:      pt.DefinitionOfDone{Tests: []string{"echo ok"}, Manual: "verify", Criteria: []string{"done"}},
+	}); err != nil {
+		t.Fatalf("add root task: %v", err)
+	}
+
+	// Create a subproject store.
+	subproj := filepath.Join(repoRoot, "projects", "subproj")
+	if err := os.MkdirAll(subproj, 0o755); err != nil {
+		t.Fatalf("mkdir subproj: %v", err)
+	}
+	subStore := filepath.Join(subproj, ".pt", "db.json")
+	subClient := pt.NewStoreClient(subStore, "test")
+	if _, err := subClient.AddTask(ctx, pt.Task{
+		Template: "refactor",
+		Title:    "Subproject task",
+		Role:     "dev",
+		Artifact: "code:sub",
+		DoD:      pt.DefinitionOfDone{Tests: []string{"echo ok"}, Manual: "verify", Criteria: []string{"done"}},
+	}); err != nil {
+		t.Fatalf("add sub task: %v", err)
+	}
+
+	// Change to a deeper directory under the subproject.
+	deep := filepath.Join(subproj, "nested")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatalf("mkdir deep: %v", err)
+	}
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	if err := os.Chdir(deep); err != nil {
+		t.Fatalf("chdir deep: %v", err)
+	}
+
+	pt.ResetDiscoverCache()
+	discovered := pt.DiscoveredStorePath()
+	if discovered == "" {
+		t.Fatal("expected to discover store")
+	}
+	absDiscovered, _ := filepath.EvalSymlinks(discovered)
+	absSubStore, _ := filepath.EvalSymlinks(subStore)
+	if absDiscovered != absSubStore {
+		t.Fatalf("discovered=%q want %q", absDiscovered, absSubStore)
+	}
+}
+
 func TestDBDiscovery(t *testing.T) {
 	TestPathScenarios_DiscoveryFromWorktree(t)
 }
