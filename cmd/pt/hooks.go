@@ -24,6 +24,18 @@ type hookEntry struct {
 	Cmd     string
 	OnFail  string
 	Timeout string
+
+	// Optional matchers for reducing hook footguns.
+	// Values are comma-separated patterns. Supported pattern forms:
+	// - exact match: "discovery"
+	// - prefix match: "checkpoint:" or "phase:*"
+	// - wildcard suffix: "checkpoint:*"
+	OnlyTemplates string
+	SkipTemplates string
+	OnlyRoles     string
+	SkipRoles     string
+	OnlyLabels    string
+	SkipLabels    string
 }
 
 type hookConfig struct {
@@ -39,6 +51,9 @@ type hookPayload struct {
 	StatusFrom string
 	StatusTo   string
 	Role       string
+	Template   string
+	Labels     []string
+	Phase      string
 	DoDJSON    string
 }
 
@@ -80,6 +95,9 @@ func loadHooks() (*hookConfig, error) {
 		}
 		if merged.Defaults.OnFail == "" {
 			merged.Defaults.OnFail = cfg.Defaults.OnFail
+		}
+		if !merged.Defaults.Verbose {
+			merged.Defaults.Verbose = cfg.Defaults.Verbose
 		}
 		merged.Hooks = append(merged.Hooks, cfg.Hooks...)
 	}
@@ -146,6 +164,18 @@ func parseHooksTOML(path string) (*hookConfig, error) {
 				current.OnFail = strings.ToLower(val)
 			case "timeout":
 				current.Timeout = val
+			case "only_templates":
+				current.OnlyTemplates = val
+			case "skip_templates":
+				current.SkipTemplates = val
+			case "only_roles":
+				current.OnlyRoles = val
+			case "skip_roles":
+				current.SkipRoles = val
+			case "only_labels":
+				current.OnlyLabels = val
+			case "skip_labels":
+				current.SkipLabels = val
 			default:
 				return nil, fmt.Errorf("line %d: unknown hook key %q", lineNum, key)
 			}
@@ -204,9 +234,19 @@ func runHooks(event string, payload hookPayload) ([]HookResult, error) {
 	if skipHooks() || loadedHooks == nil {
 		return nil, nil
 	}
-	matches := matchingHooks(event, loadedHooks.Hooks)
 	var results []HookResult
-	for _, h := range matches {
+	for _, h := range loadedHooks.Hooks {
+		if h.Event != event {
+			continue
+		}
+		if ok, reason := hookApplies(h, payload); !ok {
+			cmdStr := strings.TrimSpace(applyPlaceholders(h.Cmd, payload))
+			results = append(results, HookResult{Event: event, Command: cmdStr, Status: "skipped", Output: reason})
+			if hookVerbose() {
+				fmt.Fprintf(os.Stderr, "[hook skip] %s: %s\n", event, reason)
+			}
+			continue
+		}
 		res, err := runHook(h, loadedHooks.Defaults, event, payload)
 		results = append(results, res)
 		if err != nil {
@@ -216,14 +256,26 @@ func runHooks(event string, payload hookPayload) ([]HookResult, error) {
 	return results, nil
 }
 
-func matchingHooks(event string, hooks []hookEntry) []hookEntry {
-	var out []hookEntry
-	for _, h := range hooks {
-		if h.Event == event {
-			out = append(out, h)
-		}
+func hookApplies(h hookEntry, payload hookPayload) (bool, string) {
+	if matchesAny(payload.Template, splitPatterns(h.SkipTemplates)) {
+		return false, fmt.Sprintf("template %q matched skip_templates", payload.Template)
 	}
-	return out
+	if only := splitPatterns(h.OnlyTemplates); len(only) > 0 && !matchesAny(payload.Template, only) {
+		return false, fmt.Sprintf("template %q did not match only_templates", payload.Template)
+	}
+	if matchesAny(payload.Role, splitPatterns(h.SkipRoles)) {
+		return false, fmt.Sprintf("role %q matched skip_roles", payload.Role)
+	}
+	if only := splitPatterns(h.OnlyRoles); len(only) > 0 && !matchesAny(payload.Role, only) {
+		return false, fmt.Sprintf("role %q did not match only_roles", payload.Role)
+	}
+	if matchesAnyLabel(payload.Labels, splitPatterns(h.SkipLabels)) {
+		return false, "labels matched skip_labels"
+	}
+	if only := splitPatterns(h.OnlyLabels); len(only) > 0 && !matchesAnyLabel(payload.Labels, only) {
+		return false, "labels did not match only_labels"
+	}
+	return true, ""
 }
 
 func runHook(h hookEntry, defaults hookDefaults, event string, payload hookPayload) (HookResult, error) {
@@ -260,6 +312,7 @@ func runHook(h hookEntry, defaults hookDefaults, event string, payload hookPaylo
 	defer cancel()
 
 	jsonPayload, _ := json.Marshal(payload)
+	labels := strings.Join(payload.Labels, ",")
 	env := append(os.Environ(),
 		"PT_EVENT="+event,
 		"PT_ID="+payload.ID,
@@ -269,6 +322,9 @@ func runHook(h hookEntry, defaults hookDefaults, event string, payload hookPaylo
 		"PT_STATUS_FROM="+payload.StatusFrom,
 		"PT_STATUS_TO="+payload.StatusTo,
 		"PT_ROLE="+payload.Role,
+		"PT_TEMPLATE="+payload.Template,
+		"PT_LABELS="+labels,
+		"PT_PHASE="+payload.Phase,
 		// Keep PT_DOD small; full payload is already on stdin to avoid E2BIG.
 		"PT_DOD="+truncateForEnv(payload.DoDJSON, 1024),
 	)
@@ -318,8 +374,64 @@ func applyPlaceholders(s string, p hookPayload) string {
 		"{{status_from}}", p.StatusFrom,
 		"{{status_to}}", p.StatusTo,
 		"{{role}}", p.Role,
+		"{{template}}", p.Template,
+		"{{phase}}", p.Phase,
+		"{{labels}}", strings.Join(p.Labels, ","),
 	)
 	return repl.Replace(s)
+}
+
+func splitPatterns(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		p := strings.TrimSpace(part)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func matchesAny(value string, patterns []string) bool {
+	v := strings.TrimSpace(value)
+	if v == "" || len(patterns) == 0 {
+		return false
+	}
+	for _, raw := range patterns {
+		p := strings.TrimSpace(raw)
+		if p == "" {
+			continue
+		}
+		if strings.HasSuffix(p, "*") {
+			if strings.HasPrefix(v, strings.TrimSuffix(p, "*")) {
+				return true
+			}
+			continue
+		}
+		if strings.HasSuffix(p, ":") {
+			if strings.HasPrefix(v, p) {
+				return true
+			}
+			continue
+		}
+		if v == p {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesAnyLabel(labels []string, patterns []string) bool {
+	if len(labels) == 0 || len(patterns) == 0 {
+		return false
+	}
+	for _, l := range labels {
+		if matchesAny(l, patterns) {
+			return true
+		}
+	}
+	return false
 }
 
 // truncateForEnv trims a string to maxLen bytes (UTF-8 safe enough for JSON here).

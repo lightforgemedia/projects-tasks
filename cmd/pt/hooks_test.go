@@ -179,3 +179,109 @@ func TestGlobalAndLocalHooksMerge(t *testing.T) {
 		t.Fatalf("expected local hook to run: %v", err)
 	}
 }
+
+func TestHooksDefaultsVerboseMerges(t *testing.T) {
+	td := t.TempDir()
+	origDir, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	globalDir := filepath.Join(td, ".config", "pt")
+	if err := os.MkdirAll(globalDir, 0755); err != nil {
+		t.Fatalf("mkdir global: %v", err)
+	}
+	globalHooks := filepath.Join(globalDir, "hooks.toml")
+	localHooks := filepath.Join(td, "hooks.toml")
+
+	if err := os.WriteFile(globalHooks, []byte("[[hook]]\nevent=\"post-validate\"\ncmd=\"echo global\"\n"), 0644); err != nil {
+		t.Fatalf("write global: %v", err)
+	}
+	if err := os.WriteFile(localHooks, []byte("[defaults]\nverbose=true\n[[hook]]\nevent=\"post-validate\"\ncmd=\"echo local\"\n"), 0644); err != nil {
+		t.Fatalf("write local: %v", err)
+	}
+
+	t.Setenv("PT_HOOKS", "")
+	t.Setenv("HOME", td)
+	t.Setenv("PWD", td)
+	t.Setenv("PT_SKIP_HOOKS", "")
+	if err := os.Chdir(td); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	var err error
+	loadedHooks, err = loadHooks()
+	if err != nil {
+		t.Fatalf("load hooks: %v", err)
+	}
+	t.Cleanup(func() { loadedHooks = nil })
+
+	if loadedHooks == nil || !loadedHooks.Defaults.Verbose {
+		t.Fatalf("expected verbose defaults to merge from local hooks")
+	}
+}
+
+func TestHookOnlyTemplatesSkipsNonMatching(t *testing.T) {
+	td := t.TempDir()
+	outPath := filepath.Join(td, "out.txt")
+	hooksPath := filepath.Join(td, "hooks.toml")
+	cfg := `
+[[hook]]
+event = "pre-claim"
+only_templates = "backend_endpoint"
+cmd = "echo ran > ` + outPath + `"
+`
+	if err := os.WriteFile(hooksPath, []byte(cfg), 0644); err != nil {
+		t.Fatalf("write hooks: %v", err)
+	}
+	t.Setenv("PT_HOOKS", hooksPath)
+	t.Setenv("PT_SKIP_HOOKS", "")
+	var err error
+	loadedHooks, err = loadHooks()
+	if err != nil {
+		t.Fatalf("load hooks: %v", err)
+	}
+	t.Cleanup(func() { loadedHooks = nil })
+
+	res, err := runHooks("pre-claim", hookPayload{ID: "pt-1", Template: "discovery"})
+	if err != nil {
+		t.Fatalf("runHooks: %v", err)
+	}
+	if len(res) != 1 || res[0].Status != "skipped" {
+		t.Fatalf("expected skipped hook result, got %+v", res)
+	}
+	if _, err := os.Stat(outPath); err == nil {
+		t.Fatalf("expected hook not to execute for non-matching template")
+	}
+}
+
+func TestHookSkipLabelsSkipsMatching(t *testing.T) {
+	td := t.TempDir()
+	outPath := filepath.Join(td, "out.txt")
+	hooksPath := filepath.Join(td, "hooks.toml")
+	cfg := `
+[[hook]]
+event = "pre-claim"
+skip_labels = "checkpoint:*"
+cmd = "echo ran > ` + outPath + `"
+`
+	if err := os.WriteFile(hooksPath, []byte(cfg), 0644); err != nil {
+		t.Fatalf("write hooks: %v", err)
+	}
+	t.Setenv("PT_HOOKS", hooksPath)
+	t.Setenv("PT_SKIP_HOOKS", "")
+	var err error
+	loadedHooks, err = loadHooks()
+	if err != nil {
+		t.Fatalf("load hooks: %v", err)
+	}
+	t.Cleanup(func() { loadedHooks = nil })
+
+	res, err := runHooks("pre-claim", hookPayload{ID: "pt-1", Labels: []string{"checkpoint:required"}})
+	if err != nil {
+		t.Fatalf("runHooks: %v", err)
+	}
+	if len(res) != 1 || res[0].Status != "skipped" {
+		t.Fatalf("expected skipped hook result, got %+v", res)
+	}
+	if _, err := os.Stat(outPath); err == nil {
+		t.Fatalf("expected hook not to execute for matching label")
+	}
+}

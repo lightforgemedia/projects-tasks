@@ -1,15 +1,24 @@
 [defaults]
   timeout = "60s"
   on_fail = "fail"
+  verbose = true
 
 [[hook]]
   event = "pre-claim"
-  cmd = "go test ./... > /tmp/pt_hook_go_test.log 2>&1 || ( echo \"hook-block: go test failed [$PT_EVENT] for $PT_ID. See /tmp/pt_hook_go_test.log. Fix failing tests and prior task DoD before retrying.\" && exit 1 )"
+  # Don't deadlock on planning/checkpoint tasks; keep go test strict for code work.
+  skip_templates = "discovery,spike"
+  skip_labels = "checkpoint:*"
+  # NOTE: hooks.toml parsing is intentionally minimal; avoid embedded double-quotes in cmd.
+  cmd = "log=/tmp/pt_hook_go_test_${PT_EVENT}_${PT_ID}.log; go test ./... > $log 2>&1 && echo hook-ok: go test passed [$PT_EVENT] for $PT_ID log:$log || { echo hook-block: go test failed [$PT_EVENT] for $PT_ID log:$log Fix failing tests and prior task DoD before retrying.; exit 1; }"
 
 [[hook]]
   event = "pre-validate"
-  cmd = "go test ./... > /tmp/pt_hook_go_test.log 2>&1 || ( echo \"hook-block: go test failed [$PT_EVENT] for $PT_ID. See /tmp/pt_hook_go_test.log. Fix failing tests and prior task DoD before retrying.\" && exit 1 )"
+  skip_templates = "discovery,spike"
+  skip_labels = "checkpoint:*"
+  cmd = "log=/tmp/pt_hook_go_test_${PT_EVENT}_${PT_ID}.log; go test ./... > $log 2>&1 && echo hook-ok: go test passed [$PT_EVENT] for $PT_ID log:$log || { echo hook-block: go test failed [$PT_EVENT] for $PT_ID log:$log Fix failing tests and prior task DoD before retrying.; exit 1; }"
 
 [[hook]]
   event = "pre-approve"
-  cmd = "go test ./... > /tmp/pt_hook_go_test.log 2>&1 || ( echo \"hook-block: go test failed [$PT_EVENT] for $PT_ID. See /tmp/pt_hook_go_test.log. Fix failing tests and prior task DoD before retrying.\" && exit 1 )"
+  skip_templates = "discovery,spike"
+  skip_labels = "checkpoint:*"
+  cmd = "log=/tmp/pt_hook_go_test_${PT_EVENT}_${PT_ID}.log; go test ./... > $log 2>&1 && echo hook-ok: go test passed [$PT_EVENT] for $PT_ID log:$log || { echo hook-block: go test failed [$PT_EVENT] for $PT_ID log:$log Fix failing tests and prior task DoD before retrying.; exit 1; }"

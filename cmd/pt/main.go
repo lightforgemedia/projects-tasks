@@ -1561,6 +1561,13 @@ func cmdClaim(args []string) error {
 	}
 
 	dodJSON, _ := json.Marshal(meta.DoD)
+	phase := ""
+	for _, l := range issue.Labels {
+		if strings.HasPrefix(l, "phase:") {
+			phase = strings.TrimPrefix(l, "phase:")
+			break
+		}
+	}
 	payload := hookPayload{
 		ID:         issue.ID,
 		Title:      issue.Title,
@@ -1569,6 +1576,9 @@ func cmdClaim(args []string) error {
 		StatusFrom: issue.Status,
 		StatusTo:   string(pt.StatusInProgress),
 		Role:       meta.Role,
+		Template:   meta.Template,
+		Labels:     issue.Labels,
+		Phase:      phase,
 		DoDJSON:    string(dodJSON),
 	}
 	preHooks, err := runHooks("pre-claim", payload)
@@ -1724,6 +1734,13 @@ func cmdRelease(args []string) error {
 		return fmt.Errorf("get task failed: %w", err)
 	}
 	dodJSON, _ := json.Marshal(meta.DoD)
+	phase := ""
+	for _, l := range issue.Labels {
+		if strings.HasPrefix(l, "phase:") {
+			phase = strings.TrimPrefix(l, "phase:")
+			break
+		}
+	}
 	payload := hookPayload{
 		ID:         issue.ID,
 		Title:      issue.Title,
@@ -1732,6 +1749,9 @@ func cmdRelease(args []string) error {
 		StatusFrom: issue.Status,
 		StatusTo:   "open",
 		Role:       meta.Role,
+		Template:   meta.Template,
+		Labels:     issue.Labels,
+		Phase:      phase,
 		DoDJSON:    string(dodJSON),
 	}
 	trans := pt.Transitioner{Client: client}
@@ -1826,6 +1846,13 @@ func cmdValidate(args []string) error {
 
 	dodJSON, _ := json.Marshal(meta.DoD)
 	actor := strings.TrimSpace(os.Getenv("USER"))
+	phase := ""
+	for _, l := range issue.Labels {
+		if strings.HasPrefix(l, "phase:") {
+			phase = strings.TrimPrefix(l, "phase:")
+			break
+		}
+	}
 	payload := hookPayload{
 		ID:         issue.ID,
 		Title:      issue.Title,
@@ -1834,6 +1861,9 @@ func cmdValidate(args []string) error {
 		StatusFrom: issue.Status,
 		StatusTo:   string(pt.StatusNeedsReview),
 		Role:       meta.Role,
+		Template:   meta.Template,
+		Labels:     issue.Labels,
+		Phase:      phase,
 		DoDJSON:    string(dodJSON),
 	}
 	preHooks, err := runHooks("pre-validate", payload)
@@ -1935,6 +1965,13 @@ func cmdApprove(args []string) error {
 	}
 	dodJSON, _ := json.Marshal(meta.DoD)
 	actor := strings.TrimSpace(os.Getenv("USER"))
+	phase := ""
+	for _, l := range issue.Labels {
+		if strings.HasPrefix(l, "phase:") {
+			phase = strings.TrimPrefix(l, "phase:")
+			break
+		}
+	}
 	payload := hookPayload{
 		ID:         issue.ID,
 		Title:      issue.Title,
@@ -1943,6 +1980,9 @@ func cmdApprove(args []string) error {
 		StatusFrom: issue.Status,
 		StatusTo:   "closed",
 		Role:       meta.Role,
+		Template:   meta.Template,
+		Labels:     issue.Labels,
+		Phase:      phase,
 		DoDJSON:    string(dodJSON),
 	}
 	preHooks, err := runHooks("pre-approve", payload)
@@ -2009,6 +2049,13 @@ func cmdReject(args []string) error {
 	}
 	dodJSON, _ := json.Marshal(meta.DoD)
 	actor := strings.TrimSpace(os.Getenv("USER"))
+	phase := ""
+	for _, l := range issue.Labels {
+		if strings.HasPrefix(l, "phase:") {
+			phase = strings.TrimPrefix(l, "phase:")
+			break
+		}
+	}
 	payload := hookPayload{
 		ID:         issue.ID,
 		Title:      issue.Title,
@@ -2017,6 +2064,9 @@ func cmdReject(args []string) error {
 		StatusFrom: issue.Status,
 		StatusTo:   string(pt.StatusInProgress),
 		Role:       meta.Role,
+		Template:   meta.Template,
+		Labels:     issue.Labels,
+		Phase:      phase,
 		DoDJSON:    string(dodJSON),
 	}
 	trans := pt.Transitioner{Client: client}
@@ -2072,6 +2122,13 @@ func cmdReopen(args []string) error {
 		return fmt.Errorf("get task failed: %w", err)
 	}
 	dodJSON, _ := json.Marshal(meta.DoD)
+	phase := ""
+	for _, l := range issue.Labels {
+		if strings.HasPrefix(l, "phase:") {
+			phase = strings.TrimPrefix(l, "phase:")
+			break
+		}
+	}
 	payload := hookPayload{
 		ID:         issue.ID,
 		Title:      issue.Title,
@@ -2080,6 +2137,9 @@ func cmdReopen(args []string) error {
 		StatusFrom: issue.Status,
 		StatusTo:   string(pt.StatusInProgress),
 		Role:       meta.Role,
+		Template:   meta.Template,
+		Labels:     issue.Labels,
+		Phase:      phase,
 		DoDJSON:    string(dodJSON),
 	}
 	preHooks, err := runHooks("pre-reopen", payload)
@@ -2529,12 +2589,22 @@ func cmdUpdate(args []string) error {
 		return fmt.Errorf("get task failed: %w", err)
 	}
 	actor := strings.TrimSpace(os.Getenv("USER"))
+	phase := ""
+	for _, l := range issue.Labels {
+		if strings.HasPrefix(l, "phase:") {
+			phase = strings.TrimPrefix(l, "phase:")
+			break
+		}
+	}
 	payload := hookPayload{
 		ID:       issue.ID,
 		Title:    issue.Title,
 		Assignee: issue.Assignee,
 		Actor:    actor,
 		Role:     meta.Role,
+		Template: meta.Template,
+		Labels:   issue.Labels,
+		Phase:    phase,
 	}
 	preHooks, err := runHooks("pre-update", payload)
 	if err != nil {
