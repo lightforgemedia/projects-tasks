@@ -562,6 +562,7 @@ Every task MUST have these fields:
   role        Who should do this (backend-dev, frontend-dev, planner)
   artifact    Deliverable location (code:path, spec:name, doc:path)
   dod.tests   At least one automated test command
+  dod.manual  Manual validation steps (use "N/A" only when truly not applicable)
   dod.criteria Observable, pass/fail acceptance criteria
 
 ## Handoff Fields (for agent-ready tasks)
@@ -622,7 +623,8 @@ Copy and customize for new tasks:
 Before syncing a manifest, verify each task:
   □ Title is action-oriented (starts with verb like Add, Fix, Update)
   □ Artifact points to specific deliverable location
-  □ Tests are automated and specific (not just "go test ./...")
+  □ Tests are automated and specific (targeted paths/tests; justify broad "go test ./..." if needed)
+  □ Manual is explicit (or "N/A" with justification)
   □ Criteria are observable and binary (pass/fail)
   □ Context explains WHY (not just WHAT)
   □ Inputs list actual files to modify
@@ -2140,7 +2142,7 @@ func cmdAdd(args []string) error {
 func printTaskAuthoringChecklist() {
 	fmt.Println("Task authoring checklist (self-contained; assume no extra context):")
 	fmt.Println("- Include artifact/spec link and affected files/modules.")
-	fmt.Println("- State exact commands to run (tests, validation) and manual steps to perform.")
+	fmt.Println("- State exact commands to run (prefer targeted tests; justify broad go test) and manual steps (or 'N/A').")
 	fmt.Println("- Add acceptance criteria bullets (what proof/outcome is needed).")
 	fmt.Println("- Note dependencies and next likely task if applicable.")
 	fmt.Println("- Record repro/symptoms for bugs; for features, link UI/API contracts.")
