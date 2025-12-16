@@ -1,0 +1,80 @@
+title = "Workflow V2: statechart engine migration"
+owner = "agent"
+
+[[tasks]]
+template = "spike"
+title = "Workflow V2: Validate statechart IR approach"
+role = "planner"
+artifact = "doc:docs/WORKFLOW_V2_PLAN.md"
+next_hint = "Capture risks + confirm migration steps; then implement engine skeleton"
+max_hours = 2
+
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Read docs/WORKFLOW_V2_PLAN.md; sanity-check compatibility + flag semantics + migration order; add a short comment with biggest risk + mitigation."
+criteria = ["V2 plan is internally consistent", "Top risks and mitigations recorded"]
+
+[[tasks]]
+template = "refactor"
+title = "Workflow V2: Add engine IR + compiler skeleton (flagged)"
+role = "dev"
+artifact = "code:pkg/pt/engine"
+deps = ["Workflow V2: Validate statechart IR approach"]
+next_hint = "Add pkg/pt/engine with IR types + compile from workflow TOML; no behavior change unless PT_ENGINE=v2"
+
+[tasks.dod]
+tests = ["go test ./pkg/pt/..."]
+manual = "Ensure no behavior change when PT_ENGINE is unset; document how to enable v2."
+criteria = ["Engine package exists with IR types", "Compiler exists and is tested", "Feature flag is wired but default is v1"]
+
+[[tasks]]
+template = "refactor"
+title = "Workflow V2: Add conformance fixtures for status/next"
+role = "dev"
+artifact = "code:pkg/pt/engine"
+deps = ["Workflow V2: Add engine IR + compiler skeleton (flagged)"]
+next_hint = "Create representative store/workflow fixtures and golden outputs for pt next/status to prevent drift"
+
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Verify fixtures cover deps-blocked, checkpoint rails, soft gate override, and needs_review prioritization."
+criteria = ["Fixtures exist for at least 4 scenarios", "Golden outputs are stable and reviewed"]
+
+[[tasks]]
+template = "refactor"
+title = "Workflow V2: Route pt workflow status through engine (PT_ENGINE=v2)"
+role = "dev"
+artifact = "code:cmd/pt/workflow.go"
+deps = ["Workflow V2: Add conformance fixtures for status/next"]
+next_hint = "When PT_ENGINE=v2, compute workflow status via engine; otherwise keep v1 behavior"
+
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "Run: PT_ENGINE=v2 pt workflow status --json and compare to v1 output shape."
+criteria = ["No changes when PT_ENGINE is unset", "Engine path produces deterministic output", "Tests cover v2 selection"]
+
+[[tasks]]
+template = "refactor"
+title = "Workflow V2: Route pt next through engine (PT_ENGINE=v2)"
+role = "dev"
+artifact = "code:cmd/pt/next.go"
+deps = ["Workflow V2: Route pt workflow status through engine (PT_ENGINE=v2)"]
+next_hint = "When PT_ENGINE=v2, produce next recommendations via engine; preserve --skip-checkpoints and existing JSON shape"
+
+[tasks.dod]
+tests = ["go test ./cmd/pt/..."]
+manual = "Run: PT_ENGINE=v2 pt next --json and confirm checkpoint rails still recommend correctly."
+criteria = ["No changes when PT_ENGINE is unset", "Engine path explains WHY consistently", "Conformance tests prevent regressions"]
+
+[[tasks]]
+template = "discovery"
+title = "Workflow V2: Decide workflow extension mechanism (hooks vs exec-guards)"
+role = "planner"
+artifact = "doc:docs/WORKFLOW_V2_PLAN.md"
+deps = ["Workflow V2: Route pt next through engine (PT_ENGINE=v2)"]
+next_hint = "Compare 2-3 approaches; pick one that keeps core zero-dependency and allows custom workflows"
+
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Update docs/WORKFLOW_V2_PLAN.md: compare built-in guards vs exec-guards vs external conductor; pick one with rationale + non-goals."
+criteria = ["Extension plan is documented", "Tradeoffs are explicit", "Chosen option is implementable without new deps"]
