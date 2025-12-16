@@ -1,0 +1,58 @@
+title = "Workflow V2: prove core + new workflows"
+owner = "agent"
+
+# Goal: prove V2 is safe to flip to default by extending parity, enforcement,
+# and workflow template coverage, while keeping PT_ENGINE=v2 feature-flagged.
+
+[[tasks]]
+template = "spike"
+title = "Workflow V2 Proof: Inventory enforcement decision points"
+role = "planner"
+artifact = "doc:docs/WORKFLOW_V2_PROOF.md"
+next_hint = "Implement engine-backed enforcement (claim/validate/approve) with conformance tests before flipping defaults."
+max_hours = 2
+
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Read cmd/pt/main.go and list every place that enforces gates/rails (claim/validate/approve/reject/release/reopen). Document which should route to engine V2 and what parity looks like."
+criteria = ["docs/WORKFLOW_V2_PROOF.md exists with an enforcement inventory", "Decision points grouped by command with expected outcomes"]
+
+[[tasks]]
+template = "refactor"
+title = "Workflow V2 Proof: Engine-backed enforcement for claim"
+role = "dev"
+deps = ["Workflow V2 Proof: Inventory enforcement decision points"]
+artifact = "code:pkg/pt/engine"
+next_hint = "Add conformance tests for claim gate outcomes (hard block, soft warn+override, deps-block)."
+
+[tasks.dod]
+tests = ["go test ./cmd/pt/... ./pkg/pt/..."]
+manual = "Run both engines on the same fixture store: PT_ENGINE=v1 and PT_ENGINE=v2. Verify claim behavior matches (exit code + message + store mutation)."
+criteria = ["PT_ENGINE unset remains v1 behavior", "PT_ENGINE=v2 claim uses engine decision API", "Parity tests cover hard/soft/deps scenarios"]
+
+[[tasks]]
+template = "refactor"
+title = "Workflow V2 Proof: Engine-backed enforcement for validate/approve"
+role = "dev"
+deps = ["Workflow V2 Proof: Engine-backed enforcement for claim"]
+artifact = "code:pkg/pt/engine"
+next_hint = "Expand conformance harness to cover validate/approve decisions and JSON outputs."
+
+[tasks.dod]
+tests = ["go test ./cmd/pt/... ./pkg/pt/..."]
+manual = "Verify validate/approve flows behave identically under v1 vs v2 (including rails/checkpoint recommendations and needs_review prioritization)."
+criteria = ["validate/approve parity proven via tests", "No behavior change when PT_ENGINE unset", "Engine is the single source of truth for enforcement decisions under v2"]
+
+[[tasks]]
+template = "refactor"
+title = "Workflow V2 Proof: Workflow template + grammar coverage suite"
+role = "dev"
+deps = ["Workflow V2 Proof: Engine-backed enforcement for validate/approve"]
+artifact = "test:workflow-v2-proof"
+next_hint = "Add tests that compile all workflows/*.toml and evaluate representative gate expressions; add at least one new workflow template as proof of extensibility."
+
+[tasks.dod]
+tests = ["go test ./..."]
+manual = "Add at least one new workflow template (workflows/maintenance.toml or similar) and confirm V1 and V2 both load it. Ensure error messages for invalid gate expressions point to phase+condition."
+criteria = ["All workflow templates compile under V2", "Grammar tests cover OR/invalid expressions", "At least one new workflow template added and documented"]
+

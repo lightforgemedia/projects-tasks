@@ -350,6 +350,7 @@ func applyWorkflowTaskBlockers(status *pt.WorkflowStatus, manualBlocked map[stri
 		if ps.IsBlocked {
 			continue
 		}
+		var candidates []pt.Issue
 		for _, t := range ps.Tasks {
 			if t.Status != "open" {
 				continue
@@ -360,7 +361,13 @@ func applyWorkflowTaskBlockers(status *pt.WorkflowStatus, manualBlocked map[stri
 			if len(taskBlockers[t.ID]) > 0 {
 				continue
 			}
-			cp := t
+			candidates = append(candidates, t)
+		}
+		// Deterministic selection: prefer higher priority, then title.
+		// Store iteration order is not stable, so do not depend on ps.Tasks ordering.
+		pt.SortIssues(candidates, "priority")
+		if len(candidates) > 0 {
+			cp := candidates[0]
 			status.SuggestedNext = &cp
 			status.NextReason = fmt.Sprintf("Phase: %s - %s", ps.Phase.Name, ps.Phase.Description)
 			return
@@ -677,8 +684,20 @@ func cmdWorkflowCheck(args []string) error {
 		comments[iss.ID] = comms
 	}
 
-	// Check gate
-	canProceed, isHard, blockingPhase, msg := workflow.CheckGate(*taskID, task, meta, allIssues, comments)
+	// Check gate (feature-flagged).
+	var canProceed bool
+	var isHard bool
+	var blockingPhase string
+	var msg string
+	if useEngineV2() {
+		eng, err := engine.NewV2(workflow)
+		if err != nil {
+			return fmt.Errorf("compile workflow: %w", err)
+		}
+		canProceed, isHard, blockingPhase, msg = eng.CheckGate(*taskID, task, meta, allIssues, comments)
+	} else {
+		canProceed, isHard, blockingPhase, msg = workflow.CheckGate(*taskID, task, meta, allIssues, comments)
+	}
 	phaseID := workflow.GetTaskPhase(task, meta)
 
 	if canProceed {

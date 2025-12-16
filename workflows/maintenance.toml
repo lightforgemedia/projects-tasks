@@ -1,0 +1,75 @@
+# Maintenance Workflow Template
+#
+# Purpose: Safe, iterative changes for existing codebases (bugs, refactors, chores).
+# Philosophy: Repro → Fix → Verify → Signoff.
+
+name = "maintenance"
+description = "Investigate → Fix → Verify → Signoff"
+
+[phase_assignment]
+default_phase = "fix"
+label_prefix = "phase:"
+
+[phase_assignment.by_template]
+spike = "investigate"
+bug_fix = "fix"
+refactor = "fix"
+observability_hook = "fix"
+
+[[phases]]
+id = "investigate"
+name = "Investigate"
+order = 1
+description = "Repro, reduce scope, capture evidence"
+
+[phases.gate]
+type = "soft"
+condition = "all_closed"
+reminder_before = "Investigation tasks not complete; proceed only if risk is understood."
+
+[phases.proof]
+required = true
+description = "Repro steps + evidence"
+hint = "Capture logs/screenshot/trace in outputs/<task-id>/ and link in comments."
+
+[[phases]]
+id = "fix"
+name = "Fix"
+order = 2
+description = "Implement smallest correct change"
+
+[phases.gate]
+type = "soft"
+condition = "phase:investigate complete"
+reminder_before = "Fix starting before investigation complete; risk of rework."
+
+[[phases]]
+id = "verify"
+name = "Verify"
+order = 3
+description = "Run full tests; add integration tests if relevant"
+
+[phases.gate]
+type = "soft"
+condition = "phase:fix complete"
+reminder_before = "Verification starting before fixes are complete."
+
+[phases.proof]
+required = true
+description = "Test outputs"
+hint = "Attach test logs (or CI link) proving fix and no regressions."
+
+[[phases]]
+id = "signoff"
+name = "Signoff"
+order = 4
+description = "Final demo / approval checkpoint"
+
+[phases.gate]
+type = "hard"
+condition = "phase:verify has_comment:demo OR phase:verify has_comment:risk-accepted"
+block_message = "Signoff blocked. Add a demo link (comment contains 'demo') or explicitly accept risk (comment contains 'risk-accepted') in verify phase."
+
+[phases.checkpoint]
+trigger = "phase_start"
+prompt = "Prepare a short demo (how to run + what to look for)."

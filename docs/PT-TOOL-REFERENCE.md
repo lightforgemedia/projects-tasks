@@ -129,6 +129,16 @@ condition = "phase:integrate complete"
 block_message = "Signoff blocked. All integration tasks must be closed."
 ```
 
+## Workflow Template: maintenance
+
+Use `workflows/maintenance.toml` for bugfix/refactor work in an existing codebase:
+
+```bash
+export PT_WORKFLOW=workflows/maintenance.toml
+pt workflow status
+pt next
+```
+
 **Note:** If a phase has **zero tasks**, comment-based gates (e.g. `has_comment:user-picked`) are treated as satisfied to avoid deadlocking the workflow. If you want a gate to be enforced, ensure at least one task is assigned to that phase.
 
 ---

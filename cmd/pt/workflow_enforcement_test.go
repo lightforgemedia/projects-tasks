@@ -13,20 +13,29 @@ import (
 )
 
 func TestCmdClaimEnforcesWorkflowHardGate(t *testing.T) {
-	path, store := setupStoreEnv(t)
+	for _, mode := range []struct {
+		name   string
+		engine string
+	}{
+		{name: "v1", engine: ""},
+		{name: "v2", engine: "v2"},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			path, store := setupStoreEnv(t)
+			t.Setenv("PT_ENGINE", mode.engine)
 
-	manifest := pt.Manifest{
-		Tasks: []pt.Task{
-			{Title: "Spike", Template: "spike", Role: "dev", Artifact: "doc:spike", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
-			{Title: "Build", Template: "backend_endpoint", Role: "dev", Artifact: "code:build", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
-		},
-	}
-	if _, err := store.Sync(t.Context(), manifest); err != nil {
-		t.Fatalf("sync err: %v", err)
-	}
+			manifest := pt.Manifest{
+				Tasks: []pt.Task{
+					{Title: "Spike", Template: "spike", Role: "dev", Artifact: "doc:spike", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+					{Title: "Build", Template: "backend_endpoint", Role: "dev", Artifact: "code:build", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+				},
+			}
+			if _, err := store.Sync(t.Context(), manifest); err != nil {
+				t.Fatalf("sync err: %v", err)
+			}
 
-	wfPath := filepath.Join(t.TempDir(), "wf.toml")
-	wf := `
+			wfPath := filepath.Join(t.TempDir(), "wf.toml")
+			wf := `
 name = "wf"
 
 [phase_assignment.by_template]
@@ -47,41 +56,52 @@ id = "build"
 name = "Build"
 order = 2
 `
-	if err := os.WriteFile(wfPath, []byte(wf), 0644); err != nil {
-		t.Fatalf("write workflow: %v", err)
-	}
-	t.Setenv("PT_WORKFLOW", wfPath)
+			if err := os.WriteFile(wfPath, []byte(wf), 0644); err != nil {
+				t.Fatalf("write workflow: %v", err)
+			}
+			t.Setenv("PT_WORKFLOW", wfPath)
 
-	// pt-2 is in build phase; should be blocked until risk phase is closed.
-	if err := cmdClaim([]string{"--as", "alice", "pt-2"}); err == nil {
-		t.Fatalf("expected hard gate to block claim")
-	}
+			// pt-2 is in build phase; should be blocked until risk phase is closed.
+			if err := cmdClaim([]string{"--as", "alice", "pt-2"}); err == nil {
+				t.Fatalf("expected hard gate to block claim")
+			}
 
-	// Close the risk task and retry.
-	store = pt.NewStoreClient(path, "pt")
-	if err := store.UpdateIssue(t.Context(), "pt-1", "closed", ""); err != nil {
-		t.Fatalf("close risk: %v", err)
-	}
-	if err := cmdClaim([]string{"--as", "alice", "pt-2"}); err != nil {
-		t.Fatalf("claim after risk closed: %v", err)
+			// Close the risk task and retry.
+			store = pt.NewStoreClient(path, "pt")
+			if err := store.UpdateIssue(t.Context(), "pt-1", "closed", ""); err != nil {
+				t.Fatalf("close risk: %v", err)
+			}
+			if err := cmdClaim([]string{"--as", "alice", "pt-2"}); err != nil {
+				t.Fatalf("claim after risk closed: %v", err)
+			}
+		})
 	}
 }
 
 func TestCmdClaimSoftGateRequiresOverrideAndRecordsComment(t *testing.T) {
-	path, store := setupStoreEnv(t)
+	for _, mode := range []struct {
+		name   string
+		engine string
+	}{
+		{name: "v1", engine: ""},
+		{name: "v2", engine: "v2"},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			path, store := setupStoreEnv(t)
+			t.Setenv("PT_ENGINE", mode.engine)
 
-	manifest := pt.Manifest{
-		Tasks: []pt.Task{
-			{Title: "Spike", Template: "spike", Role: "dev", Artifact: "doc:spike", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
-			{Title: "Build", Template: "backend_endpoint", Role: "dev", Artifact: "code:build", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
-		},
-	}
-	if _, err := store.Sync(t.Context(), manifest); err != nil {
-		t.Fatalf("sync err: %v", err)
-	}
+			manifest := pt.Manifest{
+				Tasks: []pt.Task{
+					{Title: "Spike", Template: "spike", Role: "dev", Artifact: "doc:spike", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+					{Title: "Build", Template: "backend_endpoint", Role: "dev", Artifact: "code:build", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+				},
+			}
+			if _, err := store.Sync(t.Context(), manifest); err != nil {
+				t.Fatalf("sync err: %v", err)
+			}
 
-	wfPath := filepath.Join(t.TempDir(), "wf.toml")
-	wf := `
+			wfPath := filepath.Join(t.TempDir(), "wf.toml")
+			wf := `
 name = "wf"
 
 [phase_assignment.by_template]
@@ -102,32 +122,73 @@ id = "build"
 name = "Build"
 order = 2
 `
-	if err := os.WriteFile(wfPath, []byte(wf), 0644); err != nil {
-		t.Fatalf("write workflow: %v", err)
-	}
-	t.Setenv("PT_WORKFLOW", wfPath)
+			if err := os.WriteFile(wfPath, []byte(wf), 0644); err != nil {
+				t.Fatalf("write workflow: %v", err)
+			}
+			t.Setenv("PT_WORKFLOW", wfPath)
 
-	// Without override, claim should be blocked.
-	if err := cmdClaim([]string{"--as", "alice", "pt-2"}); err == nil {
-		t.Fatalf("expected soft gate to block claim without override")
-	}
+			// Without override, claim should be blocked.
+			if err := cmdClaim([]string{"--as", "alice", "pt-2"}); err == nil {
+				t.Fatalf("expected soft gate to block claim without override")
+			}
 
-	// With override, claim should proceed and record an override comment.
-	if err := cmdClaim([]string{"--as", "alice", "--override-soft", "proceeding to unblock parallel work", "pt-2"}); err != nil {
-		t.Fatalf("claim with override: %v", err)
-	}
+			// With override, claim should proceed and record an override comment.
+			if err := cmdClaim([]string{"--as", "alice", "--override-soft", "proceeding to unblock parallel work", "pt-2"}); err != nil {
+				t.Fatalf("claim with override: %v", err)
+			}
 
-	store = pt.NewStoreClient(path, "pt")
-	comments := store.CommentsFor("pt-2")
-	found := false
-	for _, c := range comments {
-		if strings.Contains(c, "gate-override: risk") {
-			found = true
-			break
-		}
+			store = pt.NewStoreClient(path, "pt")
+			comments := store.CommentsFor("pt-2")
+			found := false
+			for _, c := range comments {
+				if strings.Contains(c, "gate-override: risk") {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected gate-override comment on pt-2, got: %v", comments)
+			}
+		})
 	}
-	if !found {
-		t.Fatalf("expected gate-override comment on pt-2, got: %v", comments)
+}
+
+func TestCmdClaimBlockedByDepsParity(t *testing.T) {
+	for _, mode := range []struct {
+		name   string
+		engine string
+	}{
+		{name: "v1", engine: ""},
+		{name: "v2", engine: "v2"},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			_, store := setupStoreEnv(t)
+			t.Setenv("PT_ENGINE", mode.engine)
+
+			manifest := pt.Manifest{
+				Tasks: []pt.Task{
+					{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+					{Title: "B", Template: "backend_endpoint", Role: "dev", Artifact: "spec:b", Deps: []string{"A"}, DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+				},
+			}
+			if _, err := store.Sync(t.Context(), manifest); err != nil {
+				t.Fatalf("sync err: %v", err)
+			}
+
+			// Claiming B should fail because A is still open (deps not satisfied),
+			// regardless of engine mode.
+			if err := cmdClaim([]string{"--as", "alice", "pt-2"}); err == nil {
+				t.Fatalf("expected deps to block claim")
+			}
+
+			// Close A and retry.
+			if err := store.UpdateIssue(t.Context(), "pt-1", "closed", ""); err != nil {
+				t.Fatalf("close dep: %v", err)
+			}
+			if err := cmdClaim([]string{"--as", "alice", "pt-2"}); err != nil {
+				t.Fatalf("claim after deps closed: %v", err)
+			}
+		})
 	}
 }
 
@@ -216,4 +277,3 @@ order = 2
 		t.Fatalf("expected 2 tasks with --all-phases, got %d: %v", len(out), out)
 	}
 }
-

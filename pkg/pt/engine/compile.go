@@ -26,7 +26,7 @@ func Compile(workflow pt.Workflow) (*IR, error) {
 		if gate.Condition != "" {
 			expr, err := compileGateExpr(gate.Condition)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("phase %q gate condition %q: %w", p.ID, gate.Condition, err)
 			}
 			gate.Expr = expr
 		}
@@ -94,4 +94,3 @@ func compileGateExpr(cond string) (GateExpr, error) {
 		return UnknownExpr{Condition: c}, nil
 	}
 }
-

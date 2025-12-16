@@ -221,6 +221,140 @@ order = 1
 	}
 }
 
+func TestEngineV2Conformance_ValidateAndApprove_JSONParity(t *testing.T) {
+	t.Setenv("PT_SKIP_HOOKS", "1")
+
+	baseDoD := pt.DefinitionOfDone{
+		Manual:   "manual step",
+		Tests:    []string{"echo ok"},
+		Criteria: []string{"ok"},
+	}
+
+	type scenario struct {
+		name      string
+		setup     func(t *testing.T, store *pt.StoreClient)
+		runCmd    func(t *testing.T, dbPath, wfPath string) (map[string]any, error)
+		assertDB  func(t *testing.T, dbPath string)
+		wantError bool
+	}
+
+	// Minimal workflow file so claim-gating discovery isn't in play; validate/approve should be engine-agnostic.
+	wf := `
+name = "wf"
+
+[phase_assignment]
+label_prefix = "phase:"
+default_phase = "build"
+
+[[phases]]
+id = "build"
+name = "Build"
+order = 1
+`
+
+	scenarios := []scenario{
+		{
+			name: "validate_json_parity",
+			setup: func(t *testing.T, store *pt.StoreClient) {
+				manifest := pt.Manifest{Tasks: []pt.Task{{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "code:a", DoD: baseDoD}}}
+				if _, err := store.Sync(t.Context(), manifest); err != nil {
+					t.Fatalf("sync: %v", err)
+				}
+				if err := store.UpdateIssue(t.Context(), "pt-1", "in_progress", "dev"); err != nil {
+					t.Fatalf("update: %v", err)
+				}
+				_ = store.AddLabels(t.Context(), "pt-1", "phase:build")
+			},
+			runCmd: func(t *testing.T, dbPath, _ string) (map[string]any, error) {
+				return runCmdValidateJSON(t, []string{"--db", dbPath, "--yes", "--json", "pt-1"})
+			},
+			assertDB: func(t *testing.T, dbPath string) {
+				s := pt.NewStoreClient(dbPath, "pt")
+				iss, _, err := s.GetTask(t.Context(), "pt-1")
+				if err != nil {
+					t.Fatalf("get task: %v", err)
+				}
+				if iss.Status != "needs_review" {
+					t.Fatalf("status=%s, want needs_review", iss.Status)
+				}
+			},
+		},
+		{
+			name: "approve_json_parity",
+			setup: func(t *testing.T, store *pt.StoreClient) {
+				manifest := pt.Manifest{Tasks: []pt.Task{{Title: "A", Template: "backend_endpoint", Role: "dev", Artifact: "code:a", DoD: baseDoD}}}
+				if _, err := store.Sync(t.Context(), manifest); err != nil {
+					t.Fatalf("sync: %v", err)
+				}
+				if err := store.UpdateIssue(t.Context(), "pt-1", "needs_review", "dev"); err != nil {
+					t.Fatalf("update: %v", err)
+				}
+				_ = store.AddLabels(t.Context(), "pt-1", "phase:build")
+			},
+			runCmd: func(t *testing.T, dbPath, _ string) (map[string]any, error) {
+				return runCmdApproveJSON(t, []string{"--db", dbPath, "--json", "pt-1"})
+			},
+			assertDB: func(t *testing.T, dbPath string) {
+				s := pt.NewStoreClient(dbPath, "pt")
+				iss, _, err := s.GetTask(t.Context(), "pt-1")
+				if err != nil {
+					t.Fatalf("get task: %v", err)
+				}
+				if iss.Status != "closed" {
+					t.Fatalf("status=%s, want closed", iss.Status)
+				}
+			},
+		},
+	}
+
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			_, store := setupStoreEnv(t)
+
+			wfPath := filepath.Join(t.TempDir(), "wf.toml")
+			if err := os.WriteFile(wfPath, []byte(wf), 0o644); err != nil {
+				t.Fatalf("write wf: %v", err)
+			}
+			t.Setenv("PT_WORKFLOW", wfPath)
+
+			sc.setup(t, store)
+
+			// Snapshot the store after setup so v1 and v2 can run on identical inputs.
+			baseDBPath := os.Getenv("PT_DB")
+			raw, err := os.ReadFile(baseDBPath)
+			if err != nil {
+				t.Fatalf("read base db: %v", err)
+			}
+
+			run := func(t *testing.T, engine string) (map[string]any, string) {
+				t.Helper()
+				t.Setenv("PT_ENGINE", engine)
+
+				dbCopy := filepath.Join(t.TempDir(), "db.json")
+				if err := os.WriteFile(dbCopy, raw, 0o644); err != nil {
+					t.Fatalf("write db copy: %v", err)
+				}
+				out, err := sc.runCmd(t, dbCopy, wfPath)
+				if sc.wantError && err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !sc.wantError && err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				sc.assertDB(t, dbCopy)
+				return out, dbCopy
+			}
+
+			v1Out, _ := run(t, "")
+			v2Out, _ := run(t, "v2")
+
+			if !reflect.DeepEqual(v1Out, v2Out) {
+				t.Fatalf("JSON mismatch v1 vs v2\nv1=%v\nv2=%v", v1Out, v2Out)
+			}
+		})
+	}
+}
+
 func statusDigest(status map[string]any) map[string]any {
 	out := map[string]any{}
 	if wf, ok := status["workflow"].(map[string]any); ok {
@@ -278,4 +412,59 @@ func runCmdWorkflowStatusJSON(t *testing.T, args []string) map[string]any {
 		t.Fatalf("unmarshal: %v\nraw=%s", err, buf.String())
 	}
 	return out
+}
+
+func runCmdValidateJSON(t *testing.T, args []string) (map[string]any, error) {
+	t.Helper()
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := cmdValidate(args)
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	// cmdValidate prints command output even in --json mode. Extract the final JSON object.
+	obj := mustExtractLastJSONObject(t, buf.Bytes())
+	return obj, err
+}
+
+func runCmdApproveJSON(t *testing.T, args []string) (map[string]any, error) {
+	t.Helper()
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := cmdApprove(args)
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	var out map[string]any
+	if uerr := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &out); uerr != nil {
+		t.Fatalf("unmarshal approve json: %v\nraw=%s", uerr, buf.String())
+	}
+	return out, err
+}
+
+func mustExtractLastJSONObject(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	b := bytes.TrimSpace(raw)
+	// Scan backwards for a '{' that yields a valid JSON object.
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] != '{' {
+			continue
+		}
+		var out map[string]any
+		if err := json.Unmarshal(b[i:], &out); err == nil {
+			return out
+		}
+	}
+	t.Fatalf("no JSON object found in output:\n%s", string(raw))
+	return nil
 }

@@ -17,6 +17,7 @@ import (
 
 	projects_tasks_pkg_contract "projects-tasks/pkg/contract"
 	"projects-tasks/pkg/pt"
+	"projects-tasks/pkg/pt/engine"
 )
 
 func newClientWith(db, prefix string) pt.Client {
@@ -1467,7 +1468,19 @@ func cmdClaim(args []string) error {
 			comments[iss.ID] = comms
 		}
 
-		canProceed, isHard, blockingPhase, msg := wf.CheckGate(id, issue, meta, allIssues, comments)
+		var canProceed bool
+		var isHard bool
+		var blockingPhase string
+		var msg string
+		if useEngineV2() {
+			e, err := engine.NewV2(wf)
+			if err != nil {
+				return fmt.Errorf("compile workflow: %w", err)
+			}
+			canProceed, isHard, blockingPhase, msg = e.CheckGate(id, issue, meta, allIssues, comments)
+		} else {
+			canProceed, isHard, blockingPhase, msg = wf.CheckGate(id, issue, meta, allIssues, comments)
+		}
 		gateRes = &workflowGateResult{
 			CanProceed:    canProceed,
 			IsHardBlock:   isHard,
