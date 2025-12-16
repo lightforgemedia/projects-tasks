@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -46,15 +47,15 @@ type nextProjectDoD struct {
 }
 
 type nextResult struct {
-	Mode            nextMode            `json:"mode"`
-	Recommended     []nextRecommendation`json:"recommended"`
-	Why             []string            `json:"why,omitempty"`
-	CurrentPhase    nextPhase           `json:"current_phase,omitempty"`
-	Blocking        *nextBlocking       `json:"blocking,omitempty"`
-	ApprovalsNeeded []string            `json:"approvals_needed,omitempty"` // internal|end_user
-	AskUser         bool                `json:"ask_user"`
-	AskUserPrompts  []string            `json:"ask_user_prompts,omitempty"`
-	ProjectDoD      nextProjectDoD      `json:"project_dod"`
+	Mode            nextMode             `json:"mode"`
+	Recommended     []nextRecommendation `json:"recommended"`
+	Why             []string             `json:"why,omitempty"`
+	CurrentPhase    nextPhase            `json:"current_phase,omitempty"`
+	Blocking        *nextBlocking        `json:"blocking,omitempty"`
+	ApprovalsNeeded []string             `json:"approvals_needed,omitempty"` // internal|end_user
+	AskUser         bool                 `json:"ask_user"`
+	AskUserPrompts  []string             `json:"ask_user_prompts,omitempty"`
+	ProjectDoD      nextProjectDoD       `json:"project_dod"`
 }
 
 func cmdNext(args []string) error {
@@ -205,6 +206,9 @@ func cmdNext(args []string) error {
 			continue
 		}
 		meta, _ := pt.ParseTaskMeta(task.Description)
+		if reason := unclaimableReason(task, meta); reason != "" {
+			continue
+		}
 
 		if wf != nil {
 			canProceed, isHard, blockingPhase, msg := wf.CheckGate(task.ID, task, meta, allIssues, comments)
@@ -299,12 +303,25 @@ func cmdNext(args []string) error {
 			return printNext(out, *jsonOut)
 		}
 		out.Why = append(out.Why, "open tasks exist but none are currently claimable (deps/blocked/gates/filters)")
+		// Point to one concrete task to inspect, plus the broad views.
+		var openIssues []pt.Issue
+		for _, iss := range allIssues {
+			if iss.Status == "open" {
+				openIssues = append(openIssues, iss)
+			}
+		}
+		pt.SortIssues(openIssues, "priority")
 		out.Recommended = []nextRecommendation{
 			{Cmd: "pt workflow status", Kind: "unblock"},
 			{Cmd: "pt ready --all-phases --verbose", Kind: "unblock"},
-			{Cmd: "pt blocked", Kind: "unblock"},
-			{Cmd: "pt next --all-phases", Kind: "unblock"},
 		}
+		if len(openIssues) > 0 {
+			out.Recommended = append(out.Recommended, nextRecommendation{Cmd: fmt.Sprintf("pt show %s", openIssues[0].ID), Kind: "unblock"})
+		}
+		out.Recommended = append(out.Recommended,
+			nextRecommendation{Cmd: "pt blocked", Kind: "unblock"},
+			nextRecommendation{Cmd: "pt next --all-phases", Kind: "unblock"},
+		)
 		return printNext(out, *jsonOut)
 	}
 
@@ -371,4 +388,22 @@ func defaultIdentityForPrint() string {
 		return "$USERNAME"
 	}
 	return "<you>"
+}
+
+func unclaimableReason(task pt.Issue, meta pt.TaskMeta) string {
+	artifact := strings.TrimSpace(meta.Artifact)
+	if artifact == "" {
+		artifact = strings.TrimSpace(issueArtifact(task))
+	}
+	if strings.HasPrefix(artifact, "code:") {
+		p := strings.TrimSpace(strings.TrimPrefix(artifact, "code:"))
+		// Only treat explicit file artifacts as preflight blockers. Directories or symbolic
+		// artifacts are allowed to be created by the task itself.
+		if filepath.Ext(p) != "" {
+			if _, err := os.Stat(p); err != nil {
+				return fmt.Sprintf("missing artifact file: %s", p)
+			}
+		}
+	}
+	return ""
 }

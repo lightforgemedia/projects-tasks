@@ -273,6 +273,54 @@ func TestCmdNextBlockedOnlySuggestsBlockedCommand(t *testing.T) {
 	}
 }
 
+func TestCmdNextSkipsUnclaimableOpen(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	td := t.TempDir()
+	existing := filepath.Join(td, "exists.go")
+	if err := os.WriteFile(existing, []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write existing: %v", err)
+	}
+	missing := filepath.Join(td, "missing.go")
+
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Unclaimable", Template: "backend_endpoint", Role: "dev", Artifact: "code:" + missing, DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+			{Title: "Claimable", Template: "backend_endpoint", Role: "dev", Artifact: "code:" + existing, DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	// Ensure the unclaimable task would be preferred by priority if not skipped.
+	p0 := 0
+	if err := store.UpdateTask(t.Context(), "pt-1", pt.UpdateOptions{Priority: &p0}); err != nil {
+		t.Fatalf("update priority: %v", err)
+	}
+
+	out := runCmdNextJSON(t, []string{"--json"})
+	if out["mode"] != "WORK" {
+		t.Fatalf("mode=%v, want WORK", out["mode"])
+	}
+	recs, ok := out["recommended"].([]any)
+	if !ok || len(recs) == 0 {
+		t.Fatalf("expected recommendations, got: %v", out["recommended"])
+	}
+	var claimCmd string
+	for _, r := range recs {
+		m, _ := r.(map[string]any)
+		cmd, _ := m["cmd"].(string)
+		if strings.Contains(cmd, "pt-1") {
+			t.Fatalf("expected pt-1 to be skipped as unclaimable, got recommendation: %q", cmd)
+		}
+		if strings.HasPrefix(cmd, "pt claim ") {
+			claimCmd = cmd
+		}
+	}
+	if !strings.Contains(claimCmd, "pt-2") {
+		t.Fatalf("expected claim to target pt-2, got: %q (recs=%v)", claimCmd, recs)
+	}
+}
+
 func runCmdNextJSON(t *testing.T, args []string) map[string]any {
 	t.Helper()
 	old := os.Stdout
