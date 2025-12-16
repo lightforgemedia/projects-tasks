@@ -1,0 +1,13 @@
+base=http://127.0.0.1:53110
+--- /products
+    <button type="button" aria-label="Quick Add" data-testid="quick-add">Quick Add</button>
+    <div role="dialog" aria-label="Mini cart" data-testid="mini-cart" id="mini-cart" aria-hidden="true">
+        var cart = document.querySelector('[data-testid="mini-cart"]');
+--- /login
+    <label for="email">Email</label>
+    <button type="button" aria-label="Sign in" data-testid="sign-in">Sign in</button>
+--- /settings/profile
+    <button type="button" aria-label="Edit profile" data-testid="edit-profile">Edit profile</button>
+    <div role="status" aria-label="Toast" id="toast" data-testid="toast" aria-hidden="true">Saved</div>
+        var toast = document.querySelector('[data-testid="toast"]');
+OK

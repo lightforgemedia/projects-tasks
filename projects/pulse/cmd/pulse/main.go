@@ -8,17 +8,22 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"pulse/flow"
 	"pulse/impact"
+	"pulse/internal/demo"
 )
 
 func main() {
 	flags := flag.NewFlagSet("pulse", flag.ExitOnError)
+	demoMode := flags.Bool("demo", false, "start the local demo server (for MVP verification)")
+	demoAddr := flags.String("addr", "127.0.0.1:8085", "listen address for --demo")
 	dryRun := flags.Bool("dry-run", false, "dry-run: load flows, select impacted set, print plan (no browser)")
 	diffRange := flags.String("diff", "", "git diff range (e.g. HEAD~1..HEAD) used for impact selection")
 	repoDir := flags.String("repo", "", "override git repo root (default: git rev-parse --show-toplevel)")
@@ -27,13 +32,23 @@ func main() {
 	impactConfig := flags.String("impact-config", "", "override impact config path (default: <pulse-root>/impact/map.pulse.toml)")
 	jsonOut := flags.Bool("json", false, "emit JSON (reserved; not implemented)")
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: pulse --dry-run --diff=RANGE [--repo=DIR] [--pulse-root=DIR] [--flows-dir=DIR] [--impact-config=FILE]")
+		fmt.Fprintln(os.Stderr, "Usage:")
+		fmt.Fprintln(os.Stderr, "  pulse --demo [--addr=127.0.0.1:8085]")
+		fmt.Fprintln(os.Stderr, "  pulse --dry-run --diff=RANGE [--repo=DIR] [--pulse-root=DIR] [--flows-dir=DIR] [--impact-config=FILE]")
 	}
 	_ = jsonOut // reserved for a follow-up task
 	flags.Parse(os.Args[1:])
 
+	if *demoMode {
+		if err := runDemoServer(*demoAddr); err != nil {
+			fmt.Fprintf(os.Stderr, "error: demo server: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if !*dryRun {
-		fmt.Fprintln(os.Stderr, "pulse: only --dry-run is implemented in MVP")
+		fmt.Fprintln(os.Stderr, "pulse: use --demo or --dry-run (MVP)")
 		os.Exit(2)
 	}
 	if strings.TrimSpace(*diffRange) == "" {
@@ -190,4 +205,22 @@ func reasonsForFlow(f flow.Flow, selectedTags []string) []string {
 	}
 	sort.Strings(reasons)
 	return reasons
+}
+
+func runDemoServer(addr string) error {
+	s, err := demo.Start(addr)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Pulse demo server listening: %s\n", s.BaseURL)
+	fmt.Printf("Routes: /products?query=socks  /login  /settings/profile\n")
+	fmt.Printf("Ctrl+C to stop.\n")
+
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	<-ch
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return s.Close(ctx)
 }
