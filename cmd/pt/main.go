@@ -418,6 +418,8 @@ func run(args []string) error {
 		return cmdSearch(cmdArgs)
 	case "feedback":
 		return cmdFeedback(cmdArgs)
+	case "review":
+		return cmdReview(cmdArgs)
 	case "hooks":
 		return cmdHooksPrint()
 	case "history":
@@ -490,6 +492,7 @@ VIEW & SEARCH
   show    <id> [--json]              Task details, DoD, deps
   search  --query="text"             Search across all tasks
   history <id>                       View task timeline
+  review  <subcmd>                   Save a kickoff/closeout/demo markdown review to .pt/reviews/
 
 CREATE & UPDATE
   sync    <manifest>                 Import/update from TOML
@@ -503,6 +506,7 @@ WORKFLOW GUIDANCE
   status                             Current phase and progress
   next                               Conductor: recommended next action (review → work → unblock → plan → done)
   workflow check --task=<id>         Validate phase gates (for hooks/CI)
+  sync --generate-phase-reviews      Add non-blocking kickoff/closeout/demo checkpoint tasks per phase (recommended rails)
 
 WORKTREES (task isolation)
   worktree start <id>                Create branch + worktree
@@ -641,7 +645,8 @@ func cmdSync(args []string) error {
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	generateReviews := fs.Bool("generate-reviews", false, "generate review tasks that block implementation tasks")
-	fs.Usage = func() { fmt.Println("Usage: pt sync <manifest> [--generate-reviews]") }
+	generatePhaseReviews := fs.Bool("generate-phase-reviews", false, "generate pre/post phase review tasks (rails; do not block work by default)")
+	fs.Usage = func() { fmt.Println("Usage: pt sync <manifest> [--generate-reviews] [--generate-phase-reviews]") }
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -698,6 +703,13 @@ func cmdSync(args []string) error {
 			return fmt.Errorf("generate reviews: %w", err)
 		}
 	}
+	var phaseReviewIDs map[string]string
+	if *generatePhaseReviews {
+		phaseReviewIDs, err = generatePhaseReviewTasks(ctx, client, strings.TrimSpace(*dbPath), strings.TrimSpace(*prefix))
+		if err != nil {
+			return fmt.Errorf("generate phase reviews: %w", err)
+		}
+	}
 
 	postHooks, err := runHooks("post-sync", hookPayload{Actor: actor})
 	if err != nil {
@@ -712,6 +724,9 @@ func cmdSync(args []string) error {
 		if reviewIDs != nil {
 			result["reviews"] = reviewIDs
 		}
+		if phaseReviewIDs != nil {
+			result["phase_reviews"] = phaseReviewIDs
+		}
 		return printJSON(result)
 	}
 	for title, id := range idMap {
@@ -723,6 +738,12 @@ func cmdSync(args []string) error {
 			fmt.Printf("  %s -> %s\n", title, id)
 		}
 	}
+	if phaseReviewIDs != nil {
+		fmt.Println("\nPhase review rails generated (recommended checkpoints; not hard gates by default):")
+		for title, id := range phaseReviewIDs {
+			fmt.Printf("  %s -> %s\n", title, id)
+		}
+	}
 	path, exists := projectDoDStatus()
 	if exists {
 		fmt.Printf("Project DoD: %s (ensure a review/sign-off task tracks it; set PT_PROJECT_DOD to override)\n", path)
@@ -730,6 +751,132 @@ func cmdSync(args []string) error {
 		fmt.Printf("Project DoD missing. Create %s (or set PT_PROJECT_DOD) and add a review/sign-off task to guide completion.\n", path)
 	}
 	return nil
+}
+
+func generatePhaseReviewTasks(ctx context.Context, client pt.Client, dbPath, prefix string) (map[string]string, error) {
+	out := make(map[string]string)
+
+	wfPath, err := findWorkflowFile()
+	if err != nil {
+		return nil, fmt.Errorf("workflow required for phase review generation: %w", err)
+	}
+	wf, err := pt.ParseWorkflow(wfPath)
+	if err != nil {
+		return nil, fmt.Errorf("parse workflow: %w", err)
+	}
+
+	issues, err := client.List(ctx, nil, "", 2000)
+	if err != nil {
+		return nil, fmt.Errorf("list issues: %w", err)
+	}
+	titleToID := map[string]string{}
+	for _, iss := range issues {
+		titleToID[iss.Title] = iss.ID
+	}
+
+	addOrGet := func(title string, task pt.Task, labels ...string) (string, error) {
+		if id, ok := titleToID[title]; ok {
+			_ = client.AddLabels(ctx, id, labels...)
+			return id, nil
+		}
+		id, err := client.AddTask(ctx, task)
+		if err != nil {
+			return "", err
+		}
+		titleToID[title] = id
+		_ = client.AddLabels(ctx, id, labels...)
+		return id, nil
+	}
+
+	setMetaDoDTests := func(id string, tests []string) {
+		iss, meta, err := client.GetTask(ctx, id)
+		if err != nil {
+			_ = iss
+			return
+		}
+		meta.DoD.Tests = tests
+		_ = client.UpdateMeta(ctx, id, meta)
+	}
+
+	phaseIDs := append([]pt.Phase{}, wf.Phases...)
+	sort.Slice(phaseIDs, func(i, j int) bool { return phaseIDs[i].Order < phaseIDs[j].Order })
+	lastPhaseID := ""
+	if len(phaseIDs) > 0 {
+		lastPhaseID = phaseIDs[len(phaseIDs)-1].ID
+	}
+
+	// These tasks are "rails": they do not block work via deps, but pt next can recommend
+	// them at phase boundaries.
+	for _, ph := range phaseIDs {
+		phaseLabel := "phase:" + ph.ID
+
+		preTitle := fmt.Sprintf("[Phase Pre] %s", ph.Name)
+		pre := pt.Task{
+			Title:    preTitle,
+			Template: "discovery",
+			Role:     "planner",
+			Artifact: fmt.Sprintf("review:%s:pre", ph.ID),
+			Context:  "Kickoff review: confirm plan, options considered, risks/spikes, evidence, and final demo expectations before starting phase work.",
+			DoD: pt.DefinitionOfDone{
+				Tests:    []string{"echo 'review prepared'"},
+				Manual:   "Run: pt review write <this-task-id> --kind=pre --phase=" + ph.ID + " --desc=\"...\"",
+				Criteria: []string{"Kickoff review markdown exists and is linked via review-file comment", "Demo plan is concrete (how to run + what to look for)"},
+			},
+		}
+		postTitle := fmt.Sprintf("[Phase Post] %s", ph.Name)
+		post := pt.Task{
+			Title:    postTitle,
+			Template: "discovery",
+			Role:     "planner",
+			Artifact: fmt.Sprintf("review:%s:post", ph.ID),
+			Context:  "Closeout review: what was done, what changed vs plan, evidence, and what’s next.",
+			DoD: pt.DefinitionOfDone{
+				Tests:    []string{"echo 'review prepared'"},
+				Manual:   "Run: pt review write <this-task-id> --kind=post --phase=" + ph.ID + " --desc=\"...\"",
+				Criteria: []string{"Closeout review markdown exists and is linked via review-file comment"},
+			},
+		}
+
+		preID, err := addOrGet(preTitle, pre, "checkpoint:required", "checkpoint:pre", phaseLabel)
+		if err != nil {
+			return nil, fmt.Errorf("add pre review for phase %s: %w", ph.ID, err)
+		}
+		setMetaDoDTests(preID, []string{fmt.Sprintf("pt review check %s --kind=pre", preID)})
+		out[preTitle] = preID
+
+		postID, err := addOrGet(postTitle, post, "checkpoint:required", "checkpoint:post", phaseLabel)
+		if err != nil {
+			return nil, fmt.Errorf("add post review for phase %s: %w", ph.ID, err)
+		}
+		setMetaDoDTests(postID, []string{fmt.Sprintf("pt review check %s --kind=post", postID)})
+		out[postTitle] = postID
+	}
+
+	// Final demo task (explicit, user-facing proof). Keep it as a rail by default.
+	if lastPhaseID != "" {
+		title := "[Project Demo] Prepare and capture end-to-end walkthrough"
+		demo := pt.Task{
+			Title:    title,
+			Template: "discovery",
+			Role:     "planner",
+			Artifact: "demo:outputs/demo/",
+			Context:  "Prepare a runnable demo with clear commands and captured artifacts (logs/screenshots). This is what the user will actually see.",
+			DoD: pt.DefinitionOfDone{
+				Tests:    []string{"echo 'review prepared'"},
+				Manual:   "Run: pt review write <this-task-id> --kind=demo --phase=" + lastPhaseID + " --desc=\"demo\" and execute the commands it specifies.",
+				Criteria: []string{"Demo markdown exists and is linked via review-file comment", "Demo commands are runnable and artifacts are captured under outputs/"},
+			},
+		}
+		phaseLabel := "phase:" + lastPhaseID
+		id, err := addOrGet(title, demo, "checkpoint:required", "checkpoint:demo", phaseLabel)
+		if err != nil {
+			return nil, fmt.Errorf("add demo task: %w", err)
+		}
+		setMetaDoDTests(id, []string{fmt.Sprintf("pt review check %s --kind=demo", id)})
+		out[title] = id
+	}
+
+	return out, nil
 }
 
 // generateReviewTasks creates a review task for each implementation task.

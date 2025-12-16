@@ -63,12 +63,13 @@ func cmdNext(args []string) error {
 	role := fs.String("role", "", "filter recommended work by role label")
 	strict := fs.Bool("strict", false, "treat soft gates as blocking")
 	allPhases := fs.Bool("all-phases", false, "debug: consider open tasks across all phases")
+	skipCheckpoints := fs.Bool("skip-checkpoints", false, "do not recommend phase checkpoint rails (kickoff/closeout/demo)")
 	workflowPath := fs.String("workflow", "", "path to workflow template (overrides auto-discovery)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt next [--role=ROLE] [--strict] [--all-phases] [--workflow=PATH] [--json]")
+		fmt.Println("Usage: pt next [--role=ROLE] [--strict] [--all-phases] [--skip-checkpoints] [--workflow=PATH] [--json]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -172,6 +173,103 @@ func cmdNext(args []string) error {
 		}
 		if currentPhase != nil {
 			out.CurrentPhase = nextPhase{ID: currentPhase.ID, Name: currentPhase.Name, Order: currentPhase.Order}
+		}
+	}
+
+	// 2.5) Checkpoint rails (non-blocking): recommend phase kickoff/closeout/demo tasks at the right time.
+	if wf != nil && !*skipCheckpoints && strings.TrimSpace(currentPhaseID) != "" {
+		var phaseTasks []pt.Issue
+		for _, iss := range allIssues {
+			if strings.TrimSpace(*role) != "" && !hasLabel(iss, fmt.Sprintf("role:%s", strings.TrimSpace(*role))) {
+				continue
+			}
+			meta, _ := pt.ParseTaskMeta(iss.Description)
+			if wf.GetTaskPhase(iss, meta) == currentPhaseID {
+				phaseTasks = append(phaseTasks, iss)
+			}
+		}
+		// Split into checkpoint tasks vs "work" tasks.
+		var pre, post, demo *pt.Issue
+		workTotal := 0
+		workClosed := 0
+		for i := range phaseTasks {
+			t := phaseTasks[i]
+			if hasLabel(t, "checkpoint:pre") {
+				if t.Status == "open" {
+					cp := t
+					pre = &cp
+				}
+				continue
+			}
+			if hasLabel(t, "checkpoint:post") {
+				if t.Status == "open" {
+					cp := t
+					post = &cp
+				}
+				continue
+			}
+			if hasLabel(t, "checkpoint:demo") {
+				if t.Status == "open" {
+					cp := t
+					demo = &cp
+				}
+				continue
+			}
+			// Treat non-checkpoint tasks as "work".
+			if t.Status == "closed" || t.Status == "done" {
+				workClosed++
+			}
+			if t.Status != "" {
+				workTotal++
+			}
+		}
+		// Kickoff: before any work is done, recommend the pre-phase review.
+		if workTotal > 0 && workClosed == 0 && pre != nil {
+			out.Mode = nextModeReview
+			out.Why = []string{"phase kickoff checkpoint recommended before starting work (not a hard gate)", "records plan/options/risks and locks in the final demo expectations early"}
+			out.Recommended = []nextRecommendation{
+				{Cmd: fmt.Sprintf("pt show %s", pre.ID), Kind: "review"},
+				{Cmd: fmt.Sprintf("pt claim %s --as=%s", pre.ID, defaultIdentityForPrint()), Kind: "review"},
+				{Cmd: fmt.Sprintf("pt review write %s --kind=pre --phase=%s --desc=\"kickoff\"  # creates .pt/reviews/... and links it", pre.ID, currentPhaseID), Kind: "review"},
+				{Cmd: fmt.Sprintf("pt validate %s --yes", pre.ID), Kind: "review"},
+				{Cmd: fmt.Sprintf("pt approve %s", pre.ID), Kind: "review"},
+				{Cmd: "pt next", Kind: "review"},
+			}
+			// Make the escape hatch explicit (avoids endless approval loops while keeping rails).
+			out.Recommended = append(out.Recommended, nextRecommendation{Cmd: "pt next --skip-checkpoints  # proceed without checkpoint", Kind: "work"})
+			return printNext(out, *jsonOut)
+		}
+		// Closeout: once all work tasks are closed/done, recommend the post-phase review (and/or demo).
+		if workTotal > 0 && workClosed == workTotal {
+			if post != nil {
+				out.Mode = nextModeReview
+				out.Why = []string{"phase closeout checkpoint recommended (not a hard gate)", "captures evidence and deltas to reduce drift for later phases and reviewers"}
+				out.Recommended = []nextRecommendation{
+					{Cmd: fmt.Sprintf("pt show %s", post.ID), Kind: "review"},
+					{Cmd: fmt.Sprintf("pt claim %s --as=%s", post.ID, defaultIdentityForPrint()), Kind: "review"},
+					{Cmd: fmt.Sprintf("pt review write %s --kind=post --phase=%s --desc=\"closeout\"  # creates .pt/reviews/... and links it", post.ID, currentPhaseID), Kind: "review"},
+					{Cmd: fmt.Sprintf("pt validate %s --yes", post.ID), Kind: "review"},
+					{Cmd: fmt.Sprintf("pt approve %s", post.ID), Kind: "review"},
+					{Cmd: "pt next", Kind: "review"},
+				}
+				out.Recommended = append(out.Recommended, nextRecommendation{Cmd: "pt next --skip-checkpoints  # proceed without checkpoint", Kind: "work"})
+				return printNext(out, *jsonOut)
+			}
+			// If the phase has an explicit demo checkpoint, prefer it at the end.
+			if demo != nil {
+				out.Mode = nextModeReview
+				out.Why = []string{"project demo checkpoint recommended (not a hard gate)", "ensure there is a runnable, user-visible walkthrough with captured artifacts"}
+				out.Recommended = []nextRecommendation{
+					{Cmd: fmt.Sprintf("pt show %s", demo.ID), Kind: "review"},
+					{Cmd: fmt.Sprintf("pt claim %s --as=%s", demo.ID, defaultIdentityForPrint()), Kind: "review"},
+					{Cmd: fmt.Sprintf("pt review write %s --kind=demo --phase=%s --desc=\"demo\"  # creates .pt/reviews/... and links it", demo.ID, currentPhaseID), Kind: "review"},
+					{Cmd: fmt.Sprintf("pt validate %s --yes", demo.ID), Kind: "review"},
+					{Cmd: fmt.Sprintf("pt approve %s", demo.ID), Kind: "review"},
+					{Cmd: "pt next", Kind: "review"},
+				}
+				out.Recommended = append(out.Recommended, nextRecommendation{Cmd: "pt next --skip-checkpoints  # proceed without checkpoint", Kind: "work"})
+				return printNext(out, *jsonOut)
+			}
 		}
 	}
 

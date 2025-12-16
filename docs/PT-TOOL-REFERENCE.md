@@ -41,6 +41,9 @@ Key commands (current behavior; see `pt --help` for the full list):
   - `--phase` requires a workflow; use `--workflow` when multiple workflow files exist.
 - `pt next [--workflow=PATH] [--all-phases] [--json]`
   - Conductor-style “what now?”; avoids recommending manually blocked tasks.
+- `pt review write <id> --kind=pre|post|demo [--phase=ID]`
+  - Writes a markdown review under `.pt/reviews/` and links it to the task via a comment.
+  - Pair with `pt sync --generate-phase-reviews` so phase kickoff/closeout/demo checkpoints exist and `pt next` can recommend them.
 - Context Contracts:
   - `pt context init <id> --role=builder > context.builder.json`
   - `pt context validate context.builder.json` (infers contract from payload role; override with `--contract=PATH`)
