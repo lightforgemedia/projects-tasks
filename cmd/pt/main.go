@@ -135,6 +135,20 @@ func projectDoDStatus() (string, bool) {
 	return path, false
 }
 
+func projectRootFromStorePath(storePath string) string {
+	p := strings.TrimSpace(storePath)
+	if p == "" {
+		return ""
+	}
+	dir := filepath.Dir(p)
+	// When the store lives at <root>/.pt/db.json, tests should run from <root>,
+	// not from inside the hidden ".pt" directory.
+	if filepath.Base(dir) == ".pt" {
+		return filepath.Dir(dir)
+	}
+	return dir
+}
+
 func feedbackBaseDir(explicit string) (string, error) {
 	if v := strings.TrimSpace(explicit); v != "" {
 		return v, nil
@@ -1607,7 +1621,7 @@ func cmdValidate(args []string) error {
 		// Default to project directory (where store is located)
 		storePath := pt.DiscoveredStorePath()
 		if storePath != "" {
-			workDir = filepath.Dir(storePath)
+			workDir = projectRootFromStorePath(storePath)
 		}
 	}
 
