@@ -442,7 +442,7 @@ func run(args []string) error {
 		return cmdWorkflow(cmdArgs)
 	// Shortcuts for common workflow commands
 	case "status":
-		return cmdWorkflow([]string{"status"})
+		return cmdWorkflow(append([]string{"status"}, cmdArgs...))
 	case "next":
 		return cmdNext(cmdArgs)
 	case "-h", "--help", "help":
