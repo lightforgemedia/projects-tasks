@@ -29,6 +29,22 @@ See [WORKFLOW-PRINCIPLES.md](./WORKFLOW-PRINCIPLES.md) for the stable philosophy
 
 ---
 
+## CLI Quick Reference
+
+Key commands (current behavior; see `pt --help` for the full list):
+
+- `pt ready [--role=ROLE] [--phase=PHASE|--all-phases] [--verbose] [--include-blocked]`
+  - Default: hides manually blocked tasks; add `--include-blocked` to see them (with reasons).
+- `pt show <id> [--json] [--workflow=PATH]`
+  - Shows phase when a workflow is selected (use `PT_WORKFLOW` or `--workflow`).
+- `pt list [--status=...] [--role=ROLE] [--phase=PHASE] [--workflow=PATH] [--json] [--porcelain]`
+  - `--phase` requires a workflow; use `--workflow` when multiple workflow files exist.
+- `pt next [--workflow=PATH] [--all-phases] [--json]`
+  - Conductor-style “what now?”; avoids recommending manually blocked tasks.
+- Context Contracts:
+  - `pt context init <id> --role=builder > context.builder.json`
+  - `pt context validate context.builder.json` (infers contract from payload role; override with `--contract=PATH`)
+
 ## Workflow Template: risk-first
 
 Create `workflows/risk-first.toml`:
