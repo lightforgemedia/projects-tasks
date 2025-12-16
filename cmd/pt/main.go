@@ -1032,6 +1032,7 @@ func cmdList(args []string) error {
 	status := fs.String("status", "open", "comma-separated statuses (open,in_progress,needs_review,closed). Empty for all.")
 	role := fs.String("role", "", "filter by role label")
 	phase := fs.String("phase", "", "filter by workflow phase (requires workflow file)")
+	workflowPath := fs.String("workflow", "", "path to workflow template (overrides auto-discovery)")
 	limit := fs.Int("limit", 50, "max issues")
 	sortKey := fs.String("sort", "priority", "sort by priority|title")
 	jsonOut := fs.Bool("json", false, "output JSON")
@@ -1039,7 +1040,7 @@ func cmdList(args []string) error {
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() {
-		fmt.Println("Usage: pt list [--status=...] [--role=ROLE] [--phase=PHASE] [--limit=N] [--json] [--porcelain]")
+		fmt.Println("Usage: pt list [--status=...] [--role=ROLE] [--phase=PHASE] [--workflow=PATH] [--limit=N] [--json] [--porcelain]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -1062,9 +1063,13 @@ func cmdList(args []string) error {
 	}
 	// Filter by phase if specified
 	if *phase != "" {
-		wfPath, err := findWorkflowFile()
-		if err != nil {
-			return fmt.Errorf("--phase requires workflow file: %w", err)
+		wfPath := strings.TrimSpace(*workflowPath)
+		if wfPath == "" {
+			p, err := findWorkflowFile()
+			if err != nil {
+				return fmt.Errorf("--phase requires workflow file: %w", err)
+			}
+			wfPath = p
 		}
 		wf, err := pt.ParseWorkflow(wfPath)
 		if err != nil {
@@ -1114,9 +1119,10 @@ func cmdShow(args []string) error {
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	jsonOut := fs.Bool("json", false, "output JSON")
 	porcelain := fs.Bool("porcelain", false, "output JSON (alias for --json)")
+	workflowPath := fs.String("workflow", "", "path to workflow template (overrides auto-discovery)")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt show <id> [--json] [--porcelain]") }
+	fs.Usage = func() { fmt.Println("Usage: pt show <id> [--json] [--porcelain] [--workflow=PATH]") }
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1160,7 +1166,13 @@ func cmdShow(args []string) error {
 	}
 	fmt.Printf("Role: %s  Template: %s\n", meta.Role, meta.Template)
 	// Show phase if workflow exists
-	if wfPath, err := findWorkflowFile(); err == nil {
+	wfPath := strings.TrimSpace(*workflowPath)
+	if wfPath == "" {
+		if p, err := findWorkflowFile(); err == nil {
+			wfPath = p
+		}
+	}
+	if wfPath != "" {
 		if wf, err := pt.ParseWorkflow(wfPath); err == nil {
 			phaseID := wf.GetTaskPhase(iss, meta)
 			if phase := wf.GetPhaseByID(phaseID); phase != nil {
