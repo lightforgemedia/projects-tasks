@@ -108,6 +108,38 @@ Keep workflows as data (TOML), but allow controlled extensibility:
 
 The engine should never require external dependencies by default; exec guards/hooks are opt-in.
 
+### Decision: Built-in First, Exec-Guards Optional (No New Deps)
+
+We want workflows to be **portable**, **auditable**, and **deterministic** without introducing a plugin runtime or new Go dependencies.
+
+**Options considered:**
+
+- **A) Built-in guards only**
+  - Pros: deterministic, testable, zero deps, simple mental model
+  - Cons: limited expressiveness; teams will try to encode custom policy in ad-hoc hooks
+
+- **B) Exec-guards (shell commands)**
+  - Pros: extensible without Go deps; can integrate with `git`, CI, linters, local scripts; easy to prototype
+  - Cons: nondeterminism risk; output size; re-entrancy (guard calls `pt`); needs good logging and timeouts
+
+- **C) External “conductor” agent**
+  - Pros: powerful orchestration; can enforce richer workflows without changing PT
+  - Cons: another moving part; harder to debug; coordination overhead; not always available
+
+**Chosen approach (V2):**
+- Keep **built-in guards** as the default and the only behavior required for correctness.
+- Add **exec-guards as an optional extension**, gated behind workflow config and surfaced clearly in output.
+- Treat an external conductor as a separate integration: it can *read* PT state and *suggest* actions, but PT remains usable without it.
+
+**Implementation guardrails (exec-guards):**
+- Run with a timeout and capture stdout/stderr; always print what ran and why it passed/failed.
+- Pass a compact set of `PT_*` env vars (task id, phase id, gate id), and (if needed) provide full JSON on stdin.
+- Add a re-entrancy escape hatch (`PT_SKIP_GUARDS=1`) to prevent infinite loops if a guard calls `pt`.
+
+**Non-goals:**
+- No embedded scripting engine.
+- No external dependencies for guard parsing/execution beyond the OS shell.
+
 ## Migration Strategy (Lowest Risk)
 
 ### Step 0: Feature Flag + Conformance Harness
@@ -157,4 +189,3 @@ Long term:
   - `PROJECT_DOD.md`
   - `workflows/<template>.toml`
   - optional hook defaults
-
