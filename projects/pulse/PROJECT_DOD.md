@@ -14,8 +14,67 @@ MVP is complete when:
   - Runner detects fingerprint mismatch.
   - Runner emits a suggested fingerprint update file (`*.fp.toml`) for review.
 
-Evidence:
-- Test output for unit + integration tests.
-- A sample run log for `pulse run` (success + one intentional failure).
-- Captured artifacts under `projects/pulse/outputs/` (snapshots / reports).
+## How to validate (commands + expected artifacts)
 
+All commands below are safe to run from the repo root.
+
+### 1) Unit tests (fast)
+```bash
+cd projects/pulse
+go test ./...
+```
+
+### 2) Dry-run selection (impact mapping + P0 inclusion)
+```bash
+go run ./projects/pulse/cmd/pulse --dry-run --diff=HEAD~8..HEAD
+```
+Evidence:
+- `projects/pulse/outputs/runs/dry-run.latest.txt`
+
+### 3) Demo server (manual page verification)
+```bash
+go run ./projects/pulse/cmd/pulse --demo --addr 127.0.0.1:8085
+```
+Then open:
+- `http://127.0.0.1:8085/products?query=socks`
+- `http://127.0.0.1:8085/login`
+- `http://127.0.0.1:8085/settings/profile`
+
+Evidence:
+- `projects/pulse/outputs/runs/demo-server.smoke.txt` (curl/grep proof of stable elements)
+
+### 4) Run one passing flow (real browser)
+```bash
+# In one terminal
+go run ./projects/pulse/cmd/pulse --demo --addr 127.0.0.1:8085
+
+# In another
+go run ./projects/pulse/cmd/pulse --run \
+  --flow=projects/pulse/testdata/flows/valid/product_card_quickadd.toml \
+  --base-url=http://127.0.0.1:8085 \
+  --headless=true
+```
+Evidence:
+- `projects/pulse/outputs/runs/run-one.latest.txt`
+
+### 5) Run one intentional failure (snapshot + DOM)
+Expected behavior: non-zero exit, with `snapshot:` and `dom:` paths printed and a `report.json` written.
+
+Evidence:
+- `projects/pulse/outputs/runs/run-fail.latest.txt`
+- Example artifact set (from dogfooding):
+  - `projects/pulse/outputs/runs/2025-12-16T05-47-02Z/report.json`
+  - `projects/pulse/outputs/runs/2025-12-16T05-47-02Z/flows/product_card_intentional_fail/snapshot.png`
+  - `projects/pulse/outputs/runs/2025-12-16T05-47-02Z/flows/product_card_intentional_fail/dom.html`
+
+### 6) Integration E2E (3 flows headless)
+```bash
+cd projects/pulse
+go test -tags=integration ./... -v
+```
+Evidence:
+- `projects/pulse/outputs/runs/integration.latest.txt`
+
+## Current status
+- ✅ Unit tests, demo server, `pulse --dry-run`, `pulse --run`, failure artifacts, and integration E2E are implemented.
+- ☐ Drift policy + self-healing (`*.fp.toml` suggestion) is still required to fully satisfy this DoD.
