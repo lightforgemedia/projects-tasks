@@ -1,0 +1,25 @@
+{
+  "run_id": "2025-12-16T06-01-11Z",
+  "flow_id": "drift_structural",
+  "status": "fail",
+  "target_url": "http://127.0.0.1:54184/products?query=socks\u0026drift=structural",
+  "started_at": "2025-12-16T06:01:11Z",
+  "duration_ms": 655,
+  "steps": [
+    {
+      "index": 0,
+      "action": "click",
+      "target": "role=button[name='Quick Add']",
+      "status": "fail",
+      "error": "structural drift: target \"role=button[name='Quick Add']\" not found (suggested patch emitted)",
+      "elapsed_ms": 1
+    }
+  ],
+  "artifacts": {
+    "report_path": "/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-11Z/report.json",
+    "screenshot_png": "/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-11Z/flows/drift_structural/snapshot.png",
+    "dom_html": "/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-11Z/flows/drift_structural/dom.html",
+    "patch_fp_toml": "/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-11Z/patches/drift_structural.step-0.fp.toml"
+  },
+  "error": "structural drift: target \"role=button[name='Quick Add']\" not found (suggested patch emitted)"
+}

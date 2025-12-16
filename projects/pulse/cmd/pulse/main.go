@@ -203,9 +203,12 @@ func runOneFlow(repoOverride string, pulseOverride string, flowArg string, base 
 
 	fmt.Printf("==> %s  START\n", f.ID)
 
+	patchDir := filepath.Join(runDir, "patches")
+	_ = os.MkdirAll(patchDir, 0o755)
+
 	for i, s := range f.Steps {
 		stepStart := time.Now()
-		err := runStep(page, i, s)
+		err := runStep(page, i, s, patchDir, f.ID)
 		stepRes := run.StepResult{
 			Index:   i,
 			Action:  s.Action,
@@ -219,6 +222,10 @@ func runOneFlow(repoOverride string, pulseOverride string, flowArg string, base 
 			rep.Steps = append(rep.Steps, stepRes)
 			rep.Error = err.Error()
 			rep.DurationMS = time.Since(start).Milliseconds()
+			var de DriftError
+			if errors.As(err, &de) {
+				rep.Artifacts.PatchFPTOML = de.PatchPath
+			}
 			snap, dom, aErr := run.CaptureFailureArtifacts(flowDir, page)
 			if aErr == nil {
 				rep.Artifacts.ScreenshotPNG = snap
@@ -313,14 +320,14 @@ func joinBaseURL(base string, route string) (string, error) {
 	return out.String(), nil
 }
 
-func runStep(page *rod.Page, idx int, s flow.Step) error {
+func runStep(page *rod.Page, idx int, s flow.Step, patchDir string, flowID string) error {
 	switch s.Action {
 	case "click":
 		fmt.Printf("  step[%d] click  target=%s\n", idx, s.Target)
-		return pulseAct(page, "click", s.Target, "")
+		return pulseAct(page, "click", s.Target, "", patchDir, flowID, idx)
 	case "type":
 		fmt.Printf("  step[%d] type   target=%s\n", idx, s.Target)
-		return pulseAct(page, "type", s.Target, s.Value)
+		return pulseAct(page, "type", s.Target, s.Value, patchDir, flowID, idx)
 	case "wait":
 		if s.MS <= 0 {
 			return fmt.Errorf("step[%d]: wait requires ms > 0", idx)
@@ -333,7 +340,21 @@ func runStep(page *rod.Page, idx int, s flow.Step) error {
 	}
 }
 
-func pulseAct(page *rod.Page, actType string, target string, value string) error {
+type DriftError struct {
+	PatchPath      string
+	Classification string // cosmetic|structural
+	Msg            string
+}
+
+func (e DriftError) Error() string { return e.Msg }
+
+type candidate struct {
+	Role        string
+	Name        string
+	Fingerprint string
+}
+
+func pulseAct(page *rod.Page, actType string, target string, value string, patchDir string, flowID string, stepIdx int) error {
 	cmd := map[string]any{
 		"type":   actType,
 		"target": target,
@@ -343,9 +364,189 @@ func pulseAct(page *rod.Page, actType string, target string, value string) error
 	}
 	res := page.MustEval(`cmd => window.__pulse.Act(cmd)`, cmd)
 	if !res.Get("ok").Bool() {
-		return fmt.Errorf("act failed (%s %s): %s", actType, target, res.Get("error").String())
+		errText := res.Get("error").String()
+		if strings.Contains(errText, "target not found") && strings.HasPrefix(target, "role=") {
+			cand, ok := findDriftCandidate(page, target)
+			if ok {
+				class := classifyDrift(target, cand)
+				patchPath, wErr := writeSuggestedPatch(patchDir, flowID, stepIdx, target, cand, class)
+				if wErr == nil {
+					fmt.Printf("    drift: %s\n", strings.ToUpper(class))
+					fmt.Printf("    suggested_patch: %s\n", patchPath)
+				}
+				if class == "cosmetic" {
+					// Proceed using the candidate fingerprint (tolerated drift).
+					cmd["target"] = cand.Fingerprint
+					res2 := page.MustEval(`cmd => window.__pulse.Act(cmd)`, cmd)
+					if res2.Get("ok").Bool() {
+						return nil
+					}
+					return fmt.Errorf("act failed after cosmetic drift (%s %s): %s", actType, cand.Fingerprint, res2.Get("error").String())
+				}
+				// Structural drift: hard-fail with patch path for review.
+				return DriftError{
+					PatchPath:      patchPath,
+					Classification: class,
+					Msg:            fmt.Sprintf("structural drift: target %q not found (suggested patch emitted)", target),
+				}
+			}
+		}
+		return fmt.Errorf("act failed (%s %s): %s", actType, target, errText)
 	}
 	return nil
+}
+
+func findDriftCandidate(page *rod.Page, expectedTarget string) (candidate, bool) {
+	expRole, expName, ok := parseRoleLocator(expectedTarget)
+	if !ok || expRole == "" || expName == "" {
+		return candidate{}, false
+	}
+	expTokens := tokens(expName)
+	if len(expTokens) == 0 {
+		return candidate{}, false
+	}
+
+	arr := page.MustEval(`() => window.__pulse.ListInteractive()`).Arr()
+
+	best := candidate{}
+	bestScore := 0
+	for _, it := range arr {
+		role := it.Get("role").Str()
+		name := it.Get("name").Str()
+		fp := it.Get("fingerprint").Str()
+		if fp == "" || name == "" {
+			continue
+		}
+		score := tokenOverlap(expTokens, tokens(name))
+		if score == 0 {
+			continue
+		}
+		if role == expRole {
+			score += 10
+		}
+		if score > bestScore {
+			bestScore = score
+			best = candidate{Role: role, Name: name, Fingerprint: fp}
+		}
+	}
+	if bestScore == 0 {
+		return candidate{}, false
+	}
+	return best, true
+}
+
+func parseRoleLocator(target string) (role string, name string, ok bool) {
+	// role=button[name='Quick Add']
+	if !strings.HasPrefix(target, "role=") {
+		return "", "", false
+	}
+	rolePart := strings.TrimPrefix(target, "role=")
+	bracket := strings.Index(rolePart, "[")
+	if bracket >= 0 {
+		role = strings.TrimSpace(rolePart[:bracket])
+		attrs := rolePart[bracket:]
+		i := strings.Index(attrs, "name=")
+		if i >= 0 {
+			after := attrs[i+len("name="):]
+			if after != "" {
+				q := after[0]
+				if q == '\'' || q == '"' {
+					end := strings.IndexByte(after[1:], q)
+					if end >= 0 {
+						name = after[1 : 1+end]
+					}
+				}
+			}
+		}
+	} else {
+		role = strings.TrimSpace(rolePart)
+	}
+	return role, strings.TrimSpace(name), true
+}
+
+func classifyDrift(expectedTarget string, cand candidate) string {
+	expRole, expName, ok := parseRoleLocator(expectedTarget)
+	if !ok {
+		return "structural"
+	}
+	if cand.Role != expRole {
+		return "structural"
+	}
+	if normalizeAlnum(expName) == normalizeAlnum(cand.Name) {
+		return "cosmetic"
+	}
+	return "structural"
+}
+
+func writeSuggestedPatch(patchDir string, flowID string, stepIdx int, oldTarget string, cand candidate, classification string) (string, error) {
+	if patchDir == "" {
+		return "", fmt.Errorf("patchDir is empty")
+	}
+	if err := os.MkdirAll(patchDir, 0o755); err != nil {
+		return "", err
+	}
+	name := fmt.Sprintf("%s.step-%d.fp.toml", flowID, stepIdx)
+	path := filepath.Join(patchDir, name)
+	body := fmt.Sprintf(`# Suggested patch generated by Pulse
+flow_id = %q
+step_index = %d
+classification = %q
+
+old_target = %q
+suggested_target = %q
+
+[candidate]
+role = %q
+name = %q
+fingerprint = %q
+`, flowID, stepIdx, classification, oldTarget, cand.Fingerprint, cand.Role, cand.Name, cand.Fingerprint)
+	return path, os.WriteFile(path, []byte(body), 0o644)
+}
+
+func normalizeAlnum(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func tokens(s string) []string {
+	s = strings.ToLower(s)
+	var out []string
+	var cur strings.Builder
+	flush := func() {
+		if cur.Len() == 0 {
+			return
+		}
+		out = append(out, cur.String())
+		cur.Reset()
+	}
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			cur.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return out
+}
+
+func tokenOverlap(a []string, b []string) int {
+	set := make(map[string]struct{}, len(a))
+	for _, t := range a {
+		set[t] = struct{}{}
+	}
+	n := 0
+	for _, t := range b {
+		if _, ok := set[t]; ok {
+			n++
+		}
+	}
+	return n
 }
 
 func runAssertion(page *rod.Page, idx int, a flow.Assertion) error {

@@ -1,0 +1,21 @@
+base=http://127.0.0.1:54184
+--- cosmetic drift (expected PASS with patch)
+==> drift_cosmetic  START
+  step[0] click  target=role=button[name='Quick Add']
+    drift: COSMETIC
+    suggested_patch: /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-09Z/patches/drift_cosmetic.step-0.fp.toml
+  assertion[0] visible OK  target=data-testid=mini-cart
+==> drift_cosmetic  PASS
+Report: /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-09Z/report.json
+--- structural drift (expected FAIL with patch)
+==> drift_structural  START
+  step[0] click  target=role=button[name='Quick Add']
+    drift: STRUCTURAL
+    suggested_patch: /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-11Z/patches/drift_structural.step-0.fp.toml
+    snapshot: /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-11Z/flows/drift_structural/snapshot.png
+    dom:      /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-11Z/flows/drift_structural/dom.html
+Report: /Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-11Z/report.json
+error: run: structural drift: target "role=button[name='Quick Add']" not found (suggested patch emitted)
+exit status 1
+structural_exit_code=1
+OK

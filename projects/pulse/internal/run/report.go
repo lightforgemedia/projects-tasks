@@ -46,6 +46,7 @@ type Artifacts struct {
 	ReportPath    string `json:"report_path,omitempty"`
 	ScreenshotPNG string `json:"screenshot_png,omitempty"`
 	DOMHTML       string `json:"dom_html,omitempty"`
+	PatchFPTOML   string `json:"patch_fp_toml,omitempty"`
 }
 
 func NewRunID(now time.Time) string {

@@ -1,0 +1,29 @@
+{
+  "run_id": "2025-12-16T06-01-09Z",
+  "flow_id": "drift_cosmetic",
+  "status": "pass",
+  "target_url": "http://127.0.0.1:54184/products?query=socks\u0026drift=cosmetic",
+  "started_at": "2025-12-16T06:01:09Z",
+  "duration_ms": 1184,
+  "steps": [
+    {
+      "index": 0,
+      "action": "click",
+      "target": "role=button[name='Quick Add']",
+      "status": "ok",
+      "elapsed_ms": 3
+    }
+  ],
+  "assertions": [
+    {
+      "index": 0,
+      "type": "visible",
+      "target": "data-testid=mini-cart",
+      "status": "ok",
+      "elapsed_ms": 3
+    }
+  ],
+  "artifacts": {
+    "report_path": "/Users/tawawhite/PROJECTS/projects-tasks/projects/pulse/outputs/runs/2025-12-16T06-01-09Z/report.json"
+  }
+}
