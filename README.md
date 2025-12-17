@@ -162,6 +162,17 @@ The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 - Workflow selection: if multiple workflow files exist, set `PT_WORKFLOW=workflows/<name>.toml` or pass `--workflow=PATH` for workflow commands.
 - Manual blockers: use `pt blocked` / `pt unblock` for non-dependency blockers; `pt next` avoids recommending blocked tasks.
 
+### Concurrency model (recommended)
+
+PT is designed for **one orchestrator** and **many workers**:
+
+- **Orchestrator (single writer):** runs `pt next/ready/claim/validate/approve/update/sync/demo/review` and is the *only* actor that changes PT state.
+- **Workers (many):** do the work (code/research/wireframes) and return artifacts (diffs/logs) to the orchestrator. Workers should **not** run state-changing PT commands.
+
+This avoids workflow-level collisions (double-claiming, out-of-order approvals, conflicting evidence comments) even on a single machine.
+
+If a worker believes PT is wrong or misleading, the orchestrator should stop workflow progress and file a bug via `pt submit-bug ...`.
+
 ## Task Creation & Taxonomy
 - Templates: `backend_endpoint` (APIs), `frontend_component` (UI), `bug_fix` (regressions), `refactor` (cleanup), `observability_hook` (SLO/alerts), `migration` (schema), `discovery` (requirements/mental simulation), `spike` (assumption tests).
 - Include: `title`, `role`, `template`, `deps`, optional `next_hint`, DoD (`tests`, `manual`). Keep titles unique; reference deps by title or ID.

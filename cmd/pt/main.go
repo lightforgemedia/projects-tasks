@@ -549,7 +549,7 @@ ADVANCED
   export/import                      Backup and restore
   graph <manifest>                   Visualize dependencies
 
-More: pt help task-authoring
+More: pt help task-authoring | pt help concurrency
 `)
 }
 
@@ -563,10 +563,12 @@ func cmdHelp(args []string) error {
 	switch topic {
 	case "task-authoring":
 		printTaskAuthoringHelp()
+	case "concurrency":
+		printConcurrencyHelp()
 	default:
 		usage()
 		fmt.Printf("\nUnknown help topic: %q\n", topic)
-		fmt.Println("Available topics: task-authoring")
+		fmt.Println("Available topics: task-authoring, concurrency")
 	}
 	return nil
 }
@@ -655,6 +657,26 @@ Before syncing a manifest, verify each task:
   □ Scope has clear boundaries
 
 Use 'pt sync --generate-reviews <manifest>' to auto-create review tasks.
+`)
+}
+
+func printConcurrencyHelp() {
+	fmt.Print(`# Concurrency Model (recommended)
+
+PT is optimized for **one orchestrator** (single writer) and **many workers**:
+
+- Orchestrator: runs PT commands that change state:
+  - ` + "`pt sync`" + `, ` + "`pt claim`" + `, ` + "`pt validate`" + `, ` + "`pt approve`" + `, ` + "`pt update`" + `, ` + "`pt demo run`" + `, ` + "`pt review write`" + `
+- Workers: do the work (code/research/wireframes) and return artifacts to the orchestrator.
+  - Workers should NOT run state-changing PT commands.
+
+Why:
+- Prevents double-claims and out-of-order approvals.
+- Keeps evidence/comments consistent and auditable.
+- Keeps ` + "`pt next`" + ` recommendations stable.
+
+If PT itself appears wrong or misleading:
+- STOP workflow progress and file a bug: ` + "`pt submit-bug --label=... --description=... --found_in=... --repro=...`" + `
 `)
 }
 
