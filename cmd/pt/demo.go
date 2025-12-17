@@ -43,6 +43,8 @@ Notes:
   - Demo commands are read from the review file linked by: pt review write <id> --kind=demo
   - Commands are parsed from fenced code blocks under: "## Demo Commands (pt demo run)".
   - Output logs are written under: outputs/demo/
+  - Safety: ` + "`pt demo run`" + ` prepends a guarded ` + "`rm`" + ` to PATH to reduce accidental deletes outside the project root.
+    Use ` + "`--no-rm-guard`" + ` to disable (not recommended).
 `)
 	return errors.New("")
 }
@@ -54,6 +56,7 @@ func cmdDemoRun(args []string) error {
 	fs := flag.NewFlagSet("demo run", flag.ContinueOnError)
 	timeout := fs.Duration("timeout", 10*time.Minute, "overall timeout for running all demo commands")
 	outDirFlag := fs.String("out", "", "override output dir (default: <project-root>/outputs/demo)")
+	noRMGuard := fs.Bool("no-rm-guard", false, "disable safety guard that blocks `rm` outside the project root")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	jsonOut := fs.Bool("json", false, "output JSON")
@@ -113,6 +116,26 @@ func cmdDemoRun(args []string) error {
 	}
 	now := time.Now()
 
+	env := os.Environ()
+	env = append(env, "PT_PROJECT_ROOT="+root)
+	pathPrepend := ""
+	rmGuardDir := ""
+	if !*noRMGuard {
+		dir, err := os.MkdirTemp("", "pt-demo-guard-*")
+		if err != nil {
+			return fmt.Errorf("create rm-guard dir: %w", err)
+		}
+		rmGuardDir = dir
+		pathPrepend = rmGuardDir
+		if err := writeRMGuard(filepath.Join(rmGuardDir, "rm")); err != nil {
+			_ = os.RemoveAll(rmGuardDir)
+			return err
+		}
+	}
+	if rmGuardDir != "" {
+		defer os.RemoveAll(rmGuardDir)
+	}
+
 	type cmdResult struct {
 		Command string `json:"command"`
 		LogPath string `json:"log_path"`
@@ -121,7 +144,7 @@ func cmdDemoRun(args []string) error {
 	var results []cmdResult
 	for i, cmdStr := range commands {
 		logPath := filepath.Join(outDir, fmt.Sprintf("%s.%02d.log", now.Format("2006-01-02-150405"), i+1))
-		if err := runDemoCommand(runCtx, root, cmdStr, logPath); err != nil {
+		if err := runDemoCommand(runCtx, root, cmdStr, logPath, env, pathPrepend); err != nil {
 			results = append(results, cmdResult{Command: cmdStr, LogPath: logPath, ExitOK: false})
 			if *jsonOut {
 				_ = printJSON(map[string]any{
@@ -219,7 +242,7 @@ func parseDemoCommands(markdown string) []string {
 	return out
 }
 
-func runDemoCommand(ctx context.Context, workDir, cmdStr, logPath string) error {
+func runDemoCommand(ctx context.Context, workDir, cmdStr, logPath string, env []string, pathPrepend string) error {
 	f, err := os.Create(logPath)
 	if err != nil {
 		return fmt.Errorf("create log: %w", err)
@@ -228,6 +251,12 @@ func runDemoCommand(ctx context.Context, workDir, cmdStr, logPath string) error 
 
 	cmd := execCommandContext(ctx, "sh", "-c", cmdStr)
 	cmd.Dir = workDir
+	if len(env) > 0 {
+		cmd.Env = env
+	}
+	if strings.TrimSpace(pathPrepend) != "" {
+		cmd.Env = prependPath(cmd.Env, pathPrepend)
+	}
 	cmd.Stdout = f
 	cmd.Stderr = f
 	if err := cmd.Run(); err != nil {
@@ -236,3 +265,63 @@ func runDemoCommand(ctx context.Context, workDir, cmdStr, logPath string) error 
 	return nil
 }
 
+func prependPath(env []string, dir string) []string {
+	if strings.TrimSpace(dir) == "" {
+		return env
+	}
+	out := make([]string, 0, len(env)+1)
+	set := false
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			set = true
+			out = append(out, "PATH="+dir+string(os.PathListSeparator)+strings.TrimPrefix(e, "PATH="))
+			continue
+		}
+		out = append(out, e)
+	}
+	if !set {
+		out = append(out, "PATH="+dir)
+	}
+	return out
+}
+
+func writeRMGuard(path string) error {
+	script := `#!/bin/sh
+set -eu
+
+ROOT="${PT_PROJECT_ROOT:-}"
+if [ -z "$ROOT" ]; then
+  echo "rm blocked: PT_PROJECT_ROOT not set" >&2
+  exit 1
+fi
+
+for arg in "$@"; do
+  case "$arg" in
+    -*)
+      ;;
+    /*)
+      case "$arg" in
+        "$ROOT"/*|"$ROOT")
+          ;;
+        *)
+          echo "rm blocked: absolute path outside project root: $arg" >&2
+          exit 1
+          ;;
+      esac
+      ;;
+    *".."*|*"/.."*|*"../"*|*".."/*)
+      echo "rm blocked: parent-path usage is not allowed in demos: $arg" >&2
+      exit 1
+      ;;
+    *)
+      ;;
+  esac
+done
+
+exec /bin/rm "$@"
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		return fmt.Errorf("write rm-guard: %w", err)
+	}
+	return nil
+}

@@ -3929,6 +3929,12 @@ func cmdEnv(args []string) error {
 	root := projectRootFromStorePath(dbPath)
 	projectDoD := filepath.Join(root, "PROJECT_DOD.md")
 	projectHooks := filepath.Join(root, "hooks.toml")
+	workflowPath := ""
+	if strings.TrimSpace(root) != "" {
+		if p, err := findWorkflowFileFor(dbPath); err == nil {
+			workflowPath = p
+		}
+	}
 
 	fmt.Printf("PT_DB=%s\n", dbPath)
 	fmt.Printf("export PT_DB\n")
@@ -3937,6 +3943,10 @@ func cmdEnv(args []string) error {
 		fmt.Printf("export PT_PROJECT_DOD\n")
 		fmt.Printf("PT_HOOKS=%s\n", projectHooks)
 		fmt.Printf("export PT_HOOKS\n")
+		if strings.TrimSpace(workflowPath) != "" {
+			fmt.Printf("PT_WORKFLOW=%s\n", workflowPath)
+			fmt.Printf("export PT_WORKFLOW\n")
+		}
 	}
 	return nil
 }

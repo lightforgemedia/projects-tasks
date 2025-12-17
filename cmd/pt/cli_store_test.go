@@ -740,6 +740,7 @@ func TestShellEnv(t *testing.T) {
 	if !strings.Contains(out, "export PT_HOOKS") {
 		t.Fatalf("expected 'export PT_HOOKS' in output, got: %s", out)
 	}
+	// PT_WORKFLOW is optional; it is only emitted when a workflow is discoverable.
 }
 
 func TestHelpOutput(t *testing.T) {
