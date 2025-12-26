@@ -21,6 +21,7 @@ func cmdUXCases(args []string) error {
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	addCase := fs.String("add", "", "add capability: 'category: description'")
+	uxType := fs.String("type", "", "enable UX by setting type: cli|tui|web|api|doc|error")
 	confirm := fs.Bool("confirm", false, "confirm and proceed to explore")
 	fs.Usage = func() {
 		fmt.Println("Usage: pt ux-cases <id>")
@@ -29,10 +30,12 @@ func cmdUXCases(args []string) error {
 		fmt.Println("\nFlags:")
 		fmt.Println("  --add 'capability'          Add capability")
 		fmt.Println("  --add 'category: cap'       Add with category (action/info/error/pattern)")
+		fmt.Println("  --type <type>               Enable UX by setting type (cli|tui|web|api|doc|error)")
 		fmt.Println("  --confirm                   Confirm and proceed to explore")
 		fmt.Println("\nExamples:")
 		fmt.Println("  pt ux-cases --add 'action: Place 1-4 leg order' pt-42")
 		fmt.Println("  pt ux-cases --add 'error: Handle partial fills' pt-42")
+		fmt.Println("  pt ux-cases --type web pt-42     # enable UX for a task created via pt add")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -49,6 +52,19 @@ func cmdUXCases(args []string) error {
 	iss, meta, err := client.GetTask(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get task: %w", err)
+	}
+
+	// Ensure UX is enabled (manifest-driven or explicitly enabled via --type).
+	// This avoids a common footgun: tasks created via `pt add` have no [tasks.ux] field.
+	meta, changed, err := ensureUXEnabled(id, meta, *uxType)
+	if err != nil {
+		return err
+	}
+	if changed {
+		if err := updateTaskMeta(client, ctx, id, meta); err != nil {
+			return err
+		}
+		fmt.Printf("Enabled UX exploration for %s (type=%s)\n", id, meta.UX.Type)
 	}
 
 	// Non-interactive add
@@ -91,10 +107,6 @@ func cmdUXCases(args []string) error {
 		}
 		fmt.Println("Use cases confirmed. Next: pt ux-explore", id)
 		return nil
-	}
-
-	if meta.UX == nil {
-		return fmt.Errorf("task %s does not have UX exploration enabled (no [tasks.ux] field)", id)
 	}
 
 	fmt.Printf("UX Discovery: %s\n", iss.Title)
@@ -161,6 +173,36 @@ func cmdUXCases(args []string) error {
 	}
 }
 
+func ensureUXEnabled(id string, meta pt.TaskMeta, requestedType string) (pt.TaskMeta, bool, error) {
+	if meta.UX != nil {
+		return meta, false, nil
+	}
+
+	// Explicit enable: user sets the type.
+	if requestedType != "" {
+		meta.UX = &pt.UXConfig{Type: requestedType}
+		return meta, true, nil
+	}
+
+	// Auto-enable for discovery/doc tasks (common for spec work created via `pt add`).
+	if meta.Template == "discovery" && strings.HasPrefix(meta.Artifact, "doc:") {
+		meta.UX = &pt.UXConfig{Type: "doc"}
+		return meta, true, nil
+	}
+
+	return meta, false, fmt.Errorf(
+		"task %s does not have UX exploration enabled.\n\n"+
+			"To enable UX for this task:\n"+
+			"  pt ux-cases --type web %s\n"+
+			"  # or: --type cli|tui|api|doc|error\n\n"+
+			"If this task comes from a manifest, add a [tasks.ux] block (example):\n"+
+			"  [tasks.ux]\n"+
+			"  type = \"web\"\n",
+		id,
+		id,
+	)
+}
+
 func addUseCase(client pt.Client, ctx context.Context, id string, meta pt.TaskMeta) error {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -207,8 +249,8 @@ func discoverUseCases(client pt.Client, ctx context.Context, id string, iss pt.I
 	reader := bufio.NewReader(os.Stdin)
 
 	categories := []struct {
-		name   string
-		prompt string
+		name     string
+		prompt   string
 		examples string
 	}{
 		{"action", "What actions must the user perform?", "Place order, Cancel order, Modify position"},
@@ -287,7 +329,13 @@ func cmdUXExplore(args []string) error {
 	}
 
 	if meta.UX == nil {
-		return fmt.Errorf("task %s does not have UX exploration enabled", id)
+		return fmt.Errorf(
+			"task %s does not have UX exploration enabled.\n\n"+
+				"Enable it first:\n"+
+				"  pt ux-cases --type web %s\n",
+			id,
+			id,
+		)
 	}
 
 	if meta.UXState == nil || len(meta.UXState.UseCases) == 0 {
@@ -421,7 +469,13 @@ func cmdUXSelect(args []string) error {
 	}
 
 	if meta.UX == nil {
-		return fmt.Errorf("task %s does not have UX exploration enabled", id)
+		return fmt.Errorf(
+			"task %s does not have UX exploration enabled.\n\n"+
+				"Enable it first:\n"+
+				"  pt ux-cases --type web %s\n",
+			id,
+			id,
+		)
 	}
 
 	if meta.UXState == nil {
@@ -527,7 +581,13 @@ func cmdUXStatus(args []string) error {
 	}
 
 	if meta.UX == nil {
-		return fmt.Errorf("task %s does not have UX exploration enabled", id)
+		return fmt.Errorf(
+			"task %s does not have UX exploration enabled.\n\n"+
+				"Enable it first:\n"+
+				"  pt ux-cases --type web %s\n",
+			id,
+			id,
+		)
 	}
 
 	if *jsonOut {
@@ -898,10 +958,10 @@ func cmdUXCompare(args []string) error {
 
 	// Load all mockup contents
 	type mockupContent struct {
-		label   string
-		desc    string
-		lines   []string
-		maxLen  int
+		label  string
+		desc   string
+		lines  []string
+		maxLen int
 	}
 	contents := make([]mockupContent, len(mockups))
 
