@@ -205,24 +205,81 @@ func cmdWorktreeDone(args []string) error {
 		return fmt.Errorf("worktree has uncommitted changes at %s; commit or stash first", wtInfo.Path)
 	}
 
-	// Find the main repo root for git operations (derive from worktree path, not cwd)
-	repoRoot, err := gitRepoRoot(wtInfo.Path)
+	// Find the repo root of the current working directory. This is where we'll merge into.
+	targetRepoRoot, err := gitRepoRoot("")
+	if err != nil {
+		return fmt.Errorf("find git repo from current directory: %w", err)
+	}
+
+	// Ensure the current repo matches the worktree's repo.
+	worktreeRepoRoot, err := gitRepoRoot(wtInfo.Path)
 	if err != nil {
 		return fmt.Errorf("find git repo from worktree %s: %w", wtInfo.Path, err)
 	}
+	if filepath.Clean(targetRepoRoot) == filepath.Clean(worktreeRepoRoot) {
+		return fmt.Errorf("run `pt worktree done` from the main repo worktree (not inside %s)", wtInfo.Path)
+	}
+	targetCommonDir, err := gitCommonDirAbsAt(targetRepoRoot)
+	if err != nil {
+		return fmt.Errorf("get git common dir (target): %w", err)
+	}
+	worktreeCommonDir, err := gitCommonDirAbsAt(worktreeRepoRoot)
+	if err != nil {
+		return fmt.Errorf("get git common dir (worktree): %w", err)
+	}
+	if targetCommonDir != worktreeCommonDir {
+		return fmt.Errorf("current directory git repo does not match task worktree repo; run from the repo that owns %s", wtInfo.Path)
+	}
 
-	// Remove worktree (using explicit repo path)
-	if err := gitWorktreeRemoveAt(repoRoot, wtInfo.Path); err != nil {
+	// Ensure target repo is clean before merging.
+	mainDirty, err := gitIsDirtyAt(targetRepoRoot)
+	if err != nil {
+		return fmt.Errorf("check main repo status: %w", err)
+	}
+	if mainDirty {
+		return fmt.Errorf("main repo has uncommitted changes; commit or stash first")
+	}
+
+	// Verify worktree branch exists.
+	branchExists, err := gitBranchExistsAt(targetRepoRoot, wtInfo.Branch)
+	if err != nil {
+		return fmt.Errorf("check branch: %w", err)
+	}
+	if !branchExists {
+		return fmt.Errorf("worktree branch %q does not exist; cannot merge", wtInfo.Branch)
+	}
+
+	// Merge worktree branch into the currently checked out branch at targetRepoRoot.
+	targetBranch, err := gitCurrentBranchAt(targetRepoRoot)
+	if err != nil {
+		return fmt.Errorf("get current branch: %w", err)
+	}
+	if targetBranch == "HEAD" || targetBranch == "" {
+		return fmt.Errorf("cannot merge into detached HEAD; checkout a branch in the main repo and retry")
+	}
+
+	mergeMsg := "merge: " + taskID
+	if issue, _, err := client.GetTask(ctx, taskID); err == nil {
+		if title := strings.TrimSpace(issue.Title); title != "" {
+			mergeMsg = fmt.Sprintf("merge: %s %s", taskID, title)
+		}
+	}
+	if err := gitMergeNoFFAt(targetRepoRoot, wtInfo.Branch, mergeMsg); err != nil {
+		return fmt.Errorf("merge %q into %q: %w", wtInfo.Branch, targetBranch, err)
+	}
+
+	// Remove worktree (using explicit repo path) after a successful merge.
+	if err := gitWorktreeRemoveAt(targetRepoRoot, wtInfo.Path); err != nil {
 		return fmt.Errorf("remove worktree: %w", err)
 	}
 
 	// Optionally delete branch (using explicit repo path)
 	branchDeleted := false
 	if !*keepBranch {
-		// Try to delete branch (may fail if not merged, that's ok)
-		if err := gitDeleteBranchAt(repoRoot, wtInfo.Branch); err == nil {
-			branchDeleted = true
+		if err := gitDeleteBranchAt(targetRepoRoot, wtInfo.Branch); err != nil {
+			return fmt.Errorf("delete branch %q (use --keep-branch to keep): %w", wtInfo.Branch, err)
 		}
+		branchDeleted = true
 	}
 
 	// Clear worktree record
@@ -235,11 +292,12 @@ func cmdWorktreeDone(args []string) error {
 			"task_id":        taskID,
 			"path":           wtInfo.Path,
 			"branch":         wtInfo.Branch,
+			"target_branch":  targetBranch,
 			"branch_deleted": branchDeleted,
 			"status":         "removed",
 		})
 	}
-	msg := fmt.Sprintf("Removed worktree for %s at %s", taskID, wtInfo.Path)
+	msg := fmt.Sprintf("Merged %s into %s; removed worktree for %s at %s", wtInfo.Branch, targetBranch, taskID, wtInfo.Path)
 	if branchDeleted {
 		msg += fmt.Sprintf(" (branch %s deleted)", wtInfo.Branch)
 	}
@@ -577,4 +635,55 @@ func gitDeleteBranchAt(repoPath, name string) error {
 // Deprecated: prefer gitDeleteBranchAt with explicit path.
 func gitDeleteBranch(name string) error {
 	return gitDeleteBranchAt("", name)
+}
+
+func gitCurrentBranchAt(repoPath string) (string, error) {
+	var cmd *exec.Cmd
+	if repoPath != "" {
+		cmd = exec.Command("git", "-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD")
+	} else {
+		cmd = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func gitMergeNoFFAt(repoPath, branch, msg string) error {
+	var cmd *exec.Cmd
+	if repoPath != "" {
+		cmd = exec.Command("git", "-C", repoPath, "merge", "--no-ff", "-m", msg, branch)
+	} else {
+		cmd = exec.Command("git", "merge", "--no-ff", "-m", msg, branch)
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func gitCommonDirAbsAt(repoPath string) (string, error) {
+	var cmd *exec.Cmd
+	if repoPath != "" {
+		cmd = exec.Command("git", "-C", repoPath, "rev-parse", "--git-common-dir")
+	} else {
+		cmd = exec.Command("git", "rev-parse", "--git-common-dir")
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	raw := strings.TrimSpace(string(out))
+	if raw == "" {
+		return "", fmt.Errorf("empty git common dir")
+	}
+	if !filepath.IsAbs(raw) {
+		raw = filepath.Join(repoPath, raw)
+	}
+	abs, err := filepath.Abs(raw)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
 }
