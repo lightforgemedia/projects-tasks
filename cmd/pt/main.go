@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -362,6 +364,18 @@ func run(args []string) error {
 		usage()
 		return errors.New("")
 	}
+
+	cmd := args[1]
+	cmdArgs := args[2:]
+
+	// Global helpers that shouldn't require hooks/store access.
+	switch cmd {
+	case "-h", "--help", "help":
+		return cmdHelp(cmdArgs)
+	case "-v", "--version", "version":
+		return cmdVersion(cmdArgs)
+	}
+
 	if loadedHooks == nil {
 		cfg, err := loadHooks()
 		if err != nil {
@@ -369,9 +383,6 @@ func run(args []string) error {
 		}
 		loadedHooks = cfg
 	}
-
-	cmd := args[1]
-	cmdArgs := args[2:]
 
 	switch cmd {
 	case "sync":
@@ -479,12 +490,68 @@ func run(args []string) error {
 		return cmdWorkflow(append([]string{"status"}, cmdArgs...))
 	case "next":
 		return cmdNext(cmdArgs)
-	case "-h", "--help", "help":
-		return cmdHelp(cmdArgs)
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", cmd)
 	}
+}
+
+type versionInfo struct {
+	Version    string `json:"version"`
+	Revision   string `json:"revision,omitempty"`
+	Time       string `json:"time,omitempty"`
+	Modified   bool   `json:"modified,omitempty"`
+	GoVersion  string `json:"go_version,omitempty"`
+	MainModule string `json:"main_module,omitempty"`
+}
+
+func cmdVersion(args []string) error {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "output JSON")
+	fs.Usage = func() { fmt.Println("Usage: pt version [--json]") }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	info := versionInfo{
+		Version:   "dev",
+		GoVersion: runtime.Version(),
+	}
+
+	if bi, ok := debug.ReadBuildInfo(); ok && bi != nil {
+		info.MainModule = bi.Main.Path
+		if bi.Main.Version != "" {
+			info.Version = bi.Main.Version
+		}
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				info.Revision = s.Value
+			case "vcs.time":
+				info.Time = s.Value
+			case "vcs.modified":
+				info.Modified = (s.Value == "true")
+			}
+		}
+	}
+
+	if *jsonOut {
+		return printJSON(info)
+	}
+
+	out := info.Version
+	if info.Revision != "" {
+		rev := info.Revision
+		if len(rev) > 12 {
+			rev = rev[:12]
+		}
+		out += " " + rev
+	}
+	if info.Modified {
+		out += " (modified)"
+	}
+	fmt.Println(strings.TrimSpace(out))
+	return nil
 }
 
 func usage() {
@@ -511,6 +578,7 @@ VIEW & SEARCH
   search  --query="text"             Search across all tasks
   history <id>                       View task timeline
   review  <subcmd>                   Save a kickoff/closeout/demo markdown review to .pt/reviews/
+  version                           Show build/version info
 
 CREATE & UPDATE
   sync    <manifest>                 Import/update from TOML
@@ -1489,7 +1557,9 @@ func cmdClaim(args []string) error {
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER] [--draft] [--override-soft=REASON] [--workflow=PATH]") }
+	fs.Usage = func() {
+		fmt.Println("Usage: pt claim <id> [--as=USER] [--draft] [--override-soft=REASON] [--workflow=PATH]")
+	}
 	// Parse flags first, then get positional arg
 	if err := fs.Parse(args); err != nil {
 		return err
