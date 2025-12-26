@@ -15,6 +15,8 @@ type ValidationRunner struct {
 	Runner CommandRunner
 	// WorkDir is the directory to run commands in. If empty, uses current working directory.
 	WorkDir string
+	// TaskID is the ID of the task being validated. Used for DoD placeholder expansion.
+	TaskID string
 }
 
 // ValidationResult captures outputs and pass/fail.
@@ -33,6 +35,7 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 
 	runCmd := func(cmdStr string) error {
 		cmdStr = normalizeDoDCmd(cmdStr)
+		cmdStr = expandTaskIDPlaceholder(cmdStr, vr.TaskID)
 		cmdStr = rewritePTSelf(cmdStr)
 		if strings.TrimSpace(cmdStr) == "" {
 			return nil
@@ -58,6 +61,13 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 		return ValidationResult{Passed: false, Output: strings.Join(outputs, "\n")}, errors.New("manual check not confirmed")
 	}
 	return ValidationResult{Passed: true, Output: strings.Join(outputs, "\n")}, nil
+}
+
+func expandTaskIDPlaceholder(cmd string, taskID string) string {
+	if strings.TrimSpace(taskID) == "" {
+		return cmd
+	}
+	return strings.ReplaceAll(cmd, "<this-task-id>", taskID)
 }
 
 func rewritePTSelf(cmd string) string {
