@@ -35,7 +35,6 @@ go.work.sum
 .gocache/
 context_*.json
 .pt.db*
-.beads/
 /pt
 
 # PT runtime state

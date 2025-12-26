@@ -133,7 +133,7 @@ deps = ["Implement POST /login"] # Dependency by title
 
 The `pt` CLI manages the lifecycle of tasks defined in your manifests.
 
-### Quick Flow (bd-style helper)
+### Quick Flow
 1) `pt sync phases/<file>.toml` — apply manifest to the store.
 2) `pt next [--json]` — conductor-style “what now?” (review → work → unblock → plan → done).
 3) `pt ready --role=<role> --verbose` — find unblocked work (when workflows are active, use `--phase`/`--all-phases`).
