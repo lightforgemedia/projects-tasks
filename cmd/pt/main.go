@@ -1384,7 +1384,7 @@ func cmdShow(args []string) error {
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt show <id> [--json] [--porcelain] [--workflow=PATH]") }
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
@@ -1489,7 +1489,9 @@ func cmdClaim(args []string) error {
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
-	fs.Usage = func() { fmt.Println("Usage: pt claim <id> [--as=USER] [--draft] [--override-soft=REASON] [--workflow=PATH]") }
+	fs.Usage = func() {
+		fmt.Println("Usage: pt claim <id> [--as=USER] [--draft] [--override-soft=REASON] [--workflow=PATH]")
+	}
 	// Parse flags first, then get positional arg
 	if err := fs.Parse(args); err != nil {
 		return err
