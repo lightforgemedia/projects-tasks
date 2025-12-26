@@ -11,6 +11,17 @@
 - **Tests**: Unit tests next to code (`_test.go`). No skipping.
 - **Secrets**: Never commit secrets.
 
+## Code Navigation (sg-agent default)
+- Start orientation with: `sg-agent bundle --dir . --format json`
+- Prefer contract-first reading:
+  - `sg-agent read --file <path> --name <Sym> --depth signature --format sigil`
+  - Escalate to bodies only when needed: `--depth full --format json`
+- Prefer AST-aware navigation over grep:
+  - Call graph: `sg-agent find --callers <Sym> --dir . --depth 2 --format json`
+  - Callees: `sg-agent find --callees <Sym> --dir . --depth 2 --format sigil`
+  - Type usages: `sg-agent find --usages <Type> --dir . --depth 2 --format json`
+- Use `rg` only when sg-agent can’t help (docs/config/git hooks/plaintext string search).
+
 ## PT Dogfooding (mandatory)
 - All work in this repo and subprojects must be managed via `pt` (sync/ready/claim/validate/approve). Do not bypass the SDLC flow.
 - Log any pt issues or improvement ideas as pt tasks (via manifests or `pt add`).
