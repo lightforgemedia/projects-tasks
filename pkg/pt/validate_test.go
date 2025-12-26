@@ -108,6 +108,21 @@ func TestValidateDoDStripsOuterQuotes(t *testing.T) {
 	}
 }
 
+func TestValidateDoDSkipsDashNoop(t *testing.T) {
+	r := &stubRunner{}
+	vr := ValidationRunner{Runner: r}
+	dod := DefinitionOfDone{
+		Tests: []string{"-", "echo ok"},
+	}
+	res, err := vr.ValidateDoD(context.Background(), dod, true)
+	if err != nil || !res.Passed {
+		t.Fatalf("expected pass, got err=%v res=%+v", err, res)
+	}
+	if got := r.log; len(got) != 1 || got[0] != `sh -c echo ok` {
+		t.Fatalf("unexpected command log: %v", got)
+	}
+}
+
 func TestValidateDoDRewritesPTSelf(t *testing.T) {
 	t.Setenv("PT_SELF", "/abs/path/to/pt")
 	r := &stubRunner{}

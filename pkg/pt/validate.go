@@ -35,6 +35,9 @@ func (vr ValidationRunner) ValidateDoD(ctx context.Context, dod DefinitionOfDone
 
 	runCmd := func(cmdStr string) error {
 		cmdStr = normalizeDoDCmd(cmdStr)
+		if cmdStr == "-" {
+			return nil
+		}
 		cmdStr = expandTaskIDPlaceholder(cmdStr, vr.TaskID)
 		cmdStr = rewritePTSelf(cmdStr)
 		if strings.TrimSpace(cmdStr) == "" {
