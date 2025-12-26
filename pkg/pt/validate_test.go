@@ -124,6 +124,37 @@ func TestValidateDoDRewritesPTSelf(t *testing.T) {
 	}
 }
 
+func TestValidateDoDExpandsThisTaskIDPlaceholder(t *testing.T) {
+	r := &stubRunner{}
+	vr := ValidationRunner{Runner: r, TaskID: "pt-999"}
+	dod := DefinitionOfDone{
+		Tests: []string{"echo <this-task-id>"},
+	}
+	res, err := vr.ValidateDoD(context.Background(), dod, true)
+	if err != nil || !res.Passed {
+		t.Fatalf("expected pass, got err=%v res=%+v", err, res)
+	}
+	if got := r.log; len(got) != 1 || got[0] != "sh -c echo pt-999" {
+		t.Fatalf("unexpected command log: %v", got)
+	}
+}
+
+func TestValidateDoDExpandsPlaceholderBeforePTSelfRewrite(t *testing.T) {
+	t.Setenv("PT_SELF", "/abs/path/to/pt")
+	r := &stubRunner{}
+	vr := ValidationRunner{Runner: r, TaskID: "pt-123"}
+	dod := DefinitionOfDone{
+		Tests: []string{"pt review check <this-task-id> --kind=post"},
+	}
+	res, err := vr.ValidateDoD(context.Background(), dod, true)
+	if err != nil || !res.Passed {
+		t.Fatalf("expected pass, got err=%v res=%+v", err, res)
+	}
+	if got := r.log; len(got) != 1 || got[0] != "sh -c /abs/path/to/pt review check pt-123 --kind=post" {
+		t.Fatalf("unexpected command log: %v", got)
+	}
+}
+
 func TestValidateDoDWorkDirWired(t *testing.T) {
 	// When Runner is nil, WorkDir should be passed to the default ExecRunner
 	tmpDir := t.TempDir()

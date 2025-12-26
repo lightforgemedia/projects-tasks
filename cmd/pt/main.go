@@ -2006,7 +2006,7 @@ func cmdValidate(args []string) error {
 
 	confirm := confirmManual(manualSteps, *yes)
 	// Pass working directory to runner instead of using os.Chdir
-	vr := pt.ValidationRunner{Runner: pt.ExecRunner{Dir: workDir}}
+	vr := pt.ValidationRunner{Runner: pt.ExecRunner{Dir: workDir}, TaskID: issue.ID}
 	res, err := vr.ValidateDoD(ctx, meta.DoD, confirm)
 	fmt.Print(res.Output)
 	if err != nil || !res.Passed {
