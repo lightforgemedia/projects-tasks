@@ -10,7 +10,6 @@
 
 ## What we verified in this repo
 - Repo hooks present: `.git/hooks/pre-commit`, `.git/hooks/post-merge`.
-  - They are `#!/bin/sh` hooks that call `bd` only (no `pulse` references).
 - No local git configuration sets `core.hooksPath`.
 - Could not reproduce the message with:
   - `GIT_TRACE=1 GIT_TRACE_HOOKS=1 git commit --allow-empty -m "trace-hook"`
@@ -38,4 +37,3 @@ If the message occurs, it almost certainly comes from **a different hook/script 
 - Re-run the commit with hooks disabled to confirm it’s hook-related:
   - `git commit --no-verify -m "x"`
 - If that removes the message, the next step is to identify which hook path is invoking `zsh` and update/remove it.
-

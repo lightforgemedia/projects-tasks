@@ -25,7 +25,7 @@ type Manifest struct {
 	Tasks   []Task      `json:"tasks"`
 }
 
-// Task describes a unit of work to be synced into Beads.
+// Task describes a unit of work to be synced into the PT store.
 type Task struct {
 	Template        string            `json:"template"`
 	Title           string            `json:"title"`
