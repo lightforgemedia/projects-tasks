@@ -1452,7 +1452,7 @@ func cmdShow(args []string) error {
 	dbPath := fs.String("db", "", "override store path")
 	prefix := fs.String("prefix", "", "override issue prefix")
 	fs.Usage = func() { fmt.Println("Usage: pt show <id> [--json] [--porcelain] [--workflow=PATH]") }
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {

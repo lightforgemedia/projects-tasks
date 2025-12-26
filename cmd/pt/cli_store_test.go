@@ -635,6 +635,41 @@ func TestPorcelainShowOutput(t *testing.T) {
 	}
 }
 
+func TestShowAcceptsFlagsAfterID(t *testing.T) {
+	_, store := setupStoreEnv(t)
+	manifest := pt.Manifest{
+		Tasks: []pt.Task{
+			{Title: "Task One", Template: "backend_endpoint", Role: "dev", Artifact: "spec:a", DoD: pt.DefinitionOfDone{Manual: "check", Tests: []string{"echo ok"}, Criteria: []string{"ok"}}},
+		},
+	}
+	if _, err := store.Sync(t.Context(), manifest); err != nil {
+		t.Fatalf("sync err: %v", err)
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmdShow([]string{"pt-1", "--json"})
+
+	w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Fatalf("show pt-1 --json err: %v", err)
+	}
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := buf.String()
+	if !strings.HasPrefix(strings.TrimSpace(out), "{") {
+		t.Fatalf("expected JSON output starting with '{', got: %s", out)
+	}
+	if !strings.Contains(out, `"id":`) {
+		t.Fatalf("expected 'id' field in JSON, got: %s", out)
+	}
+}
+
 func TestShellCdNoWorktree(t *testing.T) {
 	_, store := setupStoreEnv(t)
 	manifest := pt.Manifest{
