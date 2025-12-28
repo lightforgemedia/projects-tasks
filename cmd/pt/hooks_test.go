@@ -218,6 +218,51 @@ func TestHooksDefaultsVerboseMerges(t *testing.T) {
 	}
 }
 
+func TestHooksDedupAbsoluteAndRelativeSameFile(t *testing.T) {
+	td := t.TempDir()
+	origDir, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	// Simulate a discovered store path at <root>/.pt/db.json so discoveredProjectHooksPath()
+	// returns the absolute path to <root>/hooks.toml.
+	if err := os.MkdirAll(filepath.Join(td, ".pt"), 0755); err != nil {
+		t.Fatalf("mkdir .pt: %v", err)
+	}
+	t.Setenv("PT_DB", filepath.Join(td, ".pt", "db.json"))
+	t.Setenv("PT_NO_DISCOVER", "1")
+
+	// Ensure no global hooks are present.
+	t.Setenv("HOME", filepath.Join(td, "home"))
+	t.Setenv("PT_HOOKS", "")
+	t.Setenv("PT_SKIP_HOOKS", "")
+
+	if err := os.Chdir(td); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Create a single project hooks.toml in the repo root.
+	hooksPath := filepath.Join(td, "hooks.toml")
+	cfg := `
+[[hook]]
+event = "post-validate"
+cmd = "echo ok"
+`
+	if err := os.WriteFile(hooksPath, []byte(cfg), 0644); err != nil {
+		t.Fatalf("write hooks: %v", err)
+	}
+
+	loadedHooks, err := loadHooks()
+	if err != nil {
+		t.Fatalf("load hooks: %v", err)
+	}
+	if loadedHooks == nil {
+		t.Fatalf("expected hooks to load")
+	}
+	if got := len(loadedHooks.Hooks); got != 1 {
+		t.Fatalf("expected deduped hooks len=1, got %d", got)
+	}
+}
+
 func TestHookOnlyTemplatesSkipsNonMatching(t *testing.T) {
 	td := t.TempDir()
 	outPath := filepath.Join(td, "out.txt")

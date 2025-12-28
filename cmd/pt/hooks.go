@@ -84,18 +84,33 @@ func loadHooks() (*hookConfig, error) {
 	}
 	paths = append(paths, "hooks.toml")
 	seen := make(map[string]bool)
+	projectRoot := ""
+	if strings.TrimSpace(projectHooks) != "" {
+		projectRoot = filepath.Dir(projectHooks)
+	}
 	for _, p := range paths {
 		if p == "" {
 			continue
 		}
-		if seen[p] {
+
+		canonical := p
+		if !filepath.IsAbs(canonical) && strings.TrimSpace(projectRoot) != "" {
+			canonical = filepath.Join(projectRoot, canonical)
+		}
+		if abs, err := filepath.Abs(canonical); err == nil {
+			canonical = abs
+		}
+		canonical = filepath.Clean(canonical)
+
+		if seen[canonical] {
 			continue
 		}
-		seen[p] = true
-		if _, err := os.Stat(p); err != nil {
+		seen[canonical] = true
+
+		if _, err := os.Stat(canonical); err != nil {
 			continue
 		}
-		cfg, err := parseHooksTOML(p)
+		cfg, err := parseHooksTOML(canonical)
 		if err != nil {
 			return nil, err
 		}
