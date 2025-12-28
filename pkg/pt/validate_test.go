@@ -191,3 +191,18 @@ func TestValidateDoDWorkDirWired(t *testing.T) {
 		t.Errorf("expected output to contain workdir %q, got: %q", tmpDir, res.Output)
 	}
 }
+
+func TestValidateDoDSkipsNAPlaceholders(t *testing.T) {
+	r := &stubRunner{}
+	vr := ValidationRunner{Runner: r}
+	dod := DefinitionOfDone{
+		Tests: []string{"(N/A)", "N/A", "n/a", "NA", "na", "\"(N/A)\"", " 'n/a' ", "echo ok"},
+	}
+	res, err := vr.ValidateDoD(context.Background(), dod, true)
+	if err != nil || !res.Passed {
+		t.Fatalf("expected pass, got err=%v res=%+v", err, res)
+	}
+	if got := r.log; len(got) != 1 || got[0] != `sh -c echo ok` {
+		t.Fatalf("unexpected command log: %v", got)
+	}
+}

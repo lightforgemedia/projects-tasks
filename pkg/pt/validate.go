@@ -98,14 +98,21 @@ func rewritePTSelf(cmd string) string {
 
 func normalizeDoDCmd(cmd string) string {
 	s := strings.TrimSpace(cmd)
-	if len(s) < 2 {
+	if strings.TrimSpace(s) == "" || s == "-" {
 		return s
 	}
 
 	// Some tasks/manifests store commands as a fully-quoted string (e.g. `"echo ok"`).
 	// When we pass that through `sh -c`, the extra wrapper quotes can cause parse errors.
 	if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
-		return strings.TrimSpace(s[1 : len(s)-1])
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+
+	// Treat placeholder "no-op" DoD entries as "-" so validation doesn't try to execute them.
+	// We accept common variants because these often come from manifests or manual edits.
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "(N/A)", "N/A", "NA":
+		return "-"
 	}
 	return s
 }
