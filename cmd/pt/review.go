@@ -272,6 +272,9 @@ Goals (2–5 bullets):
 Non-goals / out of scope:
 - TODO
 
+Spec pack (what this work must match):
+- TODO Links: PRD/UX flows/contracts/examples (paths or URLs)
+
 Options considered (2–3) + decision:
 1. Option A: ...
 2. Option B: ...
@@ -295,28 +298,41 @@ One question to sanity-check (or “No questions”):
 - TODO
 `
 	case reviewKindPost:
-		return header + `## Closeout (what was done)
+		return header + `## Result (required)
 
-What shipped (links/paths):
+- TODO Result: PASS|FAIL|BLOCKED
+- TODO Summary (1–3 sentences)
+
+Spec pack reviewed (what you compared against):
+- TODO Links: PRD/UX flows/contracts/examples (paths or URLs)
+
+Evidence (must be checkable):
+- TODO Tests run (exact commands + result summary)
+- TODO Evidence pointers (paths): outputs/... logs/screenshots/reports
+
+Change summary (what shipped; links/paths):
 - TODO
 
-What changed vs plan (deltas + why):
+Deltas / tradeoffs (what changed vs plan + why):
 - TODO
 
-Evidence collected (commands + artifacts):
-- Tests run: ` + "`go test ./...`" + `
-- Artifacts: outputs/... (attach paths)
+AI provenance (if used):
+- TODO What was AI-assisted? What did you change/review manually?
 
 Gaps / follow-ups (new tasks to create):
 - TODO
 
-What’s next (recommended next action):
+Next recommended action:
 - TODO
 `
 	case reviewKindDemo:
 		return header + `## Demo (user-facing walkthrough)
 
 Goal: Make it easy to run and *see* the product working.
+
+Result (required):
+- TODO Result: PASS|FAIL|BLOCKED
+- TODO What should the user see? (1–3 bullets)
 
 How to run:
 1. Run tests (must pass):

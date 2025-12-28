@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"projects-tasks/pkg/pt"
 )
@@ -104,5 +105,22 @@ func TestReviewWriteDryRunDoesNotWrite(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(td, ".pt", "reviews")); err == nil {
 		t.Fatalf("expected no reviews dir on dry-run")
+	}
+}
+
+func TestRenderReviewTemplatePostHasStructuredResultAndEvidence(t *testing.T) {
+	out := renderReviewTemplate(reviewKindPost, "review", "pt-123", time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
+
+	if !strings.Contains(out, "## Result (required)") {
+		t.Fatalf("expected post template to include Result section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- TODO Result: PASS|FAIL|BLOCKED") {
+		t.Fatalf("expected post template to include explicit Result placeholder, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Spec pack reviewed") {
+		t.Fatalf("expected post template to include Spec pack reviewed section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Evidence (must be checkable)") {
+		t.Fatalf("expected post template to include Evidence section, got:\n%s", out)
 	}
 }
