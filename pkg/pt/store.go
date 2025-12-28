@@ -277,8 +277,13 @@ func (c *StoreClient) UpdateTask(ctx context.Context, id string, opts UpdateOpti
 	}
 	if strings.TrimSpace(opts.Assignee) != "" && opts.Assignee != iss.Assignee {
 		oldAssignee := iss.Assignee
-		iss.Assignee = opts.Assignee
-		changes = append(changes, fmt.Sprintf("assignee:%s->%s", oldAssignee, opts.Assignee))
+		if opts.Assignee == "-" {
+			iss.Assignee = ""
+			changes = append(changes, fmt.Sprintf("assignee:%s->%s", oldAssignee, ""))
+		} else {
+			iss.Assignee = opts.Assignee
+			changes = append(changes, fmt.Sprintf("assignee:%s->%s", oldAssignee, opts.Assignee))
+		}
 	}
 	if opts.Priority != nil && *opts.Priority != iss.Priority {
 		oldPriority := iss.Priority

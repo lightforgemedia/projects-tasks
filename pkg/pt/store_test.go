@@ -192,6 +192,15 @@ func TestStoreUpdateTask(t *testing.T) {
 		t.Fatalf("expected assignee 'alice', got %q", iss.Assignee)
 	}
 
+	// Clear assignee with "-"
+	if err := client.UpdateTask(ctx, id, UpdateOptions{Assignee: "-"}); err != nil {
+		t.Fatalf("clear assignee: %v", err)
+	}
+	iss, _, _ = client.GetTask(ctx, id)
+	if iss.Assignee != "" {
+		t.Fatalf("expected assignee cleared, got %q", iss.Assignee)
+	}
+
 	// Update priority
 	newPriority := 1
 	if err := client.UpdateTask(ctx, id, UpdateOptions{Priority: &newPriority}); err != nil {
@@ -219,8 +228,8 @@ func TestStoreUpdateTask(t *testing.T) {
 			updateCount++
 		}
 	}
-	if updateCount != 4 {
-		t.Fatalf("expected 4 update events in history, got %d", updateCount)
+	if updateCount != 5 {
+		t.Fatalf("expected 5 update events in history, got %d", updateCount)
 	}
 
 	// No-op update (no changes)
@@ -235,8 +244,8 @@ func TestStoreUpdateTask(t *testing.T) {
 			updateCount++
 		}
 	}
-	if updateCount != 4 {
-		t.Fatalf("expected still 4 update events after no-op, got %d", updateCount)
+	if updateCount != 5 {
+		t.Fatalf("expected still 5 update events after no-op, got %d", updateCount)
 	}
 }
 
