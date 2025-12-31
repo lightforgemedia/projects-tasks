@@ -121,4 +121,3 @@ func bugTemplate(label, description, foundIn, repro string, now time.Time) strin
 - If this bug blocks progress, stop work and fix PT first.
 `, now.Format(time.RFC3339), strings.TrimSpace(label), strings.TrimSpace(foundIn), strings.TrimSpace(description), strings.TrimSpace(repro))
 }
-

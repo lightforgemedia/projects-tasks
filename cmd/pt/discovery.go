@@ -17,8 +17,9 @@ import (
 
 // reorderDiscoveryArgs moves non-flag arguments to the end so flags can appear
 // anywhere in the command. This allows both:
-//   pt discovery init tradeview --type web
-//   pt discovery init --type web tradeview
+//
+//	pt discovery init tradeview --type web
+//	pt discovery init --type web tradeview
 func reorderDiscoveryArgs(args []string) []string {
 	var flags, positional []string
 	for i := 0; i < len(args); i++ {

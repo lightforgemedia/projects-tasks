@@ -16,7 +16,7 @@ func TestConfirmManual_InteractiveYes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	oldStdin := os.Stdin
 	defer func() { os.Stdin = oldStdin }()
 	os.Stdin = r
@@ -38,7 +38,7 @@ func TestConfirmManual_InteractiveNo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	oldStdin := os.Stdin
 	defer func() { os.Stdin = oldStdin }()
 	os.Stdin = r

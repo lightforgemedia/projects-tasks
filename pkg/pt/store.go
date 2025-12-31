@@ -354,6 +354,65 @@ func (c *StoreClient) UpdateTask(ctx context.Context, id string, opts UpdateOpti
 		}
 	}
 
+	// Update grounding pack in TaskMeta
+	if len(opts.GroundingFiles) > 0 {
+		if meta.Grounding == nil {
+			meta.Grounding = &GroundingPack{}
+		}
+		old := strings.Join(meta.Grounding.Files, ",")
+		newVal := strings.Join(opts.GroundingFiles, ",")
+		if newVal == "-" {
+			if len(meta.Grounding.Files) > 0 {
+				meta.Grounding.Files = nil
+				changes = append(changes, "grounding_files:cleared")
+				metaChanged = true
+			}
+		} else if old != newVal {
+			meta.Grounding.Files = opts.GroundingFiles
+			changes = append(changes, fmt.Sprintf("grounding_files:%s->%s", truncate(old, 20), truncate(newVal, 20)))
+			metaChanged = true
+		}
+	}
+	if len(opts.GroundingSymbols) > 0 {
+		if meta.Grounding == nil {
+			meta.Grounding = &GroundingPack{}
+		}
+		old := strings.Join(meta.Grounding.Symbols, ",")
+		newVal := strings.Join(opts.GroundingSymbols, ",")
+		if newVal == "-" {
+			if len(meta.Grounding.Symbols) > 0 {
+				meta.Grounding.Symbols = nil
+				changes = append(changes, "grounding_symbols:cleared")
+				metaChanged = true
+			}
+		} else if old != newVal {
+			meta.Grounding.Symbols = opts.GroundingSymbols
+			changes = append(changes, fmt.Sprintf("grounding_symbols:%s->%s", truncate(old, 20), truncate(newVal, 20)))
+			metaChanged = true
+		}
+	}
+	if len(opts.GroundingCommands) > 0 {
+		if meta.Grounding == nil {
+			meta.Grounding = &GroundingPack{}
+		}
+		old := strings.Join(meta.Grounding.Commands, ",")
+		newVal := strings.Join(opts.GroundingCommands, ",")
+		if newVal == "-" {
+			if len(meta.Grounding.Commands) > 0 {
+				meta.Grounding.Commands = nil
+				changes = append(changes, "grounding_commands:cleared")
+				metaChanged = true
+			}
+		} else if old != newVal {
+			meta.Grounding.Commands = opts.GroundingCommands
+			changes = append(changes, fmt.Sprintf("grounding_commands:%s->%s", truncate(old, 20), truncate(newVal, 20)))
+			metaChanged = true
+		}
+	}
+	if meta.Grounding != nil && len(meta.Grounding.Files) == 0 && len(meta.Grounding.Symbols) == 0 && len(meta.Grounding.Commands) == 0 {
+		meta.Grounding = nil
+	}
+
 	// Rebuild description if meta changed
 	if metaChanged {
 		task := Task{
@@ -367,6 +426,7 @@ func (c *StoreClient) UpdateTask(ctx context.Context, id string, opts UpdateOpti
 			Inputs:    meta.Inputs,
 			Scope:     meta.Scope,
 			Reference: meta.Reference,
+			Grounding: meta.Grounding,
 		}
 		desc, err := buildDescription(task)
 		if err != nil {

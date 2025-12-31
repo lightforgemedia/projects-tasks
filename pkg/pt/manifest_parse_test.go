@@ -14,4 +14,3 @@ func TestParseStringArrayCommaInQuotes(t *testing.T) {
 		t.Fatalf("got %q, want %q", got[0], "echo 'a,b'")
 	}
 }
-

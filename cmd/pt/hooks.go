@@ -268,6 +268,7 @@ type HookResult struct {
 	Command string `json:"command"`
 	Status  string `json:"status"`
 	Output  string `json:"output,omitempty"`
+	LogPath string `json:"log_path,omitempty"`
 }
 
 func runHooks(event string, payload hookPayload) ([]HookResult, error) {
@@ -380,6 +381,7 @@ func runHook(h hookEntry, defaults hookDefaults, event string, payload hookPaylo
 		fmt.Fprintf(os.Stderr, "[hook] %s -> %s\n", event, cmdStr)
 	}
 	out, err := cmd.CombinedOutput()
+	logAbsPath, logDisplay := writeHookLog(event, payload, out)
 	if hookVerbose() {
 		status := "ok"
 		if err != nil {
@@ -389,20 +391,35 @@ func runHook(h hookEntry, defaults hookDefaults, event string, payload hookPaylo
 	}
 	status := "ok"
 	if err != nil {
-		snippet := strings.TrimSpace(string(out))
+		snippet := hookOutputSummary(out, 240)
 		if snippet == "" {
 			snippet = err.Error()
 		}
+		if logDisplay != "" {
+			snippet = fmt.Sprintf("%s (log: %s)", snippet, logDisplay)
+		}
 		if strings.ToLower(onFail) == "fail" {
-			return HookResult{Event: event, Command: cmdStr, Status: "fail", Output: strings.TrimSpace(string(out))}, fmt.Errorf("hook %s failed running %q: %s", event, cmdStr, snippet)
+			return HookResult{Event: event, Command: cmdStr, Status: "fail", Output: strings.TrimSpace(string(out)), LogPath: logDisplay}, fmt.Errorf("hook %s failed running %q: %s", event, cmdStr, snippet)
 		}
 		status = "warn"
 		fmt.Fprintf(os.Stderr, "[hook warn] %s running %q: %s\n", event, cmdStr, snippet)
 	}
-	if len(out) > 0 {
-		fmt.Fprintf(os.Stderr, "[hook ok] %s: %s\n", event, strings.TrimSpace(string(out)))
+	if len(out) > 0 && hookVerbose() {
+		fmt.Fprintf(os.Stderr, "[hook %s] %s: %s\n", status, event, strings.TrimSpace(string(out)))
+	} else if len(out) > 0 && status == "ok" {
+		summary := hookOutputSummary(out, 240)
+		if logDisplay != "" {
+			if summary != "" {
+				fmt.Fprintf(os.Stderr, "[hook ok] %s: %s (log: %s)\n", event, summary, logDisplay)
+			} else {
+				fmt.Fprintf(os.Stderr, "[hook ok] %s (log: %s)\n", event, logDisplay)
+			}
+		} else if summary != "" {
+			fmt.Fprintf(os.Stderr, "[hook ok] %s: %s\n", event, summary)
+		}
 	}
-	return HookResult{Event: event, Command: cmdStr, Status: status, Output: strings.TrimSpace(string(out))}, nil
+	_ = logAbsPath
+	return HookResult{Event: event, Command: cmdStr, Status: status, Output: strings.TrimSpace(string(out)), LogPath: logDisplay}, nil
 }
 
 func applyPlaceholders(s string, p hookPayload) string {
@@ -419,6 +436,57 @@ func applyPlaceholders(s string, p hookPayload) string {
 		"{{labels}}", strings.Join(p.Labels, ","),
 	)
 	return repl.Replace(s)
+}
+
+func hookOutputSummary(out []byte, maxLen int) string {
+	if len(out) == 0 {
+		return ""
+	}
+	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return ""
+	}
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if maxLen > 0 && len(s) > maxLen {
+		return s[:maxLen] + "…"
+	}
+	return s
+}
+
+func writeHookLog(event string, payload hookPayload, out []byte) (string, string) {
+	if len(out) == 0 {
+		return "", ""
+	}
+	root := projectRootFromStorePath(pt.DiscoveredStorePath())
+	if strings.TrimSpace(root) == "" {
+		wd, err := os.Getwd()
+		if err == nil {
+			root = wd
+		}
+	}
+	if strings.TrimSpace(root) == "" {
+		return "", ""
+	}
+	root = filepath.Clean(root)
+	id := strings.TrimSpace(payload.ID)
+	if id == "" {
+		id = "global"
+	}
+	dir := filepath.Join(root, ".pt", "reviews", "artifacts", id)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", ""
+	}
+	absPath := filepath.Join(dir, fmt.Sprintf("%s.log", event))
+	if err := os.WriteFile(absPath, out, 0644); err != nil {
+		return "", ""
+	}
+	display := absPath
+	if rel, err := filepath.Rel(root, absPath); err == nil && rel != "" && rel != "." && !strings.HasPrefix(rel, "..") {
+		display = rel
+	}
+	return absPath, display
 }
 
 func splitPatterns(s string) []string {

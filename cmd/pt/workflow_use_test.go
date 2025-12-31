@@ -74,4 +74,3 @@ order = 1
 		t.Fatalf("selection file missing: %v", err)
 	}
 }
-

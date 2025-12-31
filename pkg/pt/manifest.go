@@ -43,6 +43,9 @@ type Task struct {
 	Scope     string   `json:"scope,omitempty"`     // BOUNDS: IN-scope and OUT-of-scope
 	Reference string   `json:"reference,omitempty"` // RELATED: links to docs, issues, prior work
 
+	// Grounding pack - task-level code navigation anchor to prevent drift
+	Grounding *GroundingPack `json:"grounding,omitempty"`
+
 	// UX discovery - optional exploration loop for user-facing tasks
 	UX *UXConfig `json:"ux,omitempty"`
 
@@ -374,6 +377,21 @@ func assignTaskKV(task *Task, key string, val value) error {
 		task.Scope = val.asString()
 	case "reference":
 		task.Reference = val.asString()
+	case "grounding_files":
+		if task.Grounding == nil {
+			task.Grounding = &GroundingPack{}
+		}
+		task.Grounding.Files = val.arr
+	case "grounding_symbols":
+		if task.Grounding == nil {
+			task.Grounding = &GroundingPack{}
+		}
+		task.Grounding.Symbols = val.arr
+	case "grounding_commands":
+		if task.Grounding == nil {
+			task.Grounding = &GroundingPack{}
+		}
+		task.Grounding.Commands = val.arr
 	// Spike-specific fields
 	case "max_hours":
 		var n int

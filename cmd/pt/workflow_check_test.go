@@ -73,4 +73,3 @@ order = 2
 		t.Fatalf("workflow check output mismatch v1 vs v2\nv1=%q\nv2=%q", outV1, outV2)
 	}
 }
-

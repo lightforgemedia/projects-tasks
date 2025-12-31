@@ -289,4 +289,3 @@ func hasLabel(iss pt.Issue, label string) bool {
 	}
 	return false
 }
-

@@ -374,6 +374,9 @@ func cmdWorktreeStatus(args []string) error {
 		fmt.Printf("  %s: %s%s\n", s.TaskID, s.TaskTitle, existsStr)
 		fmt.Printf("    Path: %s\n", s.Path)
 		fmt.Printf("    Branch: %s\n", s.Branch)
+		if !s.Exists {
+			fmt.Printf("    Remediation: pt worktree done %s   (clears stale record when directory is missing)\n", s.TaskID)
+		}
 	}
 	return nil
 }

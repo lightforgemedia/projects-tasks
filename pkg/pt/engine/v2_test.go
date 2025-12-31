@@ -123,4 +123,3 @@ func TestV2CheckGate_PriorPhaseBlocksLater(t *testing.T) {
 		t.Fatalf("expected hard block on prove; got ok=%v hard=%v phase=%q msg=%q", ok, isHard, phaseID, msg)
 	}
 }
-

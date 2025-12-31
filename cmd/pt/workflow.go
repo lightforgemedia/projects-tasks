@@ -334,10 +334,10 @@ func cmdWorkflowUse(args []string) error {
 
 	if *jsonOut {
 		return printJSON(map[string]any{
-			"status":        "ok",
-			"project_root":  projectRoot,
+			"status":         "ok",
+			"project_root":   projectRoot,
 			"selection_file": selPath,
-			"path":          resolved,
+			"path":           resolved,
 		})
 	}
 	fmt.Printf("Workflow selected: %s\n", resolved)

@@ -24,6 +24,9 @@ type TaskMeta struct {
 	Scope     string   `json:"scope,omitempty"`     // BOUNDS: IN-scope and OUT-of-scope
 	Reference string   `json:"reference,omitempty"` // RELATED: links to docs, issues, prior work
 
+	// Grounding pack - task-level code navigation anchor to prevent drift
+	Grounding *GroundingPack `json:"grounding,omitempty"`
+
 	// UX discovery - optional exploration loop
 	UX      *UXConfig `json:"ux,omitempty"`       // UX requirements from manifest
 	UXState *UXState  `json:"ux_state,omitempty"` // Runtime UX exploration state
@@ -32,17 +35,26 @@ type TaskMeta struct {
 	MaxHours int `json:"max_hours,omitempty"` // time-box for spike tasks
 }
 
+type GroundingPack struct {
+	Files    []string `json:"files,omitempty"`
+	Symbols  []string `json:"symbols,omitempty"`
+	Commands []string `json:"commands,omitempty"`
+}
+
 // UXState tracks the current state of UX exploration for a task.
 type UXState struct {
-	Status     string     `json:"status"`               // pending|cases|explore|selected|approved
-	UseCases   []UseCase  `json:"use_cases,omitempty"`  // Confirmed use cases
-	Options    []string   `json:"options,omitempty"`    // Generated options (labels: A, B, C...) - legacy
-	Mockups    []UXMockup `json:"mockups,omitempty"`    // File-based mockups with fidelity tracking
-	Coverage   UXCoverage `json:"coverage,omitempty"`   // Capability coverage per mockup
-	Selection  string     `json:"selection,omitempty"`  // User's choice (e.g., "A+C")
-	Note       string     `json:"note,omitempty"`       // User's notes on selection
-	Iterations int        `json:"iterations"`           // Refinement count
-	ApprovedAt string     `json:"approved_at,omitempty"`
+	Status        string     `json:"status"`              // pending|cases|explore|selected|approved
+	UseCases      []UseCase  `json:"use_cases,omitempty"` // Confirmed use cases
+	Options       []string   `json:"options,omitempty"`   // Generated options (labels: A, B, C...) - legacy
+	Mockups       []UXMockup `json:"mockups,omitempty"`   // File-based mockups with fidelity tracking
+	Coverage      UXCoverage `json:"coverage,omitempty"`  // Capability coverage per mockup
+	Selection     string     `json:"selection,omitempty"` // User's choice (e.g., "A+C")
+	Note          string     `json:"note,omitempty"`      // User's notes on selection
+	Iterations    int        `json:"iterations"`          // Refinement count
+	ApprovedAt    string     `json:"approved_at,omitempty"`
+	PreflightDone bool       `json:"preflight_done,omitempty"`
+	PreflightFile string     `json:"preflight_file,omitempty"`
+	PreflightAt   string     `json:"preflight_at,omitempty"`
 }
 
 // UXCoverage maps mockup label -> capability ID -> coverage status
@@ -99,19 +111,19 @@ type Component struct {
 
 // Edge represents a dependency between components.
 type Edge struct {
-	From     string `json:"from"`              // Source component ID
-	To       string `json:"to"`                // Target component ID
-	Relation string `json:"relation"`          // calls|uses|triggers|provides|requires
-	Label    string `json:"label,omitempty"`   // Optional description (e.g., data passed)
+	From     string `json:"from"`            // Source component ID
+	To       string `json:"to"`              // Target component ID
+	Relation string `json:"relation"`        // calls|uses|triggers|provides|requires
+	Label    string `json:"label,omitempty"` // Optional description (e.g., data passed)
 }
 
 // UserJourney describes a complete flow through the system.
 type UserJourney struct {
-	ID        string        `json:"id"`                  // e.g., "J1"
-	Name      string        `json:"name"`                // e.g., "Quick Trade Entry"
-	Persona   string        `json:"persona,omitempty"`   // Who takes this journey
-	Goal      string        `json:"goal"`                // What they want to achieve
-	Trigger   string        `json:"trigger,omitempty"`   // What initiates this journey
+	ID        string        `json:"id"`                // e.g., "J1"
+	Name      string        `json:"name"`              // e.g., "Quick Trade Entry"
+	Persona   string        `json:"persona,omitempty"` // Who takes this journey
+	Goal      string        `json:"goal"`              // What they want to achieve
+	Trigger   string        `json:"trigger,omitempty"` // What initiates this journey
 	Steps     []JourneyStep `json:"steps"`
 	Outcome   string        `json:"outcome,omitempty"`   // Success state description
 	Frequency string        `json:"frequency,omitempty"` // daily|weekly|rare|error-case
@@ -129,9 +141,9 @@ type JourneyStep struct {
 
 // Branch represents an alternative path from a step.
 type Branch struct {
-	Condition string `json:"condition"`  // When this branch is taken
-	NextStep  int    `json:"next_step"`  // Step order to jump to
-	Component string `json:"component"`  // Component for this branch
+	Condition string `json:"condition"` // When this branch is taken
+	NextStep  int    `json:"next_step"` // Step order to jump to
+	Component string `json:"component"` // Component for this branch
 }
 
 // ComponentScope defines the boundaries for a single component.
@@ -153,19 +165,19 @@ type ComponentScope struct {
 
 // ScopeIO describes an input or output.
 type ScopeIO struct {
-	Name        string `json:"name"`                  // e.g., "symbol"
-	Type        string `json:"type"`                  // string|int|struct|list|event
-	Source      string `json:"source,omitempty"`      // Where it comes from
+	Name        string `json:"name"`             // e.g., "symbol"
+	Type        string `json:"type"`             // string|int|struct|list|event
+	Source      string `json:"source,omitempty"` // Where it comes from
 	Description string `json:"description,omitempty"`
 	Required    bool   `json:"required,omitempty"`
-	Example     string `json:"example,omitempty"`     // Concrete example value
+	Example     string `json:"example,omitempty"` // Concrete example value
 }
 
 // Condition describes a precondition.
 type Condition struct {
 	Description string `json:"description"`
-	Verifiable  bool   `json:"verifiable,omitempty"`  // Can be checked programmatically?
-	CheckedBy   string `json:"checked_by,omitempty"`  // Component that validates this
+	Verifiable  bool   `json:"verifiable,omitempty"` // Can be checked programmatically?
+	CheckedBy   string `json:"checked_by,omitempty"` // Component that validates this
 }
 
 // Exclusion explicitly states what is NOT in scope.
@@ -203,7 +215,7 @@ var ValidTransitions = map[DiscoveryStatus][]DiscoveryStatus{
 	StatusSynthesized:  {StatusReviewing},
 	StatusReviewing:    {StatusFeedback, StatusApproved},
 	StatusFeedback:     {StatusExploring, StatusSynthesized}, // iterate or re-synthesize
-	StatusApproved:     {},                                    // terminal state
+	StatusApproved:     {},                                   // terminal state
 }
 
 // CanTransition checks if a status transition is valid.
@@ -222,11 +234,11 @@ func (s DiscoveryStatus) CanTransition(to DiscoveryStatus) bool {
 
 // MockupComponent represents a labeled element in a mockup for precise feedback.
 type MockupComponent struct {
-	ID             string `json:"id"`                        // e.g., "A1", "B3.2"
-	Type           string `json:"type"`                      // header, input, button, list, table, etc.
-	Content        string `json:"content"`                   // Display text/description
-	Implementation string `json:"implementation,omitempty"`  // e.g., "<Select> from shadcn/ui"
-	Notes          string `json:"notes,omitempty"`           // Design rationale
+	ID             string `json:"id"`                       // e.g., "A1", "B3.2"
+	Type           string `json:"type"`                     // header, input, button, list, table, etc.
+	Content        string `json:"content"`                  // Display text/description
+	Implementation string `json:"implementation,omitempty"` // e.g., "<Select> from shadcn/ui"
+	Notes          string `json:"notes,omitempty"`          // Design rationale
 }
 
 // SynthesisOption represents one of the top 3 recommended options.
@@ -266,33 +278,33 @@ type FeedbackItem struct {
 // UXSynthesis is the comprehensive artifact for user review.
 // Stored at .pt/synthesis/{component_id}.json
 type UXSynthesis struct {
-	ComponentID    string            `json:"component_id"`           // From SystemMap
-	TaskID         string            `json:"task_id,omitempty"`      // PT task if linked
-	UXType         string            `json:"ux_type"`                // cli|tui|web|api
-	Status         DiscoveryStatus   `json:"status"`                 // Current phase
-	Capabilities   []UseCase         `json:"capabilities"`           // What must be supported
-	Recommendation string            `json:"recommendation"`         // Which option is recommended
-	Options        []SynthesisOption `json:"options"`                // Top 3 options
-	Rejected       []RejectedOption  `json:"rejected"`               // What was considered/rejected
-	Exploration    ExplorationLog    `json:"exploration"`            // Full exploration history
-	Feedback       []FeedbackItem    `json:"feedback,omitempty"`     // User feedback
-	Iterations     int               `json:"iterations"`             // Refinement count
+	ComponentID    string            `json:"component_id"`       // From SystemMap
+	TaskID         string            `json:"task_id,omitempty"`  // PT task if linked
+	UXType         string            `json:"ux_type"`            // cli|tui|web|api
+	Status         DiscoveryStatus   `json:"status"`             // Current phase
+	Capabilities   []UseCase         `json:"capabilities"`       // What must be supported
+	Recommendation string            `json:"recommendation"`     // Which option is recommended
+	Options        []SynthesisOption `json:"options"`            // Top 3 options
+	Rejected       []RejectedOption  `json:"rejected"`           // What was considered/rejected
+	Exploration    ExplorationLog    `json:"exploration"`        // Full exploration history
+	Feedback       []FeedbackItem    `json:"feedback,omitempty"` // User feedback
+	Iterations     int               `json:"iterations"`         // Refinement count
 	// Usability fields
-	Personas       []Persona         `json:"personas,omitempty"`     // Who uses this component
-	EdgeCases      []EdgeCaseState   `json:"edge_cases,omitempty"`   // Required UI states
-	Usability      *UsabilityReview  `json:"usability,omitempty"`    // Usability assessment
-	CreatedAt      string            `json:"created_at"`
-	SynthesizedAt  string            `json:"synthesized_at,omitempty"`
-	ApprovedAt     string            `json:"approved_at,omitempty"`
+	Personas      []Persona        `json:"personas,omitempty"`   // Who uses this component
+	EdgeCases     []EdgeCaseState  `json:"edge_cases,omitempty"` // Required UI states
+	Usability     *UsabilityReview `json:"usability,omitempty"`  // Usability assessment
+	CreatedAt     string           `json:"created_at"`
+	SynthesizedAt string           `json:"synthesized_at,omitempty"`
+	ApprovedAt    string           `json:"approved_at,omitempty"`
 }
 
 // ExplorationLog tracks everything explored before synthesis.
 type ExplorationLog struct {
-	TotalOptions   int      `json:"total_options"`           // How many were explored
-	Approaches     []string `json:"approaches"`              // Different approaches tried
-	PatternsUsed   []string `json:"patterns_used,omitempty"` // Patterns from guidance
-	TimeSpent      string   `json:"time_spent,omitempty"`    // Human-readable duration
-	GuidanceUsed   string   `json:"guidance_used,omitempty"` // Which guidance file
+	TotalOptions int      `json:"total_options"`           // How many were explored
+	Approaches   []string `json:"approaches"`              // Different approaches tried
+	PatternsUsed []string `json:"patterns_used,omitempty"` // Patterns from guidance
+	TimeSpent    string   `json:"time_spent,omitempty"`    // Human-readable duration
+	GuidanceUsed string   `json:"guidance_used,omitempty"` // Which guidance file
 }
 
 // ExplorationGate defines minimum requirements before synthesis.
@@ -317,11 +329,11 @@ func DefaultExplorationGate() ExplorationGate {
 
 // ImplementationGuidance provides type-specific implementation advice.
 type ImplementationGuidance struct {
-	UXType      string            `json:"ux_type"`      // cli|tui|web|api
-	Libraries   []string          `json:"libraries"`    // Recommended libraries
-	Patterns    map[string]string `json:"patterns"`     // Component -> pattern mapping
-	Examples    map[string]string `json:"examples"`     // Component -> code example
-	Constraints []string          `json:"constraints"`  // Must-follow rules
+	UXType      string            `json:"ux_type"`     // cli|tui|web|api
+	Libraries   []string          `json:"libraries"`   // Recommended libraries
+	Patterns    map[string]string `json:"patterns"`    // Component -> pattern mapping
+	Examples    map[string]string `json:"examples"`    // Component -> code example
+	Constraints []string          `json:"constraints"` // Must-follow rules
 }
 
 // ============================================================================
@@ -360,19 +372,19 @@ func RequiredEdgeCases() []EdgeCaseState {
 
 // FrictionPoint identifies UX friction in a flow.
 type FrictionPoint struct {
-	ID          string `json:"id"`                    // e.g., "F1"
-	Location    string `json:"location"`              // Where in the flow
-	Description string `json:"description"`           // What the friction is
-	Severity    string `json:"severity"`              // high|medium|low
-	Suggestion  string `json:"suggestion,omitempty"`  // How to fix
-	Addressed   bool   `json:"addressed"`             // Has it been fixed?
+	ID          string `json:"id"`                   // e.g., "F1"
+	Location    string `json:"location"`             // Where in the flow
+	Description string `json:"description"`          // What the friction is
+	Severity    string `json:"severity"`             // high|medium|low
+	Suggestion  string `json:"suggestion,omitempty"` // How to fix
+	Addressed   bool   `json:"addressed"`            // Has it been fixed?
 }
 
 // EntryPoint tracks how users can reach this component.
 type EntryPoint struct {
-	From      string `json:"from"`                // Source component/screen
-	Supported bool   `json:"supported"`           // Is this entry point designed?
-	Notes     string `json:"notes,omitempty"`     // Implementation notes
+	From      string `json:"from"`            // Source component/screen
+	Supported bool   `json:"supported"`       // Is this entry point designed?
+	Notes     string `json:"notes,omitempty"` // Implementation notes
 }
 
 // UsabilityReview captures the full usability assessment.
@@ -452,6 +464,11 @@ type UpdateOptions struct {
 	Inputs    []string `json:"inputs,omitempty"`
 	Scope     string   `json:"scope,omitempty"`
 	Reference string   `json:"reference,omitempty"`
+
+	// Grounding pack - use special value "-" to clear each list
+	GroundingFiles    []string `json:"grounding_files,omitempty"`
+	GroundingSymbols  []string `json:"grounding_symbols,omitempty"`
+	GroundingCommands []string `json:"grounding_commands,omitempty"`
 }
 
 // BlockedInfo tracks why a task is blocked.
@@ -505,6 +522,7 @@ func buildDescription(task Task) (string, error) {
 		Inputs:    task.Inputs,
 		Scope:     task.Scope,
 		Reference: task.Reference,
+		Grounding: task.Grounding,
 		UX:        task.UX,
 		MaxHours:  task.MaxHours,
 	}

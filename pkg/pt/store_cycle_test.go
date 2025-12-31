@@ -16,4 +16,3 @@ func TestStoreSyncFailsOnCycle(t *testing.T) {
 		t.Fatalf("expected sync to fail on cycle")
 	}
 }
-

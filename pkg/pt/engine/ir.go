@@ -37,4 +37,3 @@ type GateExpr interface {
 	Eval(ctx GateContext) (bool, string)
 	String() string
 }
-

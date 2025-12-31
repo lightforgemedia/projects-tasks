@@ -48,4 +48,3 @@ func TestSubmitBugRequiresFields(t *testing.T) {
 		t.Fatalf("expected error for missing required flags")
 	}
 }
-

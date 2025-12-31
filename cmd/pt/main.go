@@ -146,6 +146,34 @@ func projectDoDStatus() (string, bool) {
 	return path, false
 }
 
+func projectDoDDisplayPath(verbose bool) string {
+	raw := strings.TrimSpace(os.Getenv("PT_PROJECT_DOD"))
+	if raw != "" && !verbose {
+		return "PT_PROJECT_DOD"
+	}
+
+	path := projectDoDPath()
+	if !filepath.IsAbs(path) {
+		wd, err := os.Getwd()
+		if err == nil {
+			path = filepath.Join(wd, path)
+		}
+	}
+	path = filepath.Clean(path)
+	if verbose {
+		return path
+	}
+
+	root := projectRootFromStorePath(pt.DiscoveredStorePath())
+	if strings.TrimSpace(root) != "" {
+		root = filepath.Clean(root)
+		if rel, err := filepath.Rel(root, path); err == nil && rel != "" && rel != "." && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
+	}
+	return filepath.Base(path)
+}
+
 func projectRootFromStorePath(storePath string) string {
 	p := strings.TrimSpace(storePath)
 	if p == "" {
@@ -391,6 +419,8 @@ func run(args []string) error {
 		return cmdReady(cmdArgs)
 	case "claim":
 		return cmdClaim(cmdArgs)
+	case "ask":
+		return cmdAsk(cmdArgs)
 	case "release":
 		return cmdRelease(cmdArgs)
 	case "validate":
@@ -475,6 +505,8 @@ func run(args []string) error {
 		return cmdUXBreakout(cmdArgs)
 	case "ux-cover":
 		return cmdUXCover(cmdArgs)
+	case "ux":
+		return cmdUX(cmdArgs)
 	case "sysmap":
 		return cmdSysmap(cmdArgs)
 	case "journey":
@@ -577,6 +609,7 @@ VIEW & SEARCH
   show    <id> [--json]              Task details, DoD, deps
   search  --query="text"             Search across all tasks
   history <id>                       View task timeline
+  ask     <id>                       Generate canonical ASK packet in .pt/reviews/
   review  <subcmd>                   Save a kickoff/closeout/demo markdown review to .pt/reviews/
   version                           Show build/version info
 
@@ -606,6 +639,7 @@ UX DISCOVERY (for user-facing tasks)
   ux-cases   <id>                    Define use cases
   ux-explore <id>                    Generate design options
   ux-select  <id> <choice>           Choose approach
+  ux preflight <id>                  Write UX preflight packet in .pt/reviews/ (also sets meta flag)
 
 ADVANCED
   context init <id> [--role=ROLE]   Generate context JSON scaffold from task
@@ -854,11 +888,11 @@ func cmdSync(args []string) error {
 			fmt.Printf("  %s -> %s\n", title, id)
 		}
 	}
-	path, exists := projectDoDStatus()
+	_, exists := projectDoDStatus()
 	if exists {
-		fmt.Printf("Project DoD: %s (ensure a review/sign-off task tracks it; set env var PT_PROJECT_DOD to override)\n", path)
+		fmt.Printf("Project DoD: %s (ensure a review/sign-off task tracks it; set env var PT_PROJECT_DOD to override)\n", projectDoDDisplayPath(false))
 	} else {
-		fmt.Printf("Project DoD missing. Create %s (or set env var PT_PROJECT_DOD) and add a review/sign-off task to guide completion.\n", path)
+		fmt.Printf("Project DoD missing. Create %s (or set env var PT_PROJECT_DOD) and add a review/sign-off task to guide completion.\n", projectDoDDisplayPath(false))
 	}
 	return nil
 }
@@ -1346,11 +1380,11 @@ func cmdReady(args []string) error {
 			fmt.Printf("No open tasks in phase %q. Run: pt workflow status (or: pt ready --all-phases)\n", targetPhase)
 			return nil
 		}
-		path, exists := projectDoDStatus()
+		_, exists := projectDoDStatus()
 		if exists {
-			fmt.Printf("No ready tasks. Review project DoD at %s (set env var PT_PROJECT_DOD to override). If the DoD is not satisfied, identify the gaps and add tasks (via manifest or pt add) with explicit tests + manual checks (and docs/review)—avoid shortcuts. Only ask the user when requirements are unclear or external approval is needed.\n", path)
+			fmt.Printf("No ready tasks. Review project DoD at %s (set env var PT_PROJECT_DOD to override). If the DoD is not satisfied, identify the gaps and add tasks (via manifest or pt add) with explicit tests + manual checks (and docs/review)—avoid shortcuts. Only ask the user when requirements are unclear or external approval is needed.\n", projectDoDDisplayPath(*verbose))
 		} else {
-			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set env var PT_PROJECT_DOD), then create tasks to reach that DoD using best practices: explicit tests + manual checks, docs, and review. Minimize user prompts unless requirements are unclear.\n", path)
+			fmt.Printf("No ready tasks. Add a project DoD (e.g., %s or set env var PT_PROJECT_DOD), then create tasks to reach that DoD using best practices: explicit tests + manual checks, docs, and review. Minimize user prompts unless requirements are unclear.\n", projectDoDDisplayPath(*verbose))
 		}
 	}
 	return nil
@@ -1597,7 +1631,7 @@ func cmdClaim(args []string) error {
 		Overridden    bool   `json:"overridden,omitempty"`
 	}
 	var gateRes *workflowGateResult
-	var overrideComment string
+	var overrideComments []string
 	wfPath := strings.TrimSpace(*workflowPath)
 	if wfPath != "" {
 		if resolved, ok := resolveWorkflowPath(wfPath, workflowProjectRoot(*dbPath)); ok {
@@ -1661,9 +1695,34 @@ func cmdClaim(args []string) error {
 					blockingPhase, msg, id, blockingPhase,
 				)
 			}
-			overrideComment = fmt.Sprintf("gate-override: %s %s", blockingPhase, strings.TrimSpace(*overrideSoft))
+			overrideComments = append(overrideComments, fmt.Sprintf("gate-override: %s %s", blockingPhase, strings.TrimSpace(*overrideSoft)))
 			gateRes.Overridden = true
 		}
+	}
+
+	if groundingPackMissing(meta) {
+		remediation := groundingRemediation(id, meta)
+		if groundingStrictBlock(meta) {
+			return fmt.Errorf("claim blocked: task %s missing grounding pack (files/symbols/commands)\nRemediation: %s", id, remediation)
+		}
+		fmt.Fprintf(os.Stderr, "Warning: task %s missing grounding pack (files/symbols/commands)\nRemediation: %s\n", id, remediation)
+	}
+
+	if uxPreflightRequired(meta) && uxPreflightMissing(meta) {
+		uxType := uxTypeForPreflight(meta)
+		remediation := fmt.Sprintf("pt ux preflight %s", id)
+		if uxPreflightHard(meta, uxType) {
+			return fmt.Errorf("claim blocked by hard gate (ux-preflight): missing UX preflight (type=%s)\nRemediation: %s", uxType, remediation)
+		}
+		if strings.TrimSpace(*overrideSoft) == "" {
+			return fmt.Errorf(
+				"claim blocked by soft gate (ux-preflight): missing UX preflight (type=%s)\nRemediation: %s\nTo override: pt claim %s --override-soft=\"<reason>\" (writes: gate-override: ux-preflight <reason>)",
+				uxType,
+				remediation,
+				id,
+			)
+		}
+		overrideComments = append(overrideComments, fmt.Sprintf("gate-override: ux-preflight %s", strings.TrimSpace(*overrideSoft)))
 	}
 
 	dodJSON, _ := json.Marshal(meta.DoD)
@@ -1695,9 +1754,9 @@ func cmdClaim(args []string) error {
 	if err := trans.Claim(ctx, id, user); err != nil {
 		return fmt.Errorf("claim failed: %w", err)
 	}
-	if overrideComment != "" {
-		if err := client.AddComment(ctx, id, overrideComment); err != nil {
-			return fmt.Errorf("record workflow override: %w", err)
+	for _, c := range overrideComments {
+		if err := client.AddComment(ctx, id, c); err != nil {
+			return fmt.Errorf("record claim override: %w", err)
 		}
 	}
 	// Add draft label if --draft flag is set
@@ -1722,7 +1781,7 @@ func cmdClaim(args []string) error {
 	}
 	if *draft {
 		fmt.Printf("Claimed %s as %s (draft mode - DoD not enforced until validate)\n", id, user)
-	} else if overrideComment != "" {
+	} else if len(overrideComments) > 0 {
 		fmt.Printf("Claimed %s as %s (soft gate override recorded)\n", id, user)
 	} else {
 		fmt.Printf("Claimed %s as %s\n", id, user)
@@ -1904,7 +1963,15 @@ func cmdValidate(args []string) error {
 	}
 	id := fs.Arg(0)
 	client := newClientWith(*dbPath, *prefix)
-	ctx, cancel := pt.ContextWithTimeout(context.Background(), 0)
+
+	validateTimeout := 30 * time.Minute
+	if raw := strings.TrimSpace(os.Getenv("PT_VALIDATE_TIMEOUT")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			validateTimeout = d
+		}
+	}
+
+	ctx, cancel := pt.ContextWithTimeout(context.Background(), validateTimeout)
 	defer cancel()
 	issue, meta, err := client.GetTask(ctx, id)
 	if err != nil {
@@ -2649,6 +2716,9 @@ func cmdUpdate(args []string) error {
 	inputsFlag := fs.String("inputs", "", "comma-separated input files/dirs (WHERE)")
 	scopeFlag := fs.String("scope", "", "IN/OUT scope (BOUNDS)")
 	referenceFlag := fs.String("reference", "", "related links (RELATED)")
+	groundingFilesFlag := fs.String("grounding-files", "", "comma-separated grounding file paths (FILES); use '-' to clear")
+	groundingSymbolsFlag := fs.String("grounding-symbols", "", "comma-separated grounding symbols (SYMBOLS); use '-' to clear")
+	groundingCommandsFlag := fs.String("grounding-commands", "", "comma-separated grounding sg-agent commands (COMMANDS); use '-' to clear")
 	hookVerboseFlag := fs.Bool("hook-verbose", false, "log hook execution (same as PT_HOOK_VERBOSE=1)")
 	jsonOut := fs.Bool("json", false, "output JSON")
 	dbPath := fs.String("db", "", "override store path")
@@ -2656,6 +2726,7 @@ func cmdUpdate(args []string) error {
 	fs.Usage = func() {
 		fmt.Println("Usage: pt update <id> [--title=...] [--assignee=...] [--priority=N] [--next-hint=...]")
 		fmt.Println("       Handoff fields: [--context=...] [--inputs=file1,file2] [--scope=...] [--reference=...]")
+		fmt.Println("       Grounding pack: [--grounding-files=a,b] [--grounding-symbols=A,B] [--grounding-commands=c,d]")
 		fmt.Println("       Use '-' to clear a field (e.g., --context=-)")
 	}
 	if err := fs.Parse(args); err != nil {
@@ -2685,13 +2756,35 @@ func cmdUpdate(args []string) error {
 			opts.Inputs = strings.Split(*inputsFlag, ",")
 		}
 	}
+	if *groundingFilesFlag != "" {
+		if *groundingFilesFlag == "-" {
+			opts.GroundingFiles = []string{"-"}
+		} else {
+			opts.GroundingFiles = strings.Split(*groundingFilesFlag, ",")
+		}
+	}
+	if *groundingSymbolsFlag != "" {
+		if *groundingSymbolsFlag == "-" {
+			opts.GroundingSymbols = []string{"-"}
+		} else {
+			opts.GroundingSymbols = strings.Split(*groundingSymbolsFlag, ",")
+		}
+	}
+	if *groundingCommandsFlag != "" {
+		if *groundingCommandsFlag == "-" {
+			opts.GroundingCommands = []string{"-"}
+		} else {
+			opts.GroundingCommands = strings.Split(*groundingCommandsFlag, ",")
+		}
+	}
 	if *priority >= 0 {
 		opts.Priority = priority
 	}
 	hasUpdate := opts.Title != "" || opts.Assignee != "" || opts.Priority != nil || opts.NextHint != "" ||
-		opts.Context != "" || len(opts.Inputs) > 0 || opts.Scope != "" || opts.Reference != ""
+		opts.Context != "" || len(opts.Inputs) > 0 || opts.Scope != "" || opts.Reference != "" ||
+		len(opts.GroundingFiles) > 0 || len(opts.GroundingSymbols) > 0 || len(opts.GroundingCommands) > 0
 	if !hasUpdate {
-		return errors.New("at least one update flag required (--title, --assignee, --priority, --next-hint, --context, --inputs, --scope, --reference)")
+		return errors.New("at least one update flag required (--title, --assignee, --priority, --next-hint, --context, --inputs, --scope, --reference, --grounding-files, --grounding-symbols, --grounding-commands)")
 	}
 	client := newClientWith(*dbPath, *prefix)
 	ctx, cancel := pt.ContextWithTimeout(context.Background(), 10*time.Second)

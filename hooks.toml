@@ -1,7 +1,7 @@
 [defaults]
   timeout = "60s"
   on_fail = "fail"
-  verbose = true
+  verbose = false
 
 [[hook]]
   event = "pre-claim"

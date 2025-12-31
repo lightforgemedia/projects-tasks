@@ -40,8 +40,8 @@ type Phase struct {
 
 // Gate defines conditions for advancing past a phase.
 type Gate struct {
-	Type          string `json:"type"`                     // "soft" or "hard"
-	Condition     string `json:"condition"`                // e.g., "all_closed", "has_comment:user-approved"
+	Type           string `json:"type"`      // "soft" or "hard"
+	Condition      string `json:"condition"` // e.g., "all_closed", "has_comment:user-approved"
 	ReminderBefore string `json:"reminder_before,omitempty"`
 	ReminderAfter  string `json:"reminder_after,omitempty"`
 	BlockMessage   string `json:"block_message,omitempty"` // for hard gates
@@ -73,10 +73,10 @@ type PhaseStatus struct {
 
 // WorkflowStatus represents the overall workflow state.
 type WorkflowStatus struct {
-	Workflow     Workflow      `json:"workflow"`
-	Phases       []PhaseStatus `json:"phases"`
-	SuggestedNext *Issue       `json:"suggested_next,omitempty"`
-	NextReason    string       `json:"next_reason,omitempty"`
+	Workflow      Workflow      `json:"workflow"`
+	Phases        []PhaseStatus `json:"phases"`
+	SuggestedNext *Issue        `json:"suggested_next,omitempty"`
+	NextReason    string        `json:"next_reason,omitempty"`
 }
 
 // ParseWorkflow reads and validates a workflow file (TOML format).
@@ -438,8 +438,52 @@ func (w *Workflow) EvaluateGate(phase Phase, phaseTasks []Issue, allIssues []Iss
 		return false, fmt.Sprintf("discovery not approved for component %q", componentID)
 	}
 
+	// Handle "ux_preflight_done" condition (searches current phase tasks)
+	if condition == "ux_preflight_done" || condition == "ux:preflight_done" {
+		// If a workflow phase has no tasks assigned, do not deadlock later phases.
+		if len(phaseTasks) == 0 {
+			return true, fmt.Sprintf("phase %q has no tasks; skipping UX preflight gate", phase.ID)
+		}
+		var missing []string
+		for _, t := range phaseTasks {
+			meta, err := parseTaskMeta(t.Description)
+			if err != nil || meta.UXState == nil || !meta.UXState.PreflightDone {
+				missing = append(missing, t.ID)
+			}
+		}
+		if len(missing) > 0 {
+			return false, fmt.Sprintf("UX preflight not completed for tasks: %s (run: pt ux preflight <id>)", strings.Join(missing, ", "))
+		}
+		return true, ""
+	}
+
+	// Handle "phase:<id> ux_preflight_done" condition (searches specific phase)
+	if strings.HasPrefix(condition, "phase:") && strings.HasSuffix(condition, " ux_preflight_done") {
+		reqPhase := strings.TrimPrefix(condition, "phase:")
+		reqPhase = strings.TrimSuffix(reqPhase, " ux_preflight_done")
+		var phaseTaskCount int
+		var missing []string
+		for _, issue := range allIssues {
+			meta, _ := parseTaskMeta(issue.Description)
+			if w.GetTaskPhase(issue, meta) == reqPhase {
+				phaseTaskCount++
+				if meta.UXState == nil || !meta.UXState.PreflightDone {
+					missing = append(missing, issue.ID)
+				}
+			}
+		}
+		// If the requested phase has no tasks assigned, do not deadlock later phases.
+		if phaseTaskCount == 0 {
+			return true, fmt.Sprintf("phase %q has no tasks; skipping UX preflight gate", reqPhase)
+		}
+		if len(missing) > 0 {
+			return false, fmt.Sprintf("UX preflight not completed for tasks in phase %q: %s (run: pt ux preflight <id>)", reqPhase, strings.Join(missing, ", "))
+		}
+		return true, ""
+	}
+
 	// Unknown condition - fail closed with clear error
-	return false, fmt.Sprintf("unknown gate condition %q (supported: all_closed, phase:X complete, has_comment:X, phase:X has_comment:Y, discovery:approved:X)", condition)
+	return false, fmt.Sprintf("unknown gate condition %q (supported: all_closed, phase:X complete, has_comment:X, phase:X has_comment:Y, discovery:approved:X, ux_preflight_done, phase:X ux_preflight_done)", condition)
 }
 
 // CheckGate evaluates a gate for a specific task.

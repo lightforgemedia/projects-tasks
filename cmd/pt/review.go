@@ -162,6 +162,7 @@ func cmdReviewWrite(args []string) error {
 		})
 	}
 	fmt.Printf("Review written: %s\n", path)
+	fmt.Printf("ASK packet: %s (run: pt ask %s)\n", filepath.Join(baseDir, fmt.Sprintf("ASK-%s.md", taskID)), taskID)
 	return nil
 }
 
@@ -261,7 +262,15 @@ func reviewValidateFilled(markdown string) error {
 }
 
 func renderReviewTemplate(kind reviewKind, phaseID, taskID string, now time.Time) string {
-	header := fmt.Sprintf("# Review (%s)\n\n- Task: %s\n- Phase: %s\n- Created: %s\n\n", kind, taskID, phaseID, now.Format(time.RFC3339))
+	header := fmt.Sprintf(
+		"# Review (%s)\n\n- Task: %s\n- Phase: %s\n- Created: %s\n- ASK: .pt/reviews/ASK-%s.md (generate/update: `pt ask %s`)\n\n",
+		kind,
+		taskID,
+		phaseID,
+		now.Format(time.RFC3339),
+		taskID,
+		taskID,
+	)
 	switch kind {
 	case reviewKindPre:
 		return header + `## Kickoff (what will be done)
